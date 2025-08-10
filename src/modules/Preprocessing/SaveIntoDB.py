@@ -1,3 +1,5 @@
+from pathlib import Path
+
 from typing import Dict, List, Optional, Any
 from fastembed import TextEmbedding
 
@@ -6,7 +8,6 @@ from ..FileParsing.LSPServices import ClangdAnalyzer
 from .CallRelationAnalyzer import CallRelationAnalyzer
 
 from ...base.Base import Base
-
 
 class SaveIntoDB(Base):
     """
@@ -18,7 +19,7 @@ class SaveIntoDB(Base):
         self.db_client = DBClient
         self.analyzer = ClangdAnalyzer(input_dir)
         self.embedder = TextEmbedding()
-        self.relation_analyzer = CallRelationAnalyzer(DBClient, input_dir)
+        self.relation_analyzer = CallRelationAnalyzer(DBClient, Path(input_dir))
 
     def save(self, project_dir: str):
         """

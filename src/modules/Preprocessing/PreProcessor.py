@@ -137,7 +137,7 @@ class PreProcessor(Base):
 
             if not success:
                 return False, self.stats
-            
+
             # 分析依赖关系
             self.info("分析依赖关系")
             success = self._analyze_relations(project_path)
