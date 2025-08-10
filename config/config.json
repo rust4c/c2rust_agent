@@ -1,0 +1,85 @@
+{
+  "llm": {
+    "default_provider": "openai",
+    "providers": {
+      "openai": {
+        "api_key": "",
+        "api_url": "https://api.openai.com/v1",
+        "model_name": "gpt-4o-mini",
+        "temperature": 0.7,
+        "top_p": 1.0,
+        "frequency_penalty": 0,
+        "request_timeout": 60,
+        "think_switch": false
+      },
+      "openai_local": {
+        "api_key": "none_api_key",
+        "api_url": "http://localhost:11434/v1",
+        "model_name": "deepseek-r1:7b",
+        "temperature": 0.7,
+        "top_p": 1.0,
+        "frequency_penalty": 0,
+        "request_timeout": 60,
+        "think_switch": true
+      },
+      "anthropic": {
+        "api_key": "",
+        "api_url": "https://api.anthropic.com",
+        "model_name": "claude-3-5-sonnet-20241022",
+        "temperature": 0.7,
+        "request_timeout": 60
+      },
+      "anthropic_bedrock": {
+        "region": "us-east-1",
+        "access_key": "",
+        "secret_key": "",
+        "model_name": "anthropic.claude-3-5-sonnet-20241022-v2:0",
+        "temperature": 0.7,
+        "request_timeout": 60
+      },
+      "cohere": {
+        "api_key": "",
+        "api_url": "https://api.cohere.ai/v1",
+        "model_name": "command-r-plus",
+        "temperature": 0.7,
+        "request_timeout": 60
+      },
+      "google": {
+        "api_key": "",
+        "api_url": "",
+        "model_name": "gemini-1.5-pro-002",
+        "temperature": 0.7,
+        "request_timeout": 60,
+        "extra_body": {}
+      }
+    }
+  },
+  "c2rust": {
+    "analysis": {
+      "include_headers": true,
+      "analyze_dependencies": true,
+      "extract_functions": true,
+      "extract_structs": true,
+      "extract_macros": true
+    },
+    "conversion": {
+      "preserve_comments": true,
+      "generate_unsafe_blocks": true,
+      "use_raw_pointers": false,
+      "add_type_annotations": true,
+      "generate_tests": false
+    },
+    "output": {
+      "format_code": true,
+      "generate_cargo_toml": true,
+      "create_modules": true,
+      "preserve_directory_structure": true
+    }
+  },
+  "logging": {
+    "level": "INFO",
+    "file_logging": false,
+    "log_file": "logs/c2rust_agent.log"
+  },
+  "debug": false
+}
