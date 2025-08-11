@@ -1,0 +1,13 @@
+{
+  "version": "0.2.0",
+  "configurations": [
+    {
+      "name": "C/C++ Runner: Debug Session",
+      "type": "lldb",
+      "request": "launch",
+      "args": [],
+      "cwd": "/Users/peng/Documents/AppCode/Python/c2rust_agent/test_file",
+      "program": "/Users/peng/Documents/AppCode/Python/c2rust_agent/test_file/build/Debug/outDebug"
+    }
+  ]
+}
