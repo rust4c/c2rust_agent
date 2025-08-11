@@ -45,8 +45,12 @@ class OpenaiRequester(Base):
                     "content": system_prompt
                 })
 
-            # 从工厂获取客户端
-            client = LLMClientFactory().get_openai_client(platform_config)
+            # 从工厂获取客户端 - 根据target_platform选择正确的工厂方法
+            target_platform = platform_config.get("target_platform", "openai")
+            if target_platform == "openai_local":
+                client = LLMClientFactory().get_openai_client_local(platform_config)
+            else:
+                client = LLMClientFactory().get_openai_client(platform_config)
 
             # 针对推理模型的特殊处理
             reasoning_models = {"deepseek-reasoner", "deepseek-r1", "DeepSeek-R1", "o1-mini", "o1-preview"}

@@ -1,6 +1,7 @@
 import os
 import threading
 import traceback
+import logging
 from typing import Dict, Any, Optional
 
 try:
@@ -62,6 +63,9 @@ class Base:
     # 类线程锁
     CONFIG_FILE_LOCK = threading.Lock()
 
+    # 日志格式
+    LOG_FORMAT = "[%(asctime)s | %(name)s | %(levelname)s] %(message)s"
+
     def __init__(self, *args, **kwargs):
         super().__init__(*args, **kwargs)
 
@@ -72,7 +76,36 @@ class Base:
         self.event_manager_singleton = EventManager.get_singleton()
 
         # 类变量
-        Base.work_status = Base.STATUS.IDLE if not hasattr(Base, "work_status") else Base.work_status
+        Base.work_status = Base.STATUS.IDLE if not hasattr(
+            Base, "work_status") else Base.work_status
+
+        # 初始化日志系统
+        self._init_logging()
+
+    def _init_logging(self):
+        """初始化日志系统"""
+        # 获取类名作为日志名称
+        logger_name = self.__class__.__name__
+        self.logger = logging.getLogger(logger_name)
+
+        # 如果日志处理器已配置，则跳过
+        if self.logger.handlers:
+            return
+
+        # 设置日志级别
+        self.logger.setLevel(logging.DEBUG)
+
+        # 创建控制台处理器
+        console_handler = logging.StreamHandler()
+        console_handler.setLevel(
+            logging.DEBUG if self.is_debug() else logging.INFO)
+
+        # 设置日志格式
+        formatter = logging.Formatter(Base.LOG_FORMAT)
+        console_handler.setFormatter(formatter)
+
+        # 添加到日志器
+        self.logger.addHandler(console_handler)
 
     # 检查是否处于调试模式
     def is_debug(self) -> bool:
@@ -89,8 +122,8 @@ class Base:
 
     # 日志方法
     def print(self, msg: str) -> None:
-        """打印消息"""
-        print(msg)
+        """打印消息（信息级别）"""
+        self.logger.info(msg)
 
     def debug(self, msg: str, e: Exception = None) -> None:
         """调试日志"""
@@ -98,24 +131,26 @@ class Base:
             return
 
         if e is None:
-            print(f"[DEBUG] {msg}")
+            self.logger.debug(msg)
         else:
-            print(f"[DEBUG] {msg}\n{e}\n{(''.join(traceback.format_exception(None, e, e.__traceback__))).strip()}")
+            self.logger.debug(
+                f"{msg}\n{''.join(traceback.format_exception(None, e, e.__traceback__))}")
 
     def info(self, msg: str) -> None:
         """信息日志"""
-        print(f"[INFO] {msg}")
+        self.logger.info(msg)
 
     def error(self, msg: str, e: Exception = None) -> None:
         """错误日志"""
         if e is None:
-            print(f"[ERROR] {msg}")
+            self.logger.error(msg)
         else:
-            print(f"[ERROR] {msg}\n{e}\n{(''.join(traceback.format_exception(None, e, e.__traceback__))).strip()}")
+            self.logger.error(
+                f"{msg}\n{''.join(traceback.format_exception(None, e, e.__traceback__))}")
 
     def warning(self, msg: str) -> None:
         """警告日志"""
-        print(f"[WARNING] {msg}")
+        self.logger.warning(msg)
 
     # 配置文件操作
     def load_config(self) -> dict:

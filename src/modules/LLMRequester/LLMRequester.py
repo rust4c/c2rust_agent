@@ -54,7 +54,12 @@ class LLMRequester(Base):
             self.debug(f"使用LLM平台: {target_platform}, API格式: {api_format}")
 
             # 根据平台选择对应的请求器
-            if target_platform == "openai" or target_platform.startswith("openai"):
+            if target_platform == "openai_local":
+                # openai_local 应该使用 OpenaiRequester，但使用本地配置
+                requester = OpenaiRequester()
+                return requester.request_openai(messages, system_prompt, platform_config)
+
+            elif target_platform == "openai" or target_platform.startswith("openai"):
                 requester = OpenaiRequester()
                 return requester.request_openai(messages, system_prompt, platform_config)
 
