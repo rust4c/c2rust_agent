@@ -1,0 +1,11 @@
+[workspace]
+members = [
+    "crates/commandline_tool",
+    "crates/cproject_analy",
+    "crates/db_services",
+    "crates/file_scanner",
+    "crates/llm_requester",
+    "crates/lsp_services",
+    "crates/prompt_builder",
+]
+resolver = "3"
