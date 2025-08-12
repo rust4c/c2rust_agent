@@ -16,8 +16,6 @@ version = "0.1.0"
 edition = "2021"
 
 [dependencies]
-
-
 commandline_tool = { path = "crates/commandline_tool" }
 cproject_analy = { path = "crates/cproject_analy" }
 db_services = { path = "crates/db_services" }

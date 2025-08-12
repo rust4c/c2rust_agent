@@ -19,55 +19,55 @@ pub enum Commands {
         #[arg(long, value_name = "DIR", required = true)]
         input_dir: PathBuf,
     },
-    
+
     /// 将 C 项目转换为 Rust
     Translate {
         /// C 项目目录（必需）
         #[arg(long, value_name = "DIR", required = true)]
         input_dir: PathBuf,
-        
+
         /// 输出 Rust 项目目录（可选）
         #[arg(long, value_name = "DIR")]
         output_dir: Option<PathBuf>,
     },
-    
+
     /// 分析调用关系
     AnalyzeRelations {
         /// C 项目目录（必需）
         #[arg(long, value_name = "DIR", required = true)]
         input_dir: PathBuf,
-        
+
         /// 项目名称（可选）
         #[arg(long)]
         project_name: Option<String>,
-        
+
         /// 数据库文件路径
         #[arg(long, default_value = "relation_analysis.db")]
         db: String,
     },
-    
+
     /// 查询调用关系数据库
     RelationQuery {
         /// 数据库文件路径
         #[arg(long, default_value = "relation_analysis.db")]
         db: String,
-        
+
         /// 项目名称（用于具体查询）
         #[arg(long)]
         project: Option<String>,
-        
+
         /// 查询类型
         #[arg(long, value_enum, default_value_t = QueryType::ListProjects)]
         query_type: QueryType,
-        
+
         /// 目标函数名或文件路径
         #[arg(long)]
         target: Option<String>,
-        
+
         /// 搜索关键词
         #[arg(long)]
         keyword: Option<String>,
-        
+
         /// 结果数量限制
         #[arg(long, default_value_t = 10)]
         limit: usize,
@@ -75,7 +75,6 @@ pub enum Commands {
 }
 
 #[derive(Copy, Clone, PartialEq, Eq, PartialOrd, Ord, ValueEnum)]
-
 #[derive(Debug)]
 pub enum QueryType {
     /// 列出所有可用项目
@@ -102,6 +101,6 @@ pub enum QueryType {
     FuncUsage,
 }
 
-pub fn parse_args()-> Cli{
+pub fn parse_args() -> Cli {
     Cli::parse()
 }
