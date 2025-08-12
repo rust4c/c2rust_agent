@@ -7,6 +7,7 @@ members = [
     "crates/llm_requester",
     "crates/lsp_services",
     "crates/prompt_builder",
+    "crates/ui_main",
 ]
 resolver = "3"
 
@@ -23,3 +24,4 @@ file_scanner = { path = "crates/file_scanner" }
 llm_requester = { path = "crates/llm_requester" }
 lsp_services = { path = "crates/lsp_services" }
 prompt_builder = { path = "crates/prompt_builder" }
+ui_main = { path = "crates/ui_main" }
