@@ -1,14 +1,13 @@
-use anyhow::{Context, Result, anyhow};
+use anyhow::{Result, anyhow};
+use log::{debug, error, info, warn};
 use regex::Regex;
 use serde::Serialize;
 use serde_json::Value;
 use std::{
     collections::HashMap,
     fs,
-    io::{BufRead, BufReader},
     path::{Path, PathBuf},
     process::{Command, Stdio},
-    time::Duration,
 };
 
 #[derive(Debug, Serialize, Clone)]
@@ -67,7 +66,16 @@ pub struct ClangdAnalyzer {
 
 impl ClangdAnalyzer {
     pub fn new(project_root: &str) -> Self {
-        let project_root = PathBuf::from(project_root).canonicalize().unwrap();
+        info!("Initializing ClangdAnalyzer");
+        // 处理家目录
+        let project_root = if project_root.starts_with("~") {
+            let home_dir = dirs::home_dir().unwrap();
+            home_dir.join(&project_root[2..])
+        } else {
+            PathBuf::from(project_root)
+        }
+        .canonicalize()
+        .unwrap();
         let compile_commands_path = project_root.join("compile_commands.json");
 
         ClangdAnalyzer {
@@ -81,7 +89,7 @@ impl ClangdAnalyzer {
     }
 
     pub fn generate_compile_commands(&self) -> Result<()> {
-        println!("Generating compilation database using compiledb...");
+        info!("Generating compilation database using compiledb...");
 
         let status = Command::new("compiledb")
             .arg("-n")
@@ -93,15 +101,17 @@ impl ClangdAnalyzer {
             .map_err(|e| anyhow!("Failed to run compiledb: {}", e))?;
 
         if !status.success() {
+            error!("compiledb failed with exit code: {}", status);
             return Err(anyhow!("compiledb failed with exit code: {}", status));
         }
 
-        println!("Successfully generated compilation database");
+        info!("Successfully generated compilation database");
         Ok(())
     }
 
     pub fn get_source_files_from_compile_commands(&self) -> Result<Vec<PathBuf>> {
         if !self.compile_commands_path.exists() {
+            error!("Compilation database does not exist");
             return Err(anyhow!("Compilation database does not exist"));
         }
 
@@ -119,7 +129,7 @@ impl ClangdAnalyzer {
             }
         }
 
-        println!(
+        info!(
             "Found {} source files in compilation database",
             source_files.len()
         );
@@ -130,6 +140,7 @@ impl ClangdAnalyzer {
         let compile_command = self
             .find_compile_command_for_file(file_path)
             .unwrap_or_default();
+        debug!("compile command:{}", compile_command);
 
         let mut cmd = Command::new("clang");
         cmd.arg("-Xclang")
@@ -157,9 +168,10 @@ impl ClangdAnalyzer {
         cmd.arg(file_path);
 
         let output = cmd.output()?;
+        debug!("output: {:?}", output);
 
         if !output.status.success() {
-            println!("Clang AST analysis failed for: {}", file_path.display());
+            info!("Clang AST analysis failed for: {}", file_path.display());
             return self.fallback_parse(file_path);
         }
 
@@ -168,7 +180,7 @@ impl ClangdAnalyzer {
             self.traverse_ast(&ast_data, file_path);
             Ok(())
         } else {
-            println!("Failed to parse AST JSON for: {}", file_path.display());
+            warn!("Failed to parse AST JSON for: {}", file_path.display());
             self.fallback_parse(file_path)
         }
     }
@@ -586,22 +598,22 @@ impl ClangdAnalyzer {
     }
 
     pub fn analyze_project(&mut self) -> Result<()> {
-        println!("Analyzing project: {}", self.project_root.display());
+        info!("Analyzing project: {}", self.project_root.display());
 
         // Attempt to generate compilation database
         if let Err(e) = self.generate_compile_commands() {
-            println!("⚠️ Failed to generate compilation database: {}", e);
+            error!("⚠️ Failed to generate compilation database: {}", e);
         }
 
         // Get source files from compilation database
         let source_files = match self.get_source_files_from_compile_commands() {
             Ok(files) => files,
             Err(e) => {
-                println!(
+                error!(
                     "⚠️ Failed to get source files from compilation database: {}",
                     e
                 );
-                println!("Falling back to directory scan...");
+                warn!("Falling back to directory scan...");
                 self.find_source_files_in_project()?
             }
         };
@@ -610,17 +622,17 @@ impl ClangdAnalyzer {
             return Err(anyhow!("No source files found"));
         }
 
-        println!("Found {} source files to analyze", source_files.len());
+        info!("Found {} source files to analyze", source_files.len());
 
         for (i, file) in source_files.iter().enumerate() {
-            println!(
+            info!(
                 "Analyzing ({}/{}): {}",
                 i + 1,
                 source_files.len(),
                 file.display()
             );
             if let Err(e) = self.analyze_with_clang_ast(file) {
-                println!("⚠️ Failed to analyze {}: {}", file.display(), e);
+                error!("⚠️ Failed to analyze {}: {}", file.display(), e);
             }
         }
 
@@ -642,7 +654,7 @@ impl ClangdAnalyzer {
             }
         }
 
-        println!(
+        info!(
             "Found {} source files in project directory",
             source_files.len()
         );
@@ -830,13 +842,13 @@ impl ClangdAnalyzer {
 }
 
 pub fn check_function_and_class_name(project_path: &str, detailed: bool) -> Result<()> {
-    println!("🚀 Starting C/C++ code analysis with clang...");
-    println!("Project path: {}", project_path);
+    info!("🚀 Starting C/C++ code analysis with clang...");
+    info!("Project path: {}", project_path);
 
     let mut analyzer = ClangdAnalyzer::new(project_path);
     analyzer.analyze_project()?;
     analyzer.print_analysis_results(detailed);
 
-    println!("\n✅ Analysis completed!");
+    info!("\n✅ Analysis completed!");
     Ok(())
 }
