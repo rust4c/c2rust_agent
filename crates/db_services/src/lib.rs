@@ -1,3 +1,4 @@
+pub mod pkg_config;
 pub mod qdrant_services;
 pub mod sqlite_services;
 
