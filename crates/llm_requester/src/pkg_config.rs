@@ -1,6 +1,6 @@
 use anyhow::Result;
 use config::{Config, File};
-use log::warn;
+
 use serde::Deserialize;
 
 #[derive(Debug, Clone, Deserialize)]
@@ -23,10 +23,18 @@ pub struct XAIConfig {
 }
 
 #[derive(Debug, Clone, Deserialize)]
+pub struct DeepSeekConfig {
+    pub model: String,
+    pub api_key: String,
+}
+
+#[derive(Debug, Clone, Deserialize)]
 pub struct LLMConfig {
+    pub provider: String,
     pub ollama_config: OllamaConfig,
     pub openai_config: OpenAIConfig,
     pub xai_config: XAIConfig,
+    pub deepseek_config: DeepSeekConfig,
 }
 
 pub fn get_config() -> Result<LLMConfig, config::ConfigError> {
@@ -56,5 +64,15 @@ pub fn get_config() -> Result<LLMConfig, config::ConfigError> {
 
     let config = config_builder.build()?;
     let config: LLMConfig = config.try_deserialize()?;
-    Ok(config)
+
+    match config.provider.as_str() {
+        "ollama" => Ok(config),
+        "openai" => Ok(config),
+        "xai" => Ok(config),
+        "deepseek" => Ok(config),
+        _ => Err(config::ConfigError::NotFound(format!(
+            "Unsupported provider '{}'. Supported providers: ollama, openai, xai, deepseek",
+            config.provider
+        ))),
+    }
 }

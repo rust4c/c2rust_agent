@@ -1,5 +1,7 @@
 # LLMConfig
 # LLM Model config options
+[provider]
+provider = "ollama"
 [ollama_config]
 model = "deepseek-r1:7b"
 base_url = "http://localhost:11434"

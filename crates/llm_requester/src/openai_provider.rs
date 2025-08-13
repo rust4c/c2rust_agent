@@ -4,7 +4,7 @@ use siumai::prelude::*;
 
 use crate::pkg_config::{OpenAIConfig, get_config};
 
-struct OpenAIProvider {
+pub struct OpenAIProvider {
     client: Siumai,
 }
 
@@ -48,8 +48,26 @@ impl OpenAIProvider {
         let response = self.client.chat_with_tools(request, None).await?;
         Ok(response.text().unwrap_or_default())
     }
+
+    pub async fn get_llm_request(messages: Vec<String>) -> Result<String> {
+        let provider = Self::init_with_config().await?;
+        let chat_messages: Vec<ChatMessage> = messages.into_iter().map(|msg| user!(msg)).collect();
+        provider.chat(chat_messages).await
+    }
+
+    pub async fn chat_with_prompt_static(
+        messages: Vec<String>,
+        system_prompt: String,
+    ) -> Result<String> {
+        let provider = Self::init_with_config().await?;
+        let combined_message = messages.join(" ");
+        provider
+            .chat_with_prompt(&combined_message, &system_prompt)
+            .await
+    }
 }
 
+#[cfg(test)]
 mod tests {
     use super::*;
 
