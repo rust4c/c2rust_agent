@@ -19,7 +19,8 @@ pub enum LLMProvider {
     Gemini,
     Mistral,
     Ollama,
-    Openai,
+    OpenAI,
+    Anthropic,
 }
 
 pub fn get_config() -> Result<AppConfig, config::ConfigError> {
