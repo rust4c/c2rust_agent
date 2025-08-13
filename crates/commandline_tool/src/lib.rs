@@ -1,3 +1,6 @@
+
+
+
 use clap::{Parser, Subcommand, ValueEnum};
 use std::path::PathBuf;
 
@@ -16,8 +19,10 @@ pub enum Commands {
     /// 分析 C 项目
     Analyze {
         /// C 项目目录（必需）
-        #[arg(long, value_name = "DIR", required = true)]
+        #[arg(long, short, value_name = "DIR", help = "输入路径",required = true)]
         input_dir: PathBuf,
+
+
     },
 
     /// 将 C 项目转换为 Rust
