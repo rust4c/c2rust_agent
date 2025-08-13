@@ -16,6 +16,7 @@ serde_json = "1.0.142"
 tokio = { version = "1.0", features = ["rt", "macros", "sync", "time"] }
 uuid = { version = "1.0", features = ["v4"] }
 config = "0.15.13"
+async-trait = "0.1.88"
 
 [dev-dependencies]
 tokio = { version = "1.0", features = ["rt", "macros", "rt-multi-thread"] }

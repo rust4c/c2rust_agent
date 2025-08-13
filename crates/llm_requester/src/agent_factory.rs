@@ -1,5 +1,7 @@
 use crate::llm_factory::LLMFactory;
 
+use rig::embeddings::Embed;
+
 struct AgentFactory {
     llm_factory: LLMFactory,
 }
