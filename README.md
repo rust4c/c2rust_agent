@@ -1,8 +1,8 @@
 
 
-# ProjectName
+# C2Rust Agent
 
-ProjectName and Description
+C 项目转换向 Rust 项目的 Agent
 
 <!-- PROJECT SHIELDS -->
 
@@ -164,9 +164,9 @@ xxx@xxxx
 - [xxxxxxxxxxxxxx](https://connoratherton.com/loaders)
 
 <!-- links -->
-[your-project-path]:rust4c/rust4c/c2rust_agent
-[contributors-shield]: https://img.shields.io/github/contributors/rust4c/rust4c/c2rust_agent.svg?style=flat-square
-[contributors-url]: https://github.com/rust4c/rust4c/c2rust_agent/graphs/contributors
+[your-project-path]:rust4c/c2rust_agent
+[contributors-shield]: https://img.shields.io/github/contributors/rust4c/c2rust_agent.svg?style=flat-square
+[contributors-url]: https://github.com/rust4c/c2rust_agent/graphs/contributors
 [forks-shield]: https://img.shields.io/github/forks/rust4c/c2rust_agent.svg?style=flat-square
 [forks-url]: https://github.com/rust4c/c2rust_agent/network/members
 [stars-shield]: https://img.shields.io/github/stars/rust4c/c2rust_agent.svg?style=flat-square
