@@ -1,0 +1,10 @@
+[LLMConfig]
+[ollama_config]
+model = "deepseek-r1:7b"
+base_url = "http://localhost:11434"
+# Optional
+api_key = "your_api_key_here"
+
+[openai_config]
+model = "gpt-3.5-turbo"
+api_key = "your_api_key_here"

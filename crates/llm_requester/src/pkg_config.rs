@@ -1,32 +1,60 @@
+use anyhow::Result;
 use config::{Config, File};
 use log::warn;
 use serde::Deserialize;
 
 #[derive(Debug, Clone, Deserialize)]
-pub struct provider_config {
-    pub provider: LLMProvider,
-    pub api_key: Option<String>,
+pub struct OllamaConfig {
+    pub model: String,
+    pub base_url: String,
+    pub api_key: String,
 }
 
 #[derive(Debug, Clone, Deserialize)]
-pub struct AppConfig {
-    pub provider_config: provider_config,
+pub struct OpenAIConfig {
+    pub model: String,
+    pub api_key: String,
 }
 
 #[derive(Debug, Clone, Deserialize)]
-pub enum LLMProvider {
-    Deepseek,
-    Gemini,
-    Mistral,
-    Ollama,
-    OpenAI,
-    Anthropic,
+pub struct XAIConfig {
+    pub model: String,
+    pub api_key: String,
 }
 
-pub fn get_config() -> Result<AppConfig, config::ConfigError> {
-    let config = Config::builder()
-        .add_source(File::with_name("config.toml"))
-        .build()?;
-    let config: AppConfig = config.try_deserialize()?;
+#[derive(Debug, Clone, Deserialize)]
+pub struct LLMConfig {
+    pub ollama_config: OllamaConfig,
+    pub openai_config: OpenAIConfig,
+    pub xai_config: XAIConfig,
+}
+
+pub fn get_config() -> Result<LLMConfig, config::ConfigError> {
+    // Try multiple possible paths for the config file
+    let possible_paths = [
+        "config/config.toml",       // From project root
+        "../config/config.toml",    // From crates subdirectory
+        "../../config/config.toml", // From deeper nested directories
+    ];
+
+    let mut config_builder = Config::builder();
+    let mut found_config = false;
+
+    for path in &possible_paths {
+        if std::path::Path::new(path).exists() {
+            config_builder = config_builder.add_source(File::with_name(path));
+            found_config = true;
+            break;
+        }
+    }
+
+    if !found_config {
+        return Err(config::ConfigError::NotFound(
+            "config.toml not found in any expected location".to_string(),
+        ));
+    }
+
+    let config = config_builder.build()?;
+    let config: LLMConfig = config.try_deserialize()?;
     Ok(config)
 }

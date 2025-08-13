@@ -1,6 +1,6 @@
+use anyhow::Result;
 use siumai::models;
 use siumai::prelude::*;
-use anyhow::Result;
 
 // #[tokio::main]
 // async fn main() -> Result<(), Box<dyn std::error::Error>> {
@@ -25,12 +25,19 @@ use anyhow::Result;
 //     Ok(())
 // }
 
-pub struct LLM_Provider {
-    llm_provider: Siumai,
-}
+// pub struct LLM_Provider {
+//     llm_provider: Siumai,
+// }
 
-impl LLM_Provider{
-    pub async fn new() -> Result({self}){
+// impl LLM_Provider {
+//     pub async fn new() -> Result(LLM_Provider) {
+//         let llm_provider = Siumai::builder()
+//             .anthropic()
+//             .api_key("your-anthropic-key")
+//             .model(models::anthropic::CLAUDE_SONNET_3_5)
+//             .build()
+//             .await?;
 
-    }
-}
+//         Ok(LLM_Provider { llm_provider })
+//     }
+// }
