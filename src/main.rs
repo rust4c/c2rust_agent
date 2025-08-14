@@ -1,7 +1,7 @@
-use ::lsp_services::lsp_services::check_function_and_class_name;
 use anyhow::Result;
 use env_logger;
 use log::LevelFilter;
+use lsp_services::lsp_services::check_function_and_class_name;
 
 fn main() -> Result<()> {
     env_logger::builder()

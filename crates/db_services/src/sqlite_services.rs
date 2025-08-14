@@ -7,6 +7,8 @@ use serde::{Deserialize, Serialize};
 use std::collections::HashMap;
 use uuid::Uuid;
 
+use crate::pkg_config::sqlite_config;
+
 /// Type alias for the connection pool
 type SqlitePool = Pool<SqliteConnectionManager>;
 type PooledSqliteConnection = PooledConnection<SqliteConnectionManager>;
@@ -96,8 +98,9 @@ pub struct AnalysisResult {
 
 impl SqliteService {
     /// Create a new SQLite service instance with connection pooling
-    pub fn new(db_path: &str) -> Result<Self> {
-        let manager = SqliteConnectionManager::file(db_path);
+    pub fn new(sqlite_config: sqlite_config) -> Result<Self> {
+        let db_path = sqlite_config.path;
+        let manager = SqliteConnectionManager::file(&db_path);
         let pool = Pool::builder()
             .max_size(15) // Maximum number of connections in the pool
             .min_idle(Some(5)) // Minimum number of idle connections

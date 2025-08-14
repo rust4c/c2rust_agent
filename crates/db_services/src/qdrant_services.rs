@@ -11,6 +11,8 @@ use std::time::Duration;
 use tokio::time::sleep;
 use uuid::Uuid;
 
+use crate::pkg_config::qdrant_config;
+
 const DEFAULT_BATCH_SIZE: usize = 100;
 const DEFAULT_TIMEOUT_SECS: u64 = 60;
 const DEFAULT_PORT: u16 = 6334; // 默认使用 6334 端口
@@ -26,14 +28,10 @@ pub struct QdrantServer {
 
 impl QdrantServer {
     /// 创建新的 Qdrant 服务器实例
-    pub async fn new(
-        host: &str,
-        port: Option<u16>,
-        collection_name: &str,
-        vector_size: usize,
-    ) -> Result<Self> {
+    pub async fn new(qdrant_config: qdrant_config) -> Result<Self> {
         // 确定端口（优先使用传入参数，否则使用默认）
-        let port = port.unwrap_or(DEFAULT_PORT);
+        let port = qdrant_config.port.unwrap_or(DEFAULT_PORT);
+        let host = qdrant_config.host;
         let address = format!("http://{}:{}", host, port);
 
         let timeout = Duration::from_secs(DEFAULT_TIMEOUT_SECS);
@@ -46,11 +44,13 @@ impl QdrantServer {
 
         let mut instance = Self {
             client,
-            collection_name: collection_name.to_string(),
-            vector_size: vector_size as u64,
+            collection_name: qdrant_config.collection_name.to_string(),
+            vector_size: qdrant_config.vector_size as u64,
             timeout,
             batch_size: DEFAULT_BATCH_SIZE,
         };
+
+        let vector_size = instance.vector_size;
 
         instance.ensure_collection().await?;
         info!(
@@ -386,7 +386,14 @@ mod tests {
         let host = env::var("QDRANT_HOST").unwrap_or("localhost".to_string());
         let port = env::var("QDRANT_PORT").map(|p| p.parse().unwrap()).ok();
 
-        QdrantServer::new(&host, port, "test_collection", 384)
+        let qdrant_config = qdrant_config {
+            host,
+            port,
+            collection_name: "test_collection".to_string(),
+            vector_size: 384,
+        };
+
+        QdrantServer::new(qdrant_config)
             .await
             .expect("创建测试客户端失败")
     }
@@ -423,8 +430,14 @@ mod tests {
 
     #[tokio::test]
     async fn test_port_config() {
+        let qdrant_config = qdrant_config {
+            host: "localhost".to_string(),
+            port: Some(6334),
+            collection_name: "test_collection".to_string(),
+            vector_size: 384,
+        };
         // 测试显式端口配置
-        let client = QdrantServer::new("localhost", Some(6334), "port_test", 128)
+        let client = QdrantServer::new(qdrant_config)
             .await
             .expect("创建端口测试客户端失败");
 

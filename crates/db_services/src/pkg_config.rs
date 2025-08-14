@@ -3,27 +3,42 @@ use serde::Deserialize;
 
 #[derive(Debug, Clone, Deserialize)]
 pub struct qdrant_config {
-    host: String,
-    port: Option<u16>,
-    collection_name: String,
-    vector_size: usize,
+    pub host: String,
+    pub port: Option<u16>,
+    pub collection_name: String,
+    pub vector_size: usize,
 }
 
 #[derive(Debug, Clone, Deserialize)]
 pub struct sqlite_config {
-    path: String,
+    pub path: String,
 }
 
 #[derive(Debug, Clone, Deserialize)]
-pub struct AppConfig {
-    qdrant: qdrant_config,
-    sqlite: sqlite_config,
+pub struct DBConfig {
+    pub qdrant: qdrant_config,
+    pub sqlite: sqlite_config,
 }
 
-pub fn get_config() -> Result<AppConfig, config::ConfigError> {
+impl DBConfig {
+    pub fn new(qdrant_config: qdrant_config, sqlite_config: sqlite_config) -> Self {
+        DBConfig {
+            qdrant: qdrant_config,
+            sqlite: sqlite_config,
+        }
+    }
+    pub fn get_qdrant_config(&self) -> &qdrant_config {
+        &self.qdrant
+    }
+    pub fn get_sqlite_config(&self) -> &sqlite_config {
+        &self.sqlite
+    }
+}
+
+pub fn get_config() -> Result<DBConfig, config::ConfigError> {
     let config = Config::builder()
         .add_source(File::with_name("config.toml"))
         .build()?;
-    let config = config.try_deserialize()?;
+    let config: DBConfig = config.try_deserialize()?;
     Ok(config)
 }

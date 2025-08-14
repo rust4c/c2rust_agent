@@ -1,0 +1,4 @@
+llm_factory::tests::MockClient
+llm_factory::tests::MockClient: rig::client::AsEmbeddings
+llm_factory::tests::MockClient: rig::client::AsTranscription
+llm_factory::tests::MockClient: rig::client::AsCompletion
