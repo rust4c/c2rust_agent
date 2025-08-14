@@ -4280,6 +4280,17 @@ dependencies = [
 [[package]]
 name = "prompt_builder"
 version = "0.1.0"
+dependencies = [
+ "anyhow",
+ "db_services",
+ "log",
+ "lsp_services",
+ "regex",
+ "serde",
+ "tempfile",
+ "tokio",
+ "tracing",
+]
 
 [[package]]
 name = "prost"
