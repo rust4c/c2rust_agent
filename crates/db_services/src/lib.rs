@@ -735,6 +735,24 @@ impl DatabaseManager {
         Ok(true)
     }
 
+    /// 执行自定义SQL查询
+    pub async fn execute_raw_query(
+        &self,
+        query: &str,
+        params: Vec<serde_json::Value>,
+    ) -> Result<Vec<HashMap<String, serde_json::Value>>> {
+        let sqlite = self.sqlite.lock().await;
+        sqlite
+            .execute_raw_query(query, params)
+            .await
+            .map_err(|e| anyhow!("Database query failed: {}", e))
+    }
+
+    /// 获取SQLite服务的引用，用于高级操作
+    pub async fn get_sqlite_service(&self) -> tokio::sync::MutexGuard<'_, SqliteService> {
+        self.sqlite.lock().await
+    }
+
     /// 关闭数据库连接
     pub async fn close(&self) {
         info!("数据库管理器正在关闭");
