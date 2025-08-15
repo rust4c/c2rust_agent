@@ -4288,6 +4288,7 @@ dependencies = [
  "lsp_services",
  "regex",
  "serde",
+ "serde_json",
  "tempfile",
  "tokio",
  "tracing",
