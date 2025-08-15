@@ -935,9 +935,13 @@ version = "0.1.0"
 dependencies = [
  "anyhow",
  "chrono",
+ "db_services",
  "glob",
  "indicatif",
+ "llm_requester",
+ "lsp_services",
  "num_cpus",
+ "prompt_builder",
  "rayon",
  "regex",
  "serde",
@@ -1100,6 +1104,7 @@ version = "0.1.0"
 dependencies = [
  "anyhow",
  "async-trait",
+ "base64 0.21.7",
  "chrono",
  "config",
  "log",
