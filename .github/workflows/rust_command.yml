@@ -1,0 +1,22 @@
+name: Rust
+
+on:
+  push:
+    branches: [ "dev-rust-doghappy" ]
+  pull_request:
+    branches: [ "dev-rust-doghappy" ]
+
+env:
+  CARGO_TERM_COLOR: always
+
+jobs:
+  build:
+
+    runs-on: ubuntu-latest
+
+    steps:
+    - uses: actions/checkout@v4
+    - name: Build
+      run: cargo build -r commandline_tool --verbose
+    - name: Run tests
+      run: cargo test  -r commandline_tool --verbose
