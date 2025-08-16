@@ -6,4 +6,4 @@ edition = "2024"
 [dependencies]
 clap = { version = "4.2.1", features = ["derive"] }
 lsp_services = {path = "../lsp_services"}
-
+cproject_analy = {path = "../cproject_analy"}

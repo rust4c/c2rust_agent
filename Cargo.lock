@@ -725,6 +725,7 @@ name = "commandline_tool"
 version = "0.1.0"
 dependencies = [
  "clap",
+ "cproject_analy",
  "lsp_services",
 ]
 
