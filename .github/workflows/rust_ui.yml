@@ -2,19 +2,18 @@ name: Rust
 
 on:
   push:
-    branches: [ "dev-rust-beyandstars" ]
+    branches: ["dev-rust-beyandstars"]
   pull_request:
-    branches: [ "dev-rust-beyandstars" ]
+    branches: ["dev-rust-beyandstars"]
 
 env:
   CARGO_TERM_COLOR: always
 
 jobs:
   build:
-
     runs-on: ubuntu-latest
 
     steps:
-    - uses: actions/checkout@v4
-    - name: Build
-      run: cargo build -r ui_main --verbose
+      - uses: actions/checkout@v4
+      - name: Build
+        run: cargo build -p ui_main --verbose

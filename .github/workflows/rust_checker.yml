@@ -18,6 +18,6 @@ jobs:
     steps:
       - uses: actions/checkout@v4
       - name: Build ui
-        run: cargo build -r ui_main --verbose
+        run: cargo build -p ui_main --verbose
       - name: Build terminal
-        run: cargo build -r commandline_tool --verbose
+        run: cargo build -p commandline_tool --verbose
