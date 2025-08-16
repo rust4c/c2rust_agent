@@ -939,6 +939,7 @@ dependencies = [
  "glob",
  "indicatif",
  "llm_requester",
+ "log",
  "lsp_services",
  "num_cpus",
  "prompt_builder",
@@ -4785,6 +4786,15 @@ checksum = "e7295b7ce3bf4806b419dc3420745998b447178b7005e2011947b38fc5aa6791"
 dependencies = [
  "cfg-if",
  "ordered-multimap",
+]
+
+[[package]]
+name = "rust_checker"
+version = "0.1.0"
+dependencies = [
+ "log",
+ "tempfile",
+ "thiserror 2.0.14",
 ]
 
 [[package]]
