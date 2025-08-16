@@ -1082,6 +1082,7 @@ impl PromptBuilder {
 #[cfg(test)]
 mod tests {
     use super::*;
+    use std::sync::Arc;
     use tempfile::tempdir;
     use tokio::fs::File;
     use tokio::io::AsyncWriteExt;
