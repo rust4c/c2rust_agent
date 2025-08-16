@@ -4,6 +4,11 @@ version = "0.1.0"
 edition = "2024"
 
 [dependencies]
+db_services = { path = "../db_services" }
+llm_requester = { path = "../llm_requester" }
+lsp_services = { path = "../lsp_services" }
+prompt_builder = { path = "../prompt_builder" }
+
 anyhow = "1.0.99"
 chrono = "0.4.41"
 glob = "0.3.3"
@@ -14,3 +19,4 @@ regex = "1.11.1"
 serde = "1.0.219"
 serde_json = "1.0.142"
 walkdir = "2.5.0"
+log = "0.4.27"

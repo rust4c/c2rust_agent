@@ -103,7 +103,7 @@ impl DatabaseManager {
 
         let qdrant_config = qdrant_config {
             host: "localhost".to_string(),
-            port: Some(6333),
+            port: Some(6334),
             collection_name: "c2rust_vectors".to_string(),
             vector_size: 384,
         };
@@ -735,6 +735,24 @@ impl DatabaseManager {
         Ok(true)
     }
 
+    /// 执行自定义SQL查询
+    pub async fn execute_raw_query(
+        &self,
+        query: &str,
+        params: Vec<serde_json::Value>,
+    ) -> Result<Vec<HashMap<String, serde_json::Value>>> {
+        let sqlite = self.sqlite.lock().await;
+        sqlite
+            .execute_raw_query(query, params)
+            .await
+            .map_err(|e| anyhow!("Database query failed: {}", e))
+    }
+
+    /// 获取SQLite服务的引用，用于高级操作
+    pub async fn get_sqlite_service(&self) -> tokio::sync::MutexGuard<'_, SqliteService> {
+        self.sqlite.lock().await
+    }
+
     /// 关闭数据库连接
     pub async fn close(&self) {
         info!("数据库管理器正在关闭");
@@ -763,16 +781,16 @@ pub async fn create_database_manager(
                 let host = without_proto[..colon_pos].to_string();
                 let port = without_proto[colon_pos + 1..]
                     .parse::<u16>()
-                    .unwrap_or(6333);
+                    .unwrap_or(6334);
                 (host, Some(port))
             } else {
-                (without_proto.to_string(), Some(6333))
+                (without_proto.to_string(), Some(6334))
             }
         } else {
-            ("localhost".to_string(), Some(6333))
+            ("localhost".to_string(), Some(6334))
         }
     } else {
-        ("localhost".to_string(), Some(6333))
+        ("localhost".to_string(), Some(6334))
     };
 
     let qdrant_config = qdrant_config {

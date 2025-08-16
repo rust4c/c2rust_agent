@@ -597,6 +597,77 @@ impl SqliteService {
             created_at,
         })
     }
+
+    /// Execute raw SQL query with parameters
+    pub async fn execute_raw_query(
+        &self,
+        query: &str,
+        params: Vec<serde_json::Value>,
+    ) -> Result<Vec<HashMap<String, serde_json::Value>>> {
+        let conn = self.get_connection()?;
+        let mut stmt = conn.prepare(query)?;
+
+        // Convert JSON values to owned rusqlite parameters
+        let rusqlite_params: Vec<Box<dyn rusqlite::ToSql + Send + Sync>> = params
+            .into_iter()
+            .map(|v| match v {
+                serde_json::Value::String(s) => {
+                    Box::new(s) as Box<dyn rusqlite::ToSql + Send + Sync>
+                }
+                serde_json::Value::Number(n) if n.is_i64() => {
+                    Box::new(n.as_i64().unwrap()) as Box<dyn rusqlite::ToSql + Send + Sync>
+                }
+                serde_json::Value::Number(n) if n.is_f64() => {
+                    Box::new(n.as_f64().unwrap()) as Box<dyn rusqlite::ToSql + Send + Sync>
+                }
+                serde_json::Value::Bool(b) => Box::new(b) as Box<dyn rusqlite::ToSql + Send + Sync>,
+                serde_json::Value::Null => {
+                    Box::new(None::<String>) as Box<dyn rusqlite::ToSql + Send + Sync>
+                }
+                _ => Box::new(v.to_string()) as Box<dyn rusqlite::ToSql + Send + Sync>,
+            })
+            .collect();
+
+        let param_refs: Vec<&dyn rusqlite::ToSql> = rusqlite_params
+            .iter()
+            .map(|p| p.as_ref() as &dyn rusqlite::ToSql)
+            .collect();
+
+        let rows = stmt.query_map(param_refs.as_slice(), |row| {
+            let column_count = row.as_ref().column_count();
+            let mut result = HashMap::new();
+
+            for i in 0..column_count {
+                let column_name = row.as_ref().column_name(i).unwrap_or("unknown").to_string();
+                let value: serde_json::Value = match row.get_ref(i)? {
+                    rusqlite::types::ValueRef::Null => serde_json::Value::Null,
+                    rusqlite::types::ValueRef::Integer(i) => {
+                        serde_json::Value::Number(serde_json::Number::from(i))
+                    }
+                    rusqlite::types::ValueRef::Real(f) => serde_json::Value::Number(
+                        serde_json::Number::from_f64(f)
+                            .unwrap_or_else(|| serde_json::Number::from(0)),
+                    ),
+                    rusqlite::types::ValueRef::Text(s) => {
+                        serde_json::Value::String(String::from_utf8_lossy(s).to_string())
+                    }
+                    rusqlite::types::ValueRef::Blob(b) => {
+                        use base64::prelude::*;
+                        serde_json::Value::String(BASE64_STANDARD.encode(b))
+                    }
+                };
+                result.insert(column_name, value);
+            }
+            Ok(result)
+        })?;
+
+        let mut results = Vec::new();
+        for row in rows {
+            results.push(row?);
+        }
+
+        Ok(results)
+    }
 }
 
 // Make SqliteService thread-safe
