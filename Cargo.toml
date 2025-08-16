@@ -6,7 +6,7 @@ members = [
     "crates/file_scanner",
     "crates/llm_requester",
     "crates/lsp_services",
-    "crates/prompt_builder",
+    "crates/prompt_builder", "crates/rust_checker",
     "crates/ui_main",
 ]
 resolver = "3"
