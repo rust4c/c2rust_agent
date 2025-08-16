@@ -939,6 +939,7 @@ dependencies = [
  "glob",
  "indicatif",
  "llm_requester",
+ "log",
  "lsp_services",
  "num_cpus",
  "prompt_builder",
