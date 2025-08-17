@@ -25,6 +25,18 @@ pub enum Commands {
 
     },
 
+    /// C项目预处理
+    Preprocess{
+        //C 项目目录（必需）
+        #[arg(long, short, value_name = "DIR", help = "输入路径",required = true)]
+        input_dir: PathBuf,
+
+        /// 预处理后输出路径
+        #[arg(long, short, value_name = "DIR", help = "输入路径",required = true)]
+        output_dir: PathBuf,
+
+    },
+
     /// 将 C 项目转换为 Rust
     Translate {
         /// C 项目目录（必需）

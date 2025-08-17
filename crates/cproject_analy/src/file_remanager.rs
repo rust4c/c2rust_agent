@@ -3,6 +3,9 @@ use glob::Pattern;
 use indicatif::{MultiProgress, ProgressBar, ProgressStyle};
 use rayon::prelude::*;
 use serde::{Deserialize, Serialize};
+use libc::{statvfs, c_char};
+use std::ffi::CString;
+use std::mem::MaybeUninit;
 use std::{
     collections::{HashMap, HashSet},
     ffi::OsStr,
@@ -183,24 +186,29 @@ impl CProjectPreprocessor {
 
     // 检查磁盘空间
     fn check_disk_space(&self, path: &Path) -> Result<()> {
-        #[cfg(target_os = "linux")]
-        {
-            use std::os::linux::fs::MetadataExt;
-            let meta = fs::metadata(path)?;
-            let free_space = meta.st_blocks() * meta.st_blksize();
-            if free_space < self.config.min_disk_space {
-                return Err(anyhow!(
-                    "Insufficient disk space: available {}, required {}",
-                    format_size(free_space),
-                    format_size(self.config.min_disk_space)
-                ));
-            }
+    #[cfg(target_family = "unix")]
+    {
+        let c_path = CString::new(path.to_str().unwrap()).unwrap();
+        let mut s: MaybeUninit<libc::statvfs> = MaybeUninit::uninit();
+        let ret = unsafe { statvfs(c_path.as_ptr() as *const c_char, s.as_mut_ptr()) };
+        if ret != 0 {
+            return Err(anyhow!("statvfs failed"));
         }
-        #[cfg(not(target_os = "linux"))]
-        {
-            println!("Disk space check skipped (only supported on Linux)");
+        let s = unsafe { s.assume_init() };
+        let free_space = s.f_bavail as u64 * s.f_frsize as u64;
+        if free_space < self.config.min_disk_space {
+            return Err(anyhow!(
+                "Insufficient disk space: available {}, required {}",
+                format_size(free_space),
+                format_size(self.config.min_disk_space)
+            ));
         }
-        Ok(())
+    }
+    #[cfg(not(target_family = "unix"))]
+    {
+        println!("Disk space check skipped (only supported on Unix)");
+    }
+    Ok(())
     }
 
     // 创建缓存目录结构
