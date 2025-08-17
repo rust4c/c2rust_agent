@@ -939,6 +939,7 @@ dependencies = [
  "db_services",
  "glob",
  "indicatif",
+ "libc",
  "llm_requester",
  "log",
  "lsp_services",
