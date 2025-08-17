@@ -951,6 +951,7 @@ dependencies = [
  "serde_json",
  "sysinfo",
  "tempfile",
+ "tokio",
  "walkdir",
 ]
 
