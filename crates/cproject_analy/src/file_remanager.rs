@@ -1,15 +1,17 @@
 use anyhow::{Context, Result};
 use glob::Pattern;
-use indicatif::{MultiProgress, ProgressBar, ProgressStyle};
+use indicatif::{MultiProgress, ProgressBar, ProgressIterator, ProgressStyle};
 use rayon::prelude::*;
 use serde::{Deserialize, Serialize};
+use serde_json;
 use std::{
-    collections::HashSet,
+    collections::{HashMap, HashSet},
+    ffi::OsStr,
     fs::{self, File},
     io::{BufReader, BufWriter, Read, Write},
     path::{Path, PathBuf},
     sync::{Arc, Mutex},
-    time::Instant,
+    time::{Duration, Instant},
 };
 
 /// 文件分类类型
@@ -21,6 +23,15 @@ pub enum FileCategory {
     Individual(PathBuf),
     /// 不相关文件（非源码文件）
     Unrelated(PathBuf),
+}
+
+/// 文件映射信息
+#[derive(Debug, Clone, Serialize)]
+pub struct FileMapping {
+    pub source_path: PathBuf,
+    pub target_path: PathBuf,
+    pub file_type: String,
+    pub category: String,
 }
 
 /// 预处理配置
@@ -95,12 +106,14 @@ pub struct ProcessingStats {
     pub processing_time: f64,
     pub total_size: u64,
     pub errors: Vec<String>,
+    pub mapping_count: usize,
 }
 
 /// 文件预处理器
 pub struct CProjectPreprocessor {
     config: PreprocessConfig,
     stats: ProcessingStats,
+    file_mappings: Vec<FileMapping>,
 }
 
 impl CProjectPreprocessor {
@@ -113,6 +126,7 @@ impl CProjectPreprocessor {
         CProjectPreprocessor {
             config,
             stats: ProcessingStats::default(),
+            file_mappings: Vec::new(),
         }
     }
 
@@ -125,7 +139,13 @@ impl CProjectPreprocessor {
         let start_time = Instant::now();
         let m = MultiProgress::new();
         let main_pb = m.add(ProgressBar::new_spinner());
-        main_pb.set_message("开始预处理项目文件...");
+        main_pb.set_style(
+            ProgressStyle::default_spinner()
+                .template("{spinner:.green} {msg}")
+                .unwrap(),
+        );
+        main_pb.enable_steady_tick(Duration::from_millis(100));
+        main_pb.set_message("🚀 开始预处理项目文件...");
 
         // 验证目录
         if !source_dir.exists() || !source_dir.is_dir() {
@@ -133,21 +153,32 @@ impl CProjectPreprocessor {
         }
 
         // 创建输出目录结构
+        main_pb.set_message("📁 创建输出目录结构...");
         self.create_output_structure(output_dir)?;
 
         // 扫描并分类文件
+        main_pb.set_message("🔍 扫描项目文件...");
         let all_files = self.scan_files(source_dir, &m)?;
+
+        main_pb.set_message("📋 分类文件中...");
         let categorized_files = self.categorize_files(&all_files, &m)?;
 
+        // 生成映射文件
+        main_pb.set_message("🗺️  生成文件映射...");
+        self.generate_mapping(&categorized_files, source_dir, output_dir)?;
+        self.save_mapping(output_dir)?;
+
         // 处理分类后的文件
+        main_pb.set_message("📦 处理分类文件...");
         self.process_categorized_files(&categorized_files, output_dir, &m)?;
 
         // 生成报告
+        main_pb.set_message("📊 生成处理报告...");
         self.generate_report(output_dir)?;
 
         // 记录处理时间
         self.stats.processing_time = start_time.elapsed().as_secs_f64();
-        main_pb.finish_with_message("预处理完成!");
+        main_pb.finish_with_message("✅ 预处理完成!");
 
         Ok(std::mem::take(&mut self.stats))
     }
@@ -169,7 +200,13 @@ impl CProjectPreprocessor {
     /// 扫描文件
     fn scan_files(&mut self, source_dir: &Path, m: &MultiProgress) -> Result<Vec<PathBuf>> {
         let pb = m.add(ProgressBar::new_spinner());
-        pb.set_message("扫描文件中...");
+        pb.set_style(
+            ProgressStyle::default_spinner()
+                .template("{spinner:.cyan} {msg}")
+                .unwrap(),
+        );
+        pb.enable_steady_tick(Duration::from_millis(80));
+        pb.set_message("🔍 扫描文件中...");
 
         let mut files = Vec::new();
         let exclude_patterns: Vec<_> = self
@@ -179,37 +216,48 @@ impl CProjectPreprocessor {
             .map(|p| Pattern::new(p).unwrap())
             .collect();
 
-        for entry in walkdir::WalkDir::new(source_dir)
+        let entries: Vec<_> = walkdir::WalkDir::new(source_dir)
             .into_iter()
             .filter_map(|e| e.ok())
-        {
-            if entry.file_type().is_file() {
-                let path = entry.path();
-                let relative_path = path.strip_prefix(source_dir).unwrap_or(path);
+            .filter(|e| e.file_type().is_file())
+            .collect();
 
-                // 检查排除模式
-                if exclude_patterns
-                    .iter()
-                    .any(|p| p.matches_path(relative_path))
-                {
-                    self.stats.skipped_files += 1;
-                    continue;
-                }
+        let scan_pb = m.add(ProgressBar::new(entries.len() as u64));
+        scan_pb.set_style(
+            ProgressStyle::default_bar()
+                .template(
+                    "{spinner:.green} [{elapsed_precise}] [{bar:30.cyan/blue}] {pos}/{len} {msg}",
+                )
+                .unwrap(),
+        );
+        scan_pb.set_message("扫描中");
 
-                if let Ok(metadata) = fs::metadata(path) {
-                    files.push(path.to_path_buf());
-                    self.stats.total_size += metadata.len();
-                } else {
-                    self.stats
-                        .errors
-                        .push(format!("无法访问文件: {}", path.display()));
-                    self.stats.skipped_files += 1;
-                }
+        for entry in entries.iter().progress_with(scan_pb.clone()) {
+            let path = entry.path();
+            let relative_path = path.strip_prefix(source_dir).unwrap_or(path);
+
+            // 检查排除模式
+            if exclude_patterns
+                .iter()
+                .any(|p| p.matches_path(relative_path))
+            {
+                self.stats.skipped_files += 1;
+                continue;
+            }
+
+            if let Ok(metadata) = fs::metadata(path) {
+                files.push(path.to_path_buf());
+                self.stats.total_size += metadata.len();
+            } else {
+                self.stats
+                    .errors
+                    .push(format!("无法访问文件: {}", path.display()));
+                self.stats.skipped_files += 1;
             }
         }
 
         self.stats.total_files = files.len();
-        pb.finish_with_message(format!("扫描完成，发现 {} 个文件", files.len()));
+        pb.finish_with_message(format!("✅ 扫描完成，发现 {} 个文件", files.len()));
         Ok(files)
     }
 
@@ -219,8 +267,13 @@ impl CProjectPreprocessor {
         files: &[PathBuf],
         m: &MultiProgress,
     ) -> Result<Vec<FileCategory>> {
-        let pb = m.add(ProgressBar::new_spinner());
-        pb.set_message("文件分类中...");
+        let pb = m.add(ProgressBar::new(files.len() as u64));
+        pb.set_style(
+            ProgressStyle::default_bar()
+                .template("{spinner:.yellow} [{elapsed_precise}] [{bar:30.yellow/blue}] {pos}/{len} 📋 {msg}")
+                .unwrap()
+        );
+        pb.set_message("文件分类中");
 
         let mut categorized = Vec::new();
         let mut processed_files = HashSet::new();
@@ -229,8 +282,14 @@ impl CProjectPreprocessor {
         let source_files: Vec<_> = files.iter().filter(|f| self.is_source_file(f)).collect();
         let header_files: Vec<_> = files.iter().filter(|f| self.is_header_file(f)).collect();
 
+        pb.set_message(format!(
+            "找到 {} 个源文件，{} 个头文件",
+            source_files.len(),
+            header_files.len()
+        ));
+
         // 寻找配对文件
-        for source_file in &source_files {
+        for source_file in source_files.iter().progress_with(pb.clone()) {
             if processed_files.contains(*source_file) {
                 continue;
             }
@@ -247,7 +306,7 @@ impl CProjectPreprocessor {
         }
 
         // 处理单独的源文件和头文件
-        for file in files {
+        for file in files.iter().progress_with(pb.clone()) {
             if processed_files.contains(file) {
                 continue;
             }
@@ -260,14 +319,14 @@ impl CProjectPreprocessor {
         }
 
         // 处理不相关文件
-        for file in files {
+        for file in files.iter().progress_with(pb.clone()) {
             if !processed_files.contains(file) {
                 categorized.push(FileCategory::Unrelated(file.clone()));
                 self.stats.unrelated_files += 1;
             }
         }
 
-        pb.finish_with_message("文件分类完成");
+        pb.finish_with_message("✅ 文件分类完成");
         Ok(categorized)
     }
 
@@ -281,10 +340,10 @@ impl CProjectPreprocessor {
         let pb = m.add(ProgressBar::new(categorized_files.len() as u64));
         pb.set_style(
             ProgressStyle::default_bar()
-                .template("{spinner:.green} [{bar:40.cyan/blue}] {pos}/{len} ({eta}) {msg}")
+                .template("{spinner:.green} [{elapsed_precise}] [{bar:30.cyan/blue}] {pos}/{len} 📦 {msg}")
                 .unwrap(),
         );
-        pb.set_message("处理文件中...");
+        pb.set_message("处理文件中");
 
         let errors = Arc::new(Mutex::new(Vec::new()));
 
@@ -329,7 +388,7 @@ impl CProjectPreprocessor {
 
         // 收集错误
         self.stats.errors.extend(errors.lock().unwrap().drain(..));
-        pb.finish_with_message("文件处理完成");
+        pb.finish_with_message("✅ 文件处理完成");
         Ok(())
     }
 
@@ -465,6 +524,97 @@ impl CProjectPreprocessor {
         }
     }
 
+    /// 生成文件映射
+    fn generate_mapping(
+        &mut self,
+        categorized_files: &[FileCategory],
+        source_dir: &Path,
+        output_dir: &Path,
+    ) -> Result<()> {
+        self.file_mappings.clear();
+
+        for category in categorized_files {
+            match category {
+                FileCategory::Paired { source, header } => {
+                    let pair_name = self.get_pair_name(source);
+                    let target_dir = output_dir.join("paired_files").join(&pair_name);
+
+                    let source_mapping = FileMapping {
+                        source_path: source
+                            .strip_prefix(source_dir)
+                            .unwrap_or(source)
+                            .to_path_buf(),
+                        target_path: target_dir.join(source.file_name().unwrap()),
+                        file_type: "source".to_string(),
+                        category: "paired".to_string(),
+                    };
+
+                    let header_mapping = FileMapping {
+                        source_path: header
+                            .strip_prefix(source_dir)
+                            .unwrap_or(header)
+                            .to_path_buf(),
+                        target_path: target_dir.join(header.file_name().unwrap()),
+                        file_type: "header".to_string(),
+                        category: "paired".to_string(),
+                    };
+
+                    self.file_mappings.push(source_mapping);
+                    self.file_mappings.push(header_mapping);
+                }
+                FileCategory::Individual(file) => {
+                    let file_name = self.get_file_name(file);
+                    let target_dir = output_dir.join("individual_files").join(&file_name);
+
+                    let file_type = if self.is_source_file(file) {
+                        "source"
+                    } else if self.is_header_file(file) {
+                        "header"
+                    } else {
+                        "unknown"
+                    };
+
+                    let mapping = FileMapping {
+                        source_path: file.strip_prefix(source_dir).unwrap_or(file).to_path_buf(),
+                        target_path: target_dir.join(file.file_name().unwrap()),
+                        file_type: file_type.to_string(),
+                        category: "individual".to_string(),
+                    };
+
+                    self.file_mappings.push(mapping);
+                }
+                FileCategory::Unrelated(file) => {
+                    let target_dir = output_dir.join("unrelated_files");
+
+                    let mapping = FileMapping {
+                        source_path: file.strip_prefix(source_dir).unwrap_or(file).to_path_buf(),
+                        target_path: target_dir.join(file.file_name().unwrap()),
+                        file_type: "unrelated".to_string(),
+                        category: "unrelated".to_string(),
+                    };
+
+                    self.file_mappings.push(mapping);
+                }
+            }
+        }
+
+        self.stats.mapping_count = self.file_mappings.len();
+        Ok(())
+    }
+
+    /// 保存映射文件
+    fn save_mapping(&self, output_dir: &Path) -> Result<()> {
+        let mapping_path = output_dir.join("mapping.json");
+        let mapping_json = serde_json::json!({
+            "timestamp": chrono::Utc::now().to_rfc3339(),
+            "total_mappings": self.file_mappings.len(),
+            "mappings": &self.file_mappings
+        });
+
+        fs::write(&mapping_path, serde_json::to_string_pretty(&mapping_json)?)?;
+        Ok(())
+    }
+
     /// 生成处理报告
     fn generate_report(&self, output_dir: &Path) -> Result<()> {
         let report_path = output_dir.join("processing_report.json");
@@ -488,6 +638,7 @@ impl CProjectPreprocessor {
         text_report.push_str(&format!("单独文件数: {}\n", self.stats.individual_files));
         text_report.push_str(&format!("不相关文件数: {}\n", self.stats.unrelated_files));
         text_report.push_str(&format!("跳过文件数: {}\n", self.stats.skipped_files));
+        text_report.push_str(&format!("文件映射数: {}\n", self.stats.mapping_count));
         text_report.push_str(&format!("处理时间: {:.2} 秒\n", self.stats.processing_time));
         text_report.push_str(&format!(
             "总大小: {}\n\n",
@@ -528,7 +679,6 @@ fn format_size(size: u64) -> String {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use tempfile::TempDir;
 
     #[test]
     fn test_file_categorization() {
