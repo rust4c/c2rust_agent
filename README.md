@@ -1,4 +1,5 @@
 # C2Rust Agent
+[English](README.md) | [中文](README-CN.md)
 
 An intelligent LLM-powered tool for converting C projects to idiomatic Rust code.
 
@@ -70,7 +71,7 @@ C2Rust Agent is an advanced code translation system that leverages Large Languag
    ```bash
    # Using Docker
    docker run -p 6333:6333 qdrant/qdrant
-   
+
    # Or install locally
    # See: https://qdrant.tech/documentation/guides/installation/
    ```
@@ -139,18 +140,18 @@ use main_processor::{MainProcessor, ProjectInfo, ProjectType};
 async fn main() -> Result<()> {
     // Initialize processor
     let processor = MainProcessor::new("./cache").await?;
-    
+
     // Create project info
     let project = ProjectInfo {
         name: "my_c_project".to_string(),
         path: "/path/to/c/project".into(),
         project_type: ProjectType::PairedFiles,
     };
-    
+
     // Run translation
     let stats = processor.run_translation_workflow().await?;
     println!("Translation completed: {:?}", stats);
-    
+
     Ok(())
 }
 ```

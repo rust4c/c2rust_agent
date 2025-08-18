@@ -1,4 +1,5 @@
 # C2Rust Agent
+[English](README.md) | [中文](README-CN.md)
 
 基于大语言模型的智能C项目到Rust项目转换工具
 
@@ -70,7 +71,7 @@ C2Rust Agent 是一个先进的代码翻译系统，利用大语言模型（LLM�
    ```bash
    # 使用Docker
    docker run -p 6333:6333 qdrant/qdrant
-   
+
    # 或本地安装
    # 参见: https://qdrant.tech/documentation/guides/installation/
    ```
@@ -139,18 +140,18 @@ use main_processor::{MainProcessor, ProjectInfo, ProjectType};
 async fn main() -> Result<()> {
     // 初始化处理器
     let processor = MainProcessor::new("./cache").await?;
-    
+
     // 创建项目信息
     let project = ProjectInfo {
         name: "my_c_project".to_string(),
         path: "/path/to/c/project".into(),
         project_type: ProjectType::PairedFiles,
     };
-    
+
     // 运行翻译
     let stats = processor.run_translation_workflow().await?;
     println!("翻译完成: {:?}", stats);
-    
+
     Ok(())
 }
 ```
