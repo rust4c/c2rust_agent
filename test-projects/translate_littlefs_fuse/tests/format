@@ -1,0 +1,6 @@
+#!/bin/bash
+
+set -e
+set -x
+
+$1 --format /dev/loop0
