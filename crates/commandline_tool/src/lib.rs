@@ -16,56 +16,62 @@ pub struct Cli {
 
 #[derive(Subcommand)]
 pub enum Commands {
-    /// 分析 C 项目
+    /// Analysis C Language Project
     Analyze {
-        /// C 项目目录（必需）
-        #[arg(long, short, value_name = "DIR", help = "输入路径",required = true)]
+        /// C Project Catalog (required)
+        #[arg(long, short, value_name = "DIR", help = "enter path",required = true)]
         input_dir: PathBuf,
 
 
     },
 
-    /// C项目预处理
+    /// C Project pre-processing
     Preprocess{
-        //C 项目目录（必需）
-        #[arg(long, short, value_name = "DIR", help = "输入路径",required = true)]
+        /// C Project Catalog (required)
+        #[arg(long, short, value_name = "DIR", help = "enter path",required = true)]
         input_dir: PathBuf,
 
-        /// 预处理后输出路径
-        #[arg(long, short, value_name = "DIR", help = "输入路径",required = true)]
-        output_dir: PathBuf,
+        /// Pre processed output path
+        #[arg(
+            long, 
+            short, 
+            value_name = "DIR", 
+            help = "Output path (default: input_dir's parent/(input_dir_name + \"cache\")",
+            required = false
+        )]
+        output_dir: Option<PathBuf>,
 
     },
 
-    /// 将 C 项目转换为 Rust
+    /// Converting Project C to RUST
     Translate {
-        /// C 项目目录（必需）
+        /// C Project Catalog (required)
         #[arg(long, value_name = "DIR", required = true)]
         input_dir: PathBuf,
 
-        /// 输出 Rust 项目目录（可选）
-        #[arg(long, value_name = "DIR")]
+        /// Export the Rust project catalog (optional)
+        #[arg(long, value_name = "OIR")]
         output_dir: Option<PathBuf>,
     },
 
-    /// 分析调用关系
+    /// Parse Call Relationships
     AnalyzeRelations {
-        /// C 项目目录（必需）
+        /// C Project Catalog (required)
         #[arg(long, value_name = "DIR", required = true)]
         input_dir: PathBuf,
 
-        /// 项目名称（可选）
+        /// Project name (optional)
         #[arg(long)]
         project_name: Option<String>,
 
-        /// 数据库文件路径
+        /// db Database File Path
         #[arg(long, default_value = "relation_analysis.db")]
         db: String,
     },
 
-    /// 查询调用关系数据库
+    /// Query and call relational database
     RelationQuery {
-        /// 数据库文件路径
+        /// Database file path
         #[arg(long, default_value = "relation_analysis.db")]
         db: String,
 

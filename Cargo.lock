@@ -1787,6 +1787,9 @@ dependencies = [
 [[package]]
 name = "env_checker"
 version = "0.1.0"
+dependencies = [
+ "cproject_analy",
+]
 
 [[package]]
 name = "env_filter"
