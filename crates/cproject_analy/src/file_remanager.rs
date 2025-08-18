@@ -5,8 +5,7 @@ use rayon::prelude::*;
 use serde::{Deserialize, Serialize};
 use serde_json;
 use std::{
-    collections::{HashMap, HashSet},
-    ffi::OsStr,
+    collections::HashSet,
     fs::{self, File},
     io::{BufReader, BufWriter, Read, Write},
     path::{Path, PathBuf},
