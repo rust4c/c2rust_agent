@@ -8,7 +8,7 @@ use anyhow::Result;
 use db_services::DatabaseManager;
 use log::{debug, warn};
 use prompt_builder::PromptBuilder;
-use std::path::{Path, PathBuf};
+use std::path::PathBuf;
 
 /// Build context-aware prompt using database information
 pub async fn build_context_aware_prompt(
@@ -381,7 +381,7 @@ mod tests {
     async fn test_build_basic_prompt() {
         let project = ProjectInfo {
             name: "test_project".to_string(),
-            path: "/tmp/test".into(),
+            path: PathBuf::from("/tmp/test"),
             project_type: ProjectType::SingleFile,
         };
 

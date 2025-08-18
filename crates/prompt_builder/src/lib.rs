@@ -1115,7 +1115,7 @@ mod tests {
     #[tokio::test]
     async fn test_prompt_builder_creation() {
         let db_manager = create_test_db_manager().await;
-        let builder = PromptBuilder::new(db_manager, "test_project".to_string(), None).await;
+        let builder = PromptBuilder::new(&db_manager, "test_project".to_string(), None).await;
 
         assert!(builder.is_ok());
         let builder = builder.unwrap();
@@ -1132,7 +1132,7 @@ mod tests {
 
         let db_manager = create_test_db_manager().await;
         let builder = PromptBuilder::new(
-            db_manager,
+            &db_manager,
             "test_project".to_string(),
             Some(temp_dir.path().to_string_lossy().to_string()),
         )
@@ -1156,7 +1156,7 @@ mod tests {
 
         let db_manager = create_test_db_manager().await;
         let builder = PromptBuilder::new(
-            db_manager,
+            &db_manager,
             "test_project".to_string(),
             Some(temp_dir.path().to_string_lossy().to_string()),
         )
@@ -1182,7 +1182,7 @@ mod tests {
     #[tokio::test]
     async fn test_build_file_context_prompt() {
         let db_manager = create_test_db_manager().await;
-        let builder = PromptBuilder::new(db_manager, "test_project".to_string(), None)
+        let builder = PromptBuilder::new(&db_manager, "test_project".to_string(), None)
             .await
             .expect("Failed to create builder");
 
@@ -1198,7 +1198,7 @@ mod tests {
     #[tokio::test]
     async fn test_build_function_context_prompt() {
         let db_manager = create_test_db_manager().await;
-        let builder = PromptBuilder::new(db_manager, "test_project".to_string(), None)
+        let builder = PromptBuilder::new(&db_manager, "test_project".to_string(), None)
             .await
             .expect("Failed to create builder");
 
@@ -1216,7 +1216,7 @@ mod tests {
     #[tokio::test]
     async fn test_error_context() {
         let db_manager = create_test_db_manager().await;
-        let mut builder = PromptBuilder::new(db_manager, "test_project".to_string(), None)
+        let mut builder = PromptBuilder::new(&db_manager, "test_project".to_string(), None)
             .await
             .expect("Failed to create builder");
 
@@ -1237,7 +1237,7 @@ mod tests {
     #[tokio::test]
     async fn test_format_methods() {
         let db_manager = create_test_db_manager().await;
-        let builder = PromptBuilder::new(db_manager, "test_project".to_string(), None)
+        let builder = PromptBuilder::new(&db_manager, "test_project".to_string(), None)
             .await
             .expect("Failed to create builder");
 

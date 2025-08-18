@@ -121,7 +121,7 @@ impl MainProcessor {
     }
 
     /// Discover all projects in the cache directory
-    async fn discover_projects(&self) -> Result<Vec<ProjectInfo>> {
+    pub async fn discover_projects(&self) -> Result<Vec<ProjectInfo>> {
         let mut projects = Vec::new();
 
         // Check for mapping.json to understand the cache structure
