@@ -31,11 +31,11 @@ async fn main() -> Result<()> {
     info!("Starting C to Rust translation workflow");
     info!("Cache directory: {}", cache_dir.display());
 
-    // Create main processor
-    let processor = MainProcessor::new(cache_dir);
+    // Create main processor in test mode (no LLM required)
+    let processor = MainProcessor::new_test_mode(cache_dir);
 
-    // Option 1: Run without database (basic translation)
-    println!("Running translation workflow without database context...");
+    // Option 1: Run without database (basic translation) in test mode
+    println!("Running translation workflow in test mode (no LLM required)...");
     let stats = processor.run_translation_workflow().await?;
 
     // Print final statistics
@@ -59,8 +59,8 @@ async fn example_with_database(cache_dir: PathBuf) -> Result<()> {
     // Create database manager (requires proper configuration)
     let db_manager = DatabaseManager::new_default().await?;
 
-    // Create processor
-    let processor = MainProcessor::new(cache_dir);
+    // Create processor in test mode
+    let processor = MainProcessor::new_test_mode(cache_dir);
 
     // Run translation workflow with enhanced context
     let stats = processor
@@ -80,7 +80,7 @@ async fn example_targeted_processing(cache_dir: PathBuf) -> Result<()> {
     use main_processor::{ProjectInfo, ProjectType};
 
     // You can also process specific projects manually
-    let processor = MainProcessor::new(cache_dir);
+    let processor = MainProcessor::new_test_mode(cache_dir);
 
     // Create a test project
     let test_project = ProjectInfo {
@@ -109,7 +109,7 @@ mod tests {
         let cache_dir = temp_dir.path().to_path_buf();
 
         // Create minimal cache structure
-        let single_files = cache_dir.join("单独文件");
+        let single_files = cache_dir.join("individual_files");
         fs::create_dir_all(&single_files).unwrap();
         fs::create_dir_all(single_files.join("test_project")).unwrap();
 
@@ -127,8 +127,8 @@ int main() {
 "#;
         fs::write(single_files.join("test_project/main.c"), test_c_content).unwrap();
 
-        // Test the processor
-        let processor = MainProcessor::new(cache_dir);
+        // Test the processor in test mode
+        let processor = MainProcessor::new_test_mode(cache_dir);
 
         // This should discover the test project
         let projects = processor.discover_projects().await.unwrap();

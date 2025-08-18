@@ -48,6 +48,7 @@ pub struct MainProcessor {
     cache_dir: PathBuf,
     multi_progress: MultiProgress,
     semaphore: Arc<Semaphore>,
+    test_mode: bool,
 }
 
 impl MainProcessor {
@@ -56,6 +57,16 @@ impl MainProcessor {
             cache_dir,
             multi_progress: MultiProgress::new(),
             semaphore: Arc::new(Semaphore::new(CONCURRENT_LIMIT)),
+            test_mode: false,
+        }
+    }
+
+    pub fn new_test_mode(cache_dir: PathBuf) -> Self {
+        Self {
+            cache_dir,
+            multi_progress: MultiProgress::new(),
+            semaphore: Arc::new(Semaphore::new(CONCURRENT_LIMIT)),
+            test_mode: true,
         }
     }
 
@@ -134,9 +145,9 @@ impl MainProcessor {
         let _mapping: serde_json::Value = serde_json::from_str(&mapping_content)?;
 
         // Scan for different project types
-        let single_files_dir = self.cache_dir.join("单独文件");
-        let paired_files_dir = self.cache_dir.join("配对文件");
-        let unrelated_files_dir = self.cache_dir.join("不相关文件");
+        let single_files_dir = self.cache_dir.join("individual_files");
+        let paired_files_dir = self.cache_dir.join("paired_files");
+        let unrelated_files_dir = self.cache_dir.join("unrelated_files");
 
         // Process single files
         if single_files_dir.exists() {
@@ -225,7 +236,7 @@ impl MainProcessor {
             spinner.enable_steady_tick(Duration::from_millis(100));
 
             // Process without database context due to design limitations
-            let result = process_single_project(project.clone(), None).await;
+            let result = process_single_project(project.clone(), None, self.test_mode).await;
 
             spinner.finish_and_clear();
             main_progress.inc(1);
@@ -278,6 +289,7 @@ impl MainProcessor {
 async fn process_single_project(
     project: ProjectInfo,
     db_manager: Option<&db_services::DatabaseManager>,
+    test_mode: bool,
 ) -> Result<usize> {
     debug!("Starting translation for project: {}", project.name);
 
@@ -301,10 +313,19 @@ async fn process_single_project(
 
         // Step 2a: Use LLM to translate with retry context
         let translation_result = if attempts == 1 {
-            perform_llm_translation(&project, db_manager).await
+            if test_mode {
+                perform_llm_translation_test_mode(&project).await
+            } else {
+                perform_llm_translation(&project, db_manager).await
+            }
         } else {
-            perform_llm_translation_with_retry(&project, db_manager, last_error_context.as_deref())
-                .await
+            perform_llm_translation_with_retry(
+                &project,
+                db_manager,
+                last_error_context.as_deref(),
+                test_mode,
+            )
+            .await
         };
 
         match translation_result {
@@ -385,6 +406,8 @@ name = "{}"
 version = "0.1.0"
 edition = "2021"
 
+[workspace]
+
 [dependencies]
 libc = "0.2"
 "#,
@@ -422,7 +445,23 @@ async fn perform_llm_translation(
     project: &ProjectInfo,
     db_manager: Option<&db_services::DatabaseManager>,
 ) -> Result<String> {
-    perform_llm_translation_with_retry(project, db_manager, None).await
+    perform_llm_translation_with_retry(project, db_manager, None, false).await
+}
+
+async fn perform_llm_translation_test_mode(project: &ProjectInfo) -> Result<String> {
+    // Mock translation for test mode
+    let mock_rust_code = format!(
+        r#"// Mock translation for project: {}
+// This is a test mode translation - no actual LLM was used
+
+fn main() {{
+    println!("Hello from {}!");
+    // TODO: Replace with actual translated code
+}}
+"#,
+        project.name, project.name
+    );
+    Ok(mock_rust_code)
 }
 
 /// Perform LLM-based translation with retry context
@@ -430,7 +469,11 @@ async fn perform_llm_translation_with_retry(
     project: &ProjectInfo,
     db_manager: Option<&db_services::DatabaseManager>,
     retry_context: Option<&str>,
+    test_mode: bool,
 ) -> Result<String> {
+    if test_mode {
+        return perform_llm_translation_test_mode(project).await;
+    }
     debug!("Starting LLM translation for project: {}", project.name);
 
     // Build translation prompt
@@ -608,7 +651,7 @@ mod tests {
         let cache_dir = temp_dir.path().to_path_buf();
 
         // Create test structure
-        let single_files_dir = cache_dir.join("单独文件");
+        let single_files_dir = cache_dir.join("individual_files");
         fs::create_dir_all(&single_files_dir).await.unwrap();
         fs::create_dir_all(single_files_dir.join("test_project"))
             .await

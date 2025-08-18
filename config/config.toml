@@ -1,16 +1,22 @@
 # LLMConfig
 # LLM Model config options
-[provider]
 provider = "ollama"
+
 [ollama_config]
 model = "deepseek-r1:7b"
 base_url = "http://localhost:11434"
-api_key = "your_api_key_here"
+api_key = ""
+
 [openai_config]
 model = "gpt-3.5-turbo"
 api_key = "your_api_key_here"
+
 [xai_config]
 model = "xai_model_name"
+api_key = "your_api_key_here"
+
+[deepseek_config]
+model = "deepseek-chat"
 api_key = "your_api_key_here"
 
 # DBConfig
@@ -20,5 +26,6 @@ host = "localhost"
 port = 6333
 collection_name = "default"
 vector_size = 1536
+
 [sqlite]
 path = "data.db"
