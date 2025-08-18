@@ -1,0 +1,11 @@
+[package]
+name = "main_processor"
+version = "0.1.0"
+edition = "2024"
+
+[dependencies]
+llm_requester = { path = "../llm_requester" }
+prompt_builder = { path = "../prompt_builder" }
+rust_checker = { path = "../rust_checker" }
+
+indicatif = "0.18.0"

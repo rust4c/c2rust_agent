@@ -1787,6 +1787,9 @@ dependencies = [
 [[package]]
 name = "env_checker"
 version = "0.1.0"
+dependencies = [
+ "cproject_analy",
+]
 
 [[package]]
 name = "env_filter"
@@ -3248,6 +3251,16 @@ name = "mac"
 version = "0.1.1"
 source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "c41e0c4fef86961ac6d6f8a82609f55f31b05e4fce149ac5710e439df7619ba4"
+
+[[package]]
+name = "main_processor"
+version = "0.1.0"
+dependencies = [
+ "indicatif",
+ "llm_requester",
+ "prompt_builder",
+ "rust_checker",
+]
 
 [[package]]
 name = "malloc_buf"
