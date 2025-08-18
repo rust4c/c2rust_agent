@@ -1,11 +1,21 @@
 [package]
 name = "main_processor"
 version = "0.1.0"
-edition = "2024"
+edition = "2021"
 
 [dependencies]
 llm_requester = { path = "../llm_requester" }
 prompt_builder = { path = "../prompt_builder" }
 rust_checker = { path = "../rust_checker" }
+db_services = { path = "../db_services" }
 
+anyhow = "1.0"
 indicatif = "0.18.0"
+log = "0.4"
+serde = { version = "1.0", features = ["derive"] }
+serde_json = "1.0"
+tokio = { version = "1.0", features = ["full"] }
+env_logger = "0.11.8"
+
+[dev-dependencies]
+tempfile = "3.0"

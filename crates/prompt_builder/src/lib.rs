@@ -56,18 +56,18 @@ pub struct InterfaceContext {
 }
 
 /// Prompt builder for generating context-aware prompts based on relational data
-pub struct PromptBuilder {
-    db_manager: DatabaseManager,
+pub struct PromptBuilder<'a> {
+    db_manager: &'a DatabaseManager,
     project_name: String,
     file_mappings: HashMap<String, String>, // cached_path -> original_path
     reverse_mappings: HashMap<String, String>, // original_path -> cached_path
     error_context: Vec<String>,
 }
 
-impl PromptBuilder {
+impl<'a> PromptBuilder<'a> {
     /// Create a new PromptBuilder instance
     pub async fn new(
-        db_manager: DatabaseManager,
+        db_manager: &'a DatabaseManager,
         project_name: String,
         indices_dir: Option<String>,
     ) -> Result<Self> {
@@ -1058,7 +1058,7 @@ impl PromptBuilder {
 }
 
 // Implement fallback methods for error cases
-impl PromptBuilder {
+impl<'a> PromptBuilder<'a> {
     fn get_fallback_prompt(&self, file_path: &str) -> String {
         let file_name = Path::new(file_path)
             .file_name()
