@@ -6231,7 +6231,13 @@ dependencies = [
 name = "ui_main"
 version = "0.1.0"
 dependencies = [
+ "anyhow",
+ "commandline_tool",
  "dioxus",
+ "llm_requester",
+ "serde",
+ "serde_json",
+ "tokio",
 ]
 
 [[package]]

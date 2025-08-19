@@ -6,6 +6,12 @@ body {
     margin: 20px;
 }
 
+#app {
+    max-width: 1200px;
+    margin: 0 auto;
+    padding: 20px;
+}
+
 #hero {
     margin: 0;
     display: flex;
@@ -42,5 +48,89 @@ body {
     max-width: 1200px;
 }
 
+.tab-container {
+    display: flex;
+    margin-bottom: 20px;
+    border-bottom: 1px solid #444;
+}
 
+.tab {
+    padding: 10px 20px;
+    cursor: pointer;
+    background-color: #1f1f1f;
+    border: 1px solid #444;
+    border-bottom: none;
+    margin-right: 5px;
+    border-radius: 5px 5px 0 0;
+}
+
+.tab.active {
+    background-color: #2f2f2f;
+    border-bottom: 1px solid #2f2f2f;
+}
+
+.tab-content {
+    display: none;
+    padding: 20px;
+    background-color: #1f1f1f;
+    border-radius: 5px;
+}
+
+.tab-content.active {
+    display: block;
+}
+
+.form-group {
+    margin-bottom: 15px;
+}
+
+.form-group label {
+    display: block;
+    margin-bottom: 5px;
+}
+
+.form-group input, .form-group select, .form-group textarea {
+    width: 100%;
+    padding: 8px;
+    background-color: #2f2f2f;
+    border: 1px solid #444;
+    color: white;
+    border-radius: 4px;
+}
+
+button {
+    background-color: #4a4a4a;
+    color: white;
+    border: none;
+    padding: 10px 15px;
+    border-radius: 4px;
+    cursor: pointer;
+}
+
+button:hover {
+    background-color: #5a5a5a;
+}
+
+.result-container {
+    margin-top: 20px;
+    padding: 15px;
+    background-color: #2f2f2f;
+    border-radius: 5px;
+    border: 1px solid #444;
+    white-space: pre-wrap;
+}
+
+.loading {
+    display: inline-block;
+    width: 20px;
+    height: 20px;
+    border: 3px solid rgba(255,255,255,.3);
+    border-radius: 50%;
+    border-top-color: #fff;
+    animation: spin 1s ease-in-out infinite;
+}
+
+@keyframes spin {
+    to { transform: rotate(360deg); }
+}
 
