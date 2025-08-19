@@ -1,0 +1,5 @@
+#!/bin/bash
+
+sudo chmod a+rw /dev/loop0                  # make loop device user accessible
+dd if=/dev/zero of=image bs=512 count=2048  # create a 1MB image
+losetup /dev/loop0 image                    # attach the loop device

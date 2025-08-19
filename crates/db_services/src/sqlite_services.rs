@@ -146,7 +146,7 @@ impl SqliteService {
     fn initialize_tables(&self) -> Result<()> {
         let conn = self.get_connection()?;
 
-        // Create code_entries table
+        // Create code_entries tablße
         conn.execute(
             "CREATE TABLE IF NOT EXISTS code_entries (
                 id TEXT PRIMARY KEY,

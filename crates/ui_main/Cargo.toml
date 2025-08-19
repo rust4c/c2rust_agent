@@ -1,20 +1,16 @@
 [package]
 name = "ui_main"
 version = "0.1.0"
-edition = "2024"
+authors = ["Horldsence <m18511047688@163.com>"]
+edition = "2021"
+
+# See more keys and their definitions at https://doc.rust-lang.org/cargo/reference/manifest.html
 
 [dependencies]
-dioxus = { path = "D:\\work_soft\\dioxus\\packages\\dioxus", features = ["web"] }
-dioxus-web = { version = "0.6.3" }  
+dioxus = { version = "0.6.0", features = [] }
 
-[profile]
-
-[profile.wasm-dev]
-inherits = "dev"
-opt-level = 1
-
-[profile.server-dev]
-inherits = "dev"
-
-[profile.android-dev]
-inherits = "dev"
+[features]
+default = ["desktop"]
+web = ["dioxus/web"]
+desktop = ["dioxus/desktop"]
+mobile = ["dioxus/mobile"]

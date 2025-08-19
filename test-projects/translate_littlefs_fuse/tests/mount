@@ -1,0 +1,4 @@
+#!/bin/bash
+
+mkdir mount
+$1 /dev/loop0 mount

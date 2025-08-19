@@ -56,18 +56,18 @@ pub struct InterfaceContext {
 }
 
 /// Prompt builder for generating context-aware prompts based on relational data
-pub struct PromptBuilder {
-    db_manager: DatabaseManager,
+pub struct PromptBuilder<'a> {
+    db_manager: &'a DatabaseManager,
     project_name: String,
     file_mappings: HashMap<String, String>, // cached_path -> original_path
     reverse_mappings: HashMap<String, String>, // original_path -> cached_path
     error_context: Vec<String>,
 }
 
-impl PromptBuilder {
+impl<'a> PromptBuilder<'a> {
     /// Create a new PromptBuilder instance
     pub async fn new(
-        db_manager: DatabaseManager,
+        db_manager: &'a DatabaseManager,
         project_name: String,
         indices_dir: Option<String>,
     ) -> Result<Self> {
@@ -1058,7 +1058,7 @@ impl PromptBuilder {
 }
 
 // Implement fallback methods for error cases
-impl PromptBuilder {
+impl<'a> PromptBuilder<'a> {
     fn get_fallback_prompt(&self, file_path: &str) -> String {
         let file_name = Path::new(file_path)
             .file_name()
@@ -1115,7 +1115,7 @@ mod tests {
     #[tokio::test]
     async fn test_prompt_builder_creation() {
         let db_manager = create_test_db_manager().await;
-        let builder = PromptBuilder::new(db_manager, "test_project".to_string(), None).await;
+        let builder = PromptBuilder::new(&db_manager, "test_project".to_string(), None).await;
 
         assert!(builder.is_ok());
         let builder = builder.unwrap();
@@ -1132,7 +1132,7 @@ mod tests {
 
         let db_manager = create_test_db_manager().await;
         let builder = PromptBuilder::new(
-            db_manager,
+            &db_manager,
             "test_project".to_string(),
             Some(temp_dir.path().to_string_lossy().to_string()),
         )
@@ -1156,7 +1156,7 @@ mod tests {
 
         let db_manager = create_test_db_manager().await;
         let builder = PromptBuilder::new(
-            db_manager,
+            &db_manager,
             "test_project".to_string(),
             Some(temp_dir.path().to_string_lossy().to_string()),
         )
@@ -1182,7 +1182,7 @@ mod tests {
     #[tokio::test]
     async fn test_build_file_context_prompt() {
         let db_manager = create_test_db_manager().await;
-        let builder = PromptBuilder::new(db_manager, "test_project".to_string(), None)
+        let builder = PromptBuilder::new(&db_manager, "test_project".to_string(), None)
             .await
             .expect("Failed to create builder");
 
@@ -1198,7 +1198,7 @@ mod tests {
     #[tokio::test]
     async fn test_build_function_context_prompt() {
         let db_manager = create_test_db_manager().await;
-        let builder = PromptBuilder::new(db_manager, "test_project".to_string(), None)
+        let builder = PromptBuilder::new(&db_manager, "test_project".to_string(), None)
             .await
             .expect("Failed to create builder");
 
@@ -1216,7 +1216,7 @@ mod tests {
     #[tokio::test]
     async fn test_error_context() {
         let db_manager = create_test_db_manager().await;
-        let mut builder = PromptBuilder::new(db_manager, "test_project".to_string(), None)
+        let mut builder = PromptBuilder::new(&db_manager, "test_project".to_string(), None)
             .await
             .expect("Failed to create builder");
 
@@ -1237,7 +1237,7 @@ mod tests {
     #[tokio::test]
     async fn test_format_methods() {
         let db_manager = create_test_db_manager().await;
-        let builder = PromptBuilder::new(db_manager, "test_project".to_string(), None)
+        let builder = PromptBuilder::new(&db_manager, "test_project".to_string(), None)
             .await
             .expect("Failed to create builder");
 

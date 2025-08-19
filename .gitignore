@@ -26,5 +26,6 @@ Thumbs.db
 test_project
 test_file
 qdrant_storage/
+*_cache
 
 # AI prompt
