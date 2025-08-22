@@ -20,25 +20,33 @@ pub struct DBConfig {
     pub sqlite: sqlite_config,
 }
 
-impl DBConfig {
-    pub fn new(qdrant_config: qdrant_config, sqlite_config: sqlite_config) -> Self {
-        DBConfig {
-            qdrant: qdrant_config,
-            sqlite: sqlite_config,
+pub fn get_config() -> Result<DBConfig, config::ConfigError> {
+    // Try multiple possible paths for the config file
+    let possible_paths = [
+        "config/config.toml",       // From project root
+        "../config/config.toml",    // From crates subdirectory
+        "../../config/config.toml", // From deeper nested directories
+    ];
+
+    let mut config_builder = Config::builder();
+    let mut found_config = false;
+
+    for path in &possible_paths {
+        if std::path::Path::new(path).exists() {
+            config_builder = config_builder.add_source(File::with_name(path));
+            found_config = true;
+            break;
         }
     }
-    pub fn get_qdrant_config(&self) -> &qdrant_config {
-        &self.qdrant
-    }
-    pub fn get_sqlite_config(&self) -> &sqlite_config {
-        &self.sqlite
-    }
-}
 
-pub fn get_config() -> Result<DBConfig, config::ConfigError> {
-    let config = Config::builder()
-        .add_source(File::with_name("config.toml"))
-        .build()?;
+    if !found_config {
+        return Err(config::ConfigError::NotFound(
+            "config.toml not found in any expected location".to_string(),
+        ));
+    }
+
+    let config = config_builder.build()?;
     let config: DBConfig = config.try_deserialize()?;
+
     Ok(config)
 }

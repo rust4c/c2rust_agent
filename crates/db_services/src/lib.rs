@@ -9,7 +9,7 @@ use std::sync::Arc;
 use tokio::sync::Mutex;
 
 mod pkg_config;
-use pkg_config::{qdrant_config, sqlite_config, DBConfig};
+use pkg_config::{get_config, qdrant_config, sqlite_config, DBConfig};
 mod qdrant_services;
 use qdrant_services::QdrantServer;
 mod sqlite_services;
@@ -74,12 +74,12 @@ impl DatabaseManager {
     /// 创建新的数据库管理器实例
     pub async fn new(database_config: DBConfig) -> Result<Self> {
         let sqlite_service = Arc::new(Mutex::new(
-            SqliteService::new(database_config.get_sqlite_config().clone())
+            SqliteService::new(database_config.sqlite.clone())
                 .map_err(|e| anyhow!("Failed to create SQLite service: {}", e))?,
         ));
 
         let qdrant_service = Arc::new(Mutex::new(
-            QdrantServer::new(database_config.get_qdrant_config().clone())
+            QdrantServer::new(database_config.qdrant.clone())
                 .await
                 .map_err(|e| anyhow!("Failed to create Qdrant service: {}", e))?,
         ));
@@ -97,18 +97,11 @@ impl DatabaseManager {
 
     /// 创建默认配置的数据库管理器
     pub async fn new_default() -> Result<Self> {
-        let sqlite_config = sqlite_config {
-            path: "c2rust_metadata.db".to_string(),
+        let config = match get_config() {
+            Ok(config) => config,
+            Err(e) => return Err(anyhow!("Failed to get config: {}", e)),
         };
 
-        let qdrant_config = qdrant_config {
-            host: "localhost".to_string(),
-            port: Some(6334),
-            collection_name: "c2rust_vectors".to_string(),
-            vector_size: 384,
-        };
-
-        let config = DBConfig::new(qdrant_config, sqlite_config);
         Self::new(config).await
     }
 
@@ -769,38 +762,7 @@ pub async fn create_database_manager(
     qdrant_collection: Option<&str>,
     vector_size: Option<usize>,
 ) -> Result<DatabaseManager> {
-    let sqlite_config = sqlite_config {
-        path: sqlite_path.unwrap_or("c2rust_metadata.db").to_string(),
-    };
-
-    // 解析Qdrant URL
-    let (host, port) = if let Some(url) = qdrant_url {
-        if url.starts_with("http://") {
-            let without_proto = url.strip_prefix("http://").unwrap_or(url);
-            if let Some(colon_pos) = without_proto.find(':') {
-                let host = without_proto[..colon_pos].to_string();
-                let port = without_proto[colon_pos + 1..]
-                    .parse::<u16>()
-                    .unwrap_or(6334);
-                (host, Some(port))
-            } else {
-                (without_proto.to_string(), Some(6334))
-            }
-        } else {
-            ("localhost".to_string(), Some(6334))
-        }
-    } else {
-        ("localhost".to_string(), Some(6334))
-    };
-
-    let qdrant_config = qdrant_config {
-        host,
-        port,
-        collection_name: qdrant_collection.unwrap_or("c2rust_vectors").to_string(),
-        vector_size: vector_size.unwrap_or(384),
-    };
-
-    let config = DBConfig::new(qdrant_config, sqlite_config);
+    let config = get_config()?;
     DatabaseManager::new(config).await
 }
 

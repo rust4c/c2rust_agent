@@ -2,20 +2,20 @@
 # LLM Model config options
 provider = "ollama"
 
-[ollama_config]
+[llm.ollama]
 model = "deepseek-r1:7b"
 base_url = "http://localhost:11434"
 api_key = ""
 
-[openai_config]
+[llm.openai]
 model = "gpt-3.5-turbo"
 api_key = "your_api_key_here"
 
-[xai_config]
+[llm.xai]
 model = "xai_model_name"
 api_key = "your_api_key_here"
 
-[deepseek_config]
+[llm.deepseek]
 model = "deepseek-chat"
 api_key = "your_api_key_here"
 

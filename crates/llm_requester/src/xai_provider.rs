@@ -25,8 +25,8 @@ impl XAIProvider {
             Err(err) => return Err(anyhow!("can't get config with error: {}", err)),
         };
 
-        let model = config.xai_config.model;
-        let api_key = config.xai_config.api_key;
+        let model = config.llm.xai.model;
+        let api_key = config.llm.xai.api_key;
 
         let client = Siumai::builder()
             .xai()

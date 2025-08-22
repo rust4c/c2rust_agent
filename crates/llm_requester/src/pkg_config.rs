@@ -29,12 +29,17 @@ pub struct DeepSeekConfig {
 }
 
 #[derive(Debug, Clone, Deserialize)]
+pub struct LLMProviders {
+    pub ollama: OllamaConfig,
+    pub openai: OpenAIConfig,
+    pub xai: XAIConfig,
+    pub deepseek: DeepSeekConfig,
+}
+
+#[derive(Debug, Clone, Deserialize)]
 pub struct LLMConfig {
     pub provider: String,
-    pub ollama_config: OllamaConfig,
-    pub openai_config: OpenAIConfig,
-    pub xai_config: XAIConfig,
-    pub deepseek_config: DeepSeekConfig,
+    pub llm: LLMProviders,
 }
 
 pub fn get_config() -> Result<LLMConfig, config::ConfigError> {

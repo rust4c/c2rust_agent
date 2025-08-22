@@ -26,9 +26,9 @@ impl OllamaProvider {
             Err(err) => return Err(anyhow!("can't get config with error: {}", err)),
         };
 
-        let base_url = config.ollama_config.base_url;
-        let model = config.ollama_config.model;
-        let api_key = config.ollama_config.api_key;
+        let base_url = config.llm.ollama.base_url;
+        let model = config.llm.ollama.model;
+        let api_key = config.llm.ollama.api_key;
 
         let client = Siumai::builder()
             .ollama()

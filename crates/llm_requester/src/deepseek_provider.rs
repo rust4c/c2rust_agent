@@ -26,8 +26,8 @@ impl DeepSeekProvider {
             Err(err) => return Err(anyhow!("can't get config with error: {}", err)),
         };
 
-        let model = config.deepseek_config.model;
-        let api_key = config.deepseek_config.api_key;
+        let model = config.llm.deepseek.model;
+        let api_key = config.llm.deepseek.api_key;
 
         let client = Siumai::builder()
             .openai()
