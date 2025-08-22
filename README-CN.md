@@ -97,23 +97,36 @@ cargo test
 创建 `config/config.toml`:
 
 ```toml
-[database]
-sqlite_path = "data/c2rust.db"
-qdrant_url = "http://localhost:6333"
+# LLM 提供商选择
+provider = "ollama"  # 选项: "ollama", "openai", "xai", "deepseek"
 
-[llm]
-provider = "openai"  # 或 "claude", "local"
-api_key = "your-api-key-here"
+# LLM 提供商配置
+[llm.ollama]
+model = "deepseek-r1:7b"
+base_url = "http://localhost:11434"
+api_key = ""
+
+[llm.openai]
 model = "gpt-4"
+api_key = "your_openai_api_key_here"
 
-[translation]
-max_retries = 3
-concurrent_limit = 4
-cache_dir = "cache"
+[llm.xai]
+model = "grok-beta"
+api_key = "your_xai_api_key_here"
 
-[logging]
-level = "info"
-file = "logs/c2rust.log"
+[llm.deepseek]
+model = "deepseek-chat"
+api_key = "your_deepseek_api_key_here"
+
+# 数据库配置
+[qdrant]
+host = "localhost"
+port = 6333
+collection_name = "default"
+vector_size = 1536
+
+[sqlite]
+path = "data.db"
 ```
 
 ## 使用方法

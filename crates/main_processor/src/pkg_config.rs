@@ -1,26 +1,18 @@
+use config;
 use config::{Config, File};
 use serde::Deserialize;
 
-#[derive(Debug, Clone, Deserialize)]
-pub struct qdrant_config {
-    pub host: String,
-    pub port: Option<u16>,
-    pub collection_name: String,
-    pub vector_size: usize,
+#[derive(Deserialize, Default, Clone)]
+pub struct MainProcessorConfig {
+    pub max_retry_attempts: usize,
+    pub concurrent_limit: usize,
 }
 
-#[derive(Debug, Clone, Deserialize)]
-pub struct sqlite_config {
-    pub path: String,
+impl MainProcessorConfig {
+    // Methods for initializing and configuring the MainProcessorConfig
 }
 
-#[derive(Debug, Clone, Deserialize)]
-pub struct DBConfig {
-    pub qdrant: qdrant_config,
-    pub sqlite: sqlite_config,
-}
-
-pub fn get_config() -> Result<DBConfig, config::ConfigError> {
+pub fn get_config() -> Result<MainProcessorConfig, config::ConfigError> {
     // Try multiple possible paths for the config file
     let possible_paths = [
         "config/config.toml",       // From project root
@@ -46,7 +38,7 @@ pub fn get_config() -> Result<DBConfig, config::ConfigError> {
     }
 
     let config = config_builder.build()?;
-    let config: DBConfig = config.try_deserialize()?;
+    let config: MainProcessorConfig = config.try_deserialize()?;
 
     Ok(config)
 }

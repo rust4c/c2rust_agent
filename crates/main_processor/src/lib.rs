@@ -11,6 +11,7 @@ use std::time::Duration;
 use tokio::fs;
 use tokio::sync::Semaphore;
 
+mod pkg_config;
 mod translation;
 
 const MAX_RETRY_ATTEMPTS: usize = 3;

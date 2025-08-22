@@ -25,8 +25,8 @@ impl OpenAIProvider {
             Err(err) => return Err(anyhow!("can't get config with error: {}", err)),
         };
 
-        let model = config.openai_config.model;
-        let api_key = config.openai_config.api_key;
+        let model = config.llm.openai.model;
+        let api_key = config.llm.openai.api_key;
 
         let client = Siumai::builder()
             .openai()
