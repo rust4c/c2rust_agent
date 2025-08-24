@@ -5,8 +5,12 @@ use serde::{Deserialize, Serialize};
 use std::path::PathBuf;
 use tokio::runtime::Runtime;
 
+mod start_tab;
+use start_tab::StartTab;
+
 const FAVICON: Asset = asset!("/assets/favicon.ico");
 const MAIN_CSS: Asset = asset!("/assets/main.css");
+const START_CSS: Asset = asset!("/assets/start.css");
 const HEADER_SVG: Asset = asset!("/assets/header.svg");
 
 #[derive(Clone, Debug, PartialEq, Eq)]
@@ -30,14 +34,23 @@ fn main() {
 
 #[component]
 fn App() -> Element {
+    let mut show_start = use_signal(|| true);  // 默认显示开始界面
+
     rsx! {
         document::Link { rel: "icon", href: FAVICON }
         document::Link { rel: "stylesheet", href: MAIN_CSS }
+        document::Link { rel: "stylesheet", href: START_CSS }
         div { id: "app",
             img { src: HEADER_SVG, id: "header" }
             h1 { "C2Rust Agent UI" }
-            p { "版本: 0.6.3" }
-            Tabs {}
+            p { "版本: 0.0.3" }
+
+            // 根据状态显示不同界面
+            if *show_start.read() {
+                StartTab { on_start: move |_| show_start.set(false) }
+            } else {
+                Tabs {}
+            }
         }
     }
 }
