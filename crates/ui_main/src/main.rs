@@ -1,5 +1,7 @@
 use commandline_tool::{Commands, QueryType};
 use dioxus::prelude::*;
+use manganis::asset;
+
 use llm_requester::llm_request;
 use serde::{Deserialize, Serialize};
 use std::path::PathBuf;
@@ -8,10 +10,10 @@ use tokio::runtime::Runtime;
 mod start_tab;
 use start_tab::StartTab;
 
-const FAVICON: Asset = asset!("/assets/favicon.ico");
-const MAIN_CSS: Asset = asset!("/assets/main.css");
-const START_CSS: Asset = asset!("/assets/start.css");
-const HEADER_SVG: Asset = asset!("/assets/header.svg");
+const FAVICON: Asset = asset!("assets/logo.ico");
+const MAIN_CSS: Asset = asset!("assets/main.css");
+const START_CSS: Asset = asset!("assets/start.css");
+const HEADER_SVG: Asset = asset!("assets/header.svg");
 
 #[derive(Clone, Debug, PartialEq, Eq)]
 enum Tab {

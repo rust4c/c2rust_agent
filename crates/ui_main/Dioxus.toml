@@ -9,7 +9,7 @@ title = "ui_main"
 [web.resource]
 
 # Additional CSS style files
-style = []
+style = ["assets/main.css", "assets/start.css"]
 
 # Additional JavaScript files
 script = []

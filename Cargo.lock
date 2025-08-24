@@ -6264,6 +6264,7 @@ dependencies = [
  "commandline_tool",
  "dioxus",
  "llm_requester",
+ "manganis",
  "serde",
  "serde_json",
  "tokio",

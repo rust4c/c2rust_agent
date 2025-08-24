@@ -6,13 +6,19 @@ edition = "2024"
 # See more keys and their definitions at https://doc.rust-lang.org/cargo/reference/manifest.html
 
 [dependencies]
-dioxus = { version = "0.6.3", features = ["desktop"] }
+dioxus = { version = "0.6.3", features = ["macro"] }
+manganis = "0.6.2"
 commandline_tool = { path = "../commandline_tool" }
 llm_requester = { path = "../llm_requester" }
 tokio = { version = "1.0", features = ["full"] }
 anyhow = "1.0"
 serde = { version = "1.0", features = ["derive"] }
 serde_json = "1.0"
+
+[package.metadata.manganis]
+assets = [
+    "assets/*"
+]
 
 [features]
 default = ["desktop"]
