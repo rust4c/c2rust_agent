@@ -4,5 +4,6 @@ version = "0.1.0"
 edition = "2024"
 
 [dependencies]
-cproject_analy = {path = "../cproject_analy"}
-
+anyhow = "1.0.99"
+db_services = {path = "../db_services"}
+log = "0.4.27"
