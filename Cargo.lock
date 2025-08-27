@@ -1744,7 +1744,9 @@ dependencies = [
 name = "env_checker"
 version = "0.1.0"
 dependencies = [
- "cproject_analy",
+ "anyhow",
+ "db_services",
+ "log",
 ]
 
 [[package]]
