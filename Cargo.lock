@@ -724,9 +724,17 @@ dependencies = [
 name = "commandline_tool"
 version = "0.1.0"
 dependencies = [
+ "anyhow",
  "clap",
  "cproject_analy",
+ "db_services",
+ "env_checker",
+ "file_scanner",
+ "llm_requester",
  "lsp_services",
+ "main_processor",
+ "prompt_builder",
+ "tokio",
 ]
 
 [[package]]
