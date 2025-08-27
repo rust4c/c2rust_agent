@@ -6,7 +6,7 @@ pub fn StartTab(on_start: EventHandler<()>) -> Element {
         div { class: "start-container",
             div { class: "start-content",
                 h1 { "C2Rust Agent" }
-                p { class: "version", "版本: 0.0.3" }
+                p { class: "version", "版本: 0.0.8" }
                 p { class: "description", "将C代码转换为Rust代码的智能工具" }
                 div { class: "features",
                     div { class: "feature",
