@@ -1,0 +1,14 @@
+克隆后转至分支
+git checkout -b dev-rust-beyandstars origin/dev-rust-beyandstars
+
+上传更新到分支
+git add -A
+git commit -m "chore: remove redundant folder"
+git push origin dev-rust-beyandstars
+
+合并线上仓库的远程主分支到我的本地分支与 / 远程分支仓库
+git checkout dev-rust-beyandstars
+git fetch origin main  
+git merge origin/main
+
+git push origin dev-rust-beyandstars
