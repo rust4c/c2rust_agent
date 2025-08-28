@@ -12,7 +12,12 @@ use tokio::fs;
 use tokio::sync::Semaphore;
 
 mod pkg_config;
-mod translation;
+pub mod translation;
+pub use translation_api::{
+    translate_c_file, translate_c_project, ProjectTranslationResult, TranslationAPI,
+    TranslationConfig,
+};
+pub mod translation_api;
 
 const MAX_RETRY_ATTEMPTS: usize = 3;
 const CONCURRENT_LIMIT: usize = 4; // Adjust based on system capabilities
@@ -284,6 +289,84 @@ impl MainProcessor {
 
         println!("=== End Summary ===\n");
     }
+
+    /// Complete integrated translation workflow for a single project
+    pub async fn translate_project_complete(
+        &self,
+        project: &ProjectInfo,
+        db_manager: Option<&db_services::DatabaseManager>,
+    ) -> Result<String> {
+        debug!(
+            "Starting complete translation workflow for: {}",
+            project.name
+        );
+
+        // Step 1: Create Rust project structure
+        create_rust_project(project).await?;
+
+        // Step 2: Perform LLM translation with context
+        let translated_code = if self.test_mode {
+            perform_llm_translation_test_mode(project).await?
+        } else {
+            perform_llm_translation_with_retry(project, db_manager, None, false).await?
+        };
+
+        // Step 3: Write translated code to file
+        write_translated_code(project, &translated_code).await?;
+
+        // Step 4: Check compilation (optional, for validation)
+        if let Err(e) = check_rust_project(project).await {
+            warn!(
+                "Rust project compilation check failed for {}: {:?}",
+                project.name, e
+            );
+            // Continue anyway - some projects might have missing dependencies
+        }
+
+        info!(
+            "✅ Complete translation workflow finished for: {}",
+            project.name
+        );
+        Ok(translated_code)
+    }
+
+    /// Batch translate multiple projects with progress tracking
+    pub async fn translate_projects_batch(
+        &self,
+        projects: Vec<ProjectInfo>,
+        db_manager: Option<&db_services::DatabaseManager>,
+    ) -> Result<TranslationStats> {
+        let mut stats = TranslationStats {
+            successful_translations: Vec::new(),
+            failed_translations: HashMap::new(),
+            retry_attempts: HashMap::new(),
+        };
+
+        info!("Starting batch translation for {} projects", projects.len());
+
+        for project in projects {
+            match self.translate_project_complete(&project, db_manager).await {
+                Ok(_) => {
+                    stats.successful_translations.push(project.name.clone());
+                    info!("✅ Successfully translated: {}", project.name);
+                }
+                Err(e) => {
+                    stats
+                        .failed_translations
+                        .insert(project.name.clone(), e.to_string());
+                    error!("❌ Failed to translate {}: {}", project.name, e);
+                }
+            }
+        }
+
+        info!(
+            "🎉 Batch translation completed: {} success, {} failed",
+            stats.successful_translations.len(),
+            stats.failed_translations.len()
+        );
+
+        Ok(stats)
+    }
 }
 
 /// Process a single project through the translation workflow with intelligent retry
@@ -451,6 +534,7 @@ async fn perform_llm_translation(
 
 async fn perform_llm_translation_test_mode(project: &ProjectInfo) -> Result<String> {
     // Mock translation for test mode
+    // TODO: Use AI instead
     let mock_rust_code = format!(
         r#"// Mock translation for project: {}
 // This is a test mode translation - no actual LLM was used
@@ -609,9 +693,16 @@ async fn write_translated_code(project: &ProjectInfo, translated_code: &str) -> 
     // Clean up the translated code (remove markdown formatting if present)
     let cleaned_code = clean_llm_response(translated_code);
 
-    fs::write(src_dir.join(main_file), cleaned_code).await?;
+    let file_path = src_dir.join(main_file);
+    fs::write(&file_path, &cleaned_code).await?;
 
-    debug!("Wrote translated code for: {}", project.name);
+    // Format the code using rustfmt
+    if let Err(e) = format_rust_code(&file_path).await {
+        warn!("Failed to format Rust code for {}: {}", project.name, e);
+        // Continue execution even if formatting fails
+    }
+
+    debug!("Wrote and formatted translated code for: {}", project.name);
     Ok(())
 }
 
@@ -631,6 +722,30 @@ fn clean_llm_response(response: &str) -> String {
     };
 
     cleaned.trim().to_string()
+}
+
+/// Check the translated Rust project using rust_checker
+/// Format Rust code using rustfmt
+async fn format_rust_code(file_path: &Path) -> Result<()> {
+    use tokio::process::Command;
+
+    debug!("Formatting Rust code: {}", file_path.display());
+
+    let output = Command::new("rustfmt")
+        .arg("--edition")
+        .arg("2021")
+        .arg(file_path)
+        .output()
+        .await
+        .context("Failed to execute rustfmt")?;
+
+    if !output.status.success() {
+        let stderr = String::from_utf8_lossy(&output.stderr);
+        return Err(anyhow::anyhow!("rustfmt failed: {}", stderr));
+    }
+
+    debug!("Successfully formatted: {}", file_path.display());
+    Ok(())
 }
 
 /// Check the translated Rust project using rust_checker
