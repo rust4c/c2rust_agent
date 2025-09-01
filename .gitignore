@@ -28,4 +28,4 @@ test_file
 qdrant_storage/
 *_cache
 
-# AI prompt
+on_off.txt

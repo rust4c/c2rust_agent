@@ -1,5 +1,6 @@
 use commandline_tool::{Commands, QueryType};
 use dioxus::prelude::*;
+use manganis::asset;
 
 use llm_requester::llm_request;
 use serde::{Deserialize, Serialize};
@@ -9,10 +10,10 @@ use tokio::runtime::Runtime;
 mod start_tab;
 use start_tab::StartTab;
 
-static LOGO: Asset = asset!("/assets/logo.ico");
-static START_CSS: Asset = asset!("/assets/start.css");
-static HEADER_SVG: Asset = asset!("/assets/header.svg");
-static CSS: Asset = asset!("/assets/main.css");
+const FAVICON: Asset = asset!("assets/logo.ico");
+const MAIN_CSS: Asset = asset!("crates/ui_main/assets/main.css");
+const START_CSS: Asset = asset!("assets/start.css");
+const HEADER_SVG: Asset = asset!("assets/header.svg");
 
 #[derive(Clone, Debug, PartialEq, Eq)]
 enum Tab {
@@ -37,13 +38,333 @@ fn main() {
 fn App() -> Element {
     let mut show_start = use_signal(|| true);  // 默认显示开始界面
 
+    let css_content = r#"
+        /* App-wide styling */
+        body {
+            background: linear-gradient(135deg, #1a1f2e 0%, #0f1116 100%);
+            color: #ffffff;
+            font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, Oxygen, Ubuntu, Cantarell, sans-serif;
+            margin: 20px;
+            line-height: 1.6;
+        }
+
+        #app {
+            max-width: 1200px;
+            margin: 0 auto;
+            padding: 20px;
+        }
+
+        #hero {
+            margin: 0;
+            display: flex;
+            flex-direction: column;
+            justify-content: center;
+            align-items: center;
+        }
+
+        #links {
+            width: 400px;
+            text-align: left;
+            font-size: x-large;
+            color: white;
+            display: flex;
+            flex-direction: column;
+        }
+
+        #links a {
+            color: white;
+            text-decoration: none;
+            margin-top: 20px;
+            margin: 10px 0px;
+            border: white 1px solid;
+            border-radius: 5px;
+            padding: 10px;
+        }
+
+        #links a:hover {
+            background-color: #1f1f1f;
+            cursor: pointer;
+        }
+
+        #header {
+            max-width: 1200px;
+        }
+
+        .tab-container {
+            display: flex;
+            margin-bottom: 20px;
+            border-bottom: 1px solid #444;
+            border-radius: 8px;
+            box-shadow: 0 2px 4px rgba(0, 0, 0, 0.1);
+            background: rgba(31, 31, 31, 0.5);
+            backdrop-filter: blur(10px);
+        }
+
+        .tab {
+            padding: 10px 20px;
+            cursor: pointer;
+            background-color: rgba(31, 31, 31, 0.7);
+            border: 1px solid #444;
+            border-bottom: none;
+            margin-right: 5px;
+            border-radius: 8px 8px 0 0;
+            transition: all 0.3s ease;
+        }
+
+        .tab:hover {
+            background-color: rgba(47, 47, 47, 0.8);
+            transform: translateY(-2px);
+        }
+
+        .tab.active {
+            background: linear-gradient(135deg, #2f2f2f 0%, #3a3a3a 100%);
+            border-bottom: 1px solid #2f2f2f;
+            box-shadow: 0 -2px 5px rgba(0, 0, 0, 0.1);
+        }
+
+        .tab-content {
+            display: none;
+            padding: 20px;
+            background-color: rgba(31, 31, 31, 0.7);
+            border-radius: 8px;
+            box-shadow: 0 2px 8px rgba(0, 0, 0, 0.2);
+            backdrop-filter: blur(5px);
+            animation: fadeIn 0.3s ease-out;
+        }
+
+        .tab-content.active {
+            display: block;
+        }
+
+        .form-group {
+            margin-bottom: 15px;
+        }
+
+        .form-group label {
+            display: block;
+            margin-bottom: 5px;
+            font-weight: 500;
+        }
+
+        .form-group input, .form-group select, .form-group textarea {
+            width: 100%;
+            padding: 10px;
+            background-color: rgba(47, 47, 47, 0.7);
+            border: 1px solid #444;
+            color: white;
+            border-radius: 6px;
+            transition: all 0.3s ease;
+        }
+
+        .form-group input:focus, .form-group select:focus, .form-group textarea:focus {
+            outline: none;
+            border-color: #3498db;
+            box-shadow: 0 0 0 2px rgba(52, 152, 219, 0.2);
+        }
+
+        button {
+            background: linear-gradient(135deg, #4a4a4a 0%, #5a5a5a 100%);
+            color: white;
+            border: none;
+            padding: 10px 15px;
+            border-radius: 6px;
+            cursor: pointer;
+            transition: all 0.3s ease;
+            font-weight: 500;
+            box-shadow: 0 2px 4px rgba(0, 0, 0, 0.1);
+        }
+
+        button:hover {
+            background: linear-gradient(135deg, #5a5a5a 0%, #6a6a6a 100%);
+            transform: translateY(-2px);
+            box-shadow: 0 4px 8px rgba(0, 0, 0, 0.15);
+        }
+
+        button:active {
+            transform: translateY(0);
+            box-shadow: 0 1px 2px rgba(0, 0, 0, 0.1);
+        }
+
+        .result-container {
+            margin-top: 20px;
+            padding: 15px;
+            background-color: rgba(47, 47, 47, 0.7);
+            border-radius: 8px;
+            border: 1px solid #444;
+            white-space: pre-wrap;
+            box-shadow: 0 2px 8px rgba(0, 0, 0, 0.2);
+            backdrop-filter: blur(5px);
+            animation: fadeIn 0.3s ease-out;
+        }
+
+        .loading {
+            display: inline-block;
+            width: 20px;
+            height: 20px;
+            border: 3px solid rgba(255,255,255,.3);
+            border-radius: 50%;
+            border-top-color: #fff;
+            animation: spin 1s ease-in-out infinite;
+        }
+
+        @keyframes spin {
+            to { transform: rotate(360deg); }
+        }
+
+        @keyframes fadeIn {
+            from { 
+                opacity: 0; 
+                transform: translateY(10px); 
+            }
+            to { 
+                opacity: 1; 
+                transform: translateY(0); 
+            }
+        }
+
+        /* 开始界面样式 */
+        .start-container {
+            display: flex;
+            flex-direction: column;
+            align-items: center;
+            justify-content: center;
+            padding: 2rem;
+            text-align: center;
+            max-width: 800px;
+            margin: 0 auto;
+            min-height: 70vh;
+            background: linear-gradient(135deg, #f5f7fa 0%, #c3cfe2 100%);
+            border-radius: 16px;
+            box-shadow: 0 10px 30px rgba(0, 0, 0, 0.1);
+            animation: fadeIn 0.5s ease-out;
+        }
+
+        .start-content {
+            display: flex;
+            flex-direction: column;
+            align-items: center;
+            width: 100%;
+            animation: fadeIn 0.7s ease-out;
+        }
+
+        .start-container h1 {
+            font-size: 3rem;
+            margin-bottom: 0.5rem;
+            color: #2c3e50;
+            text-shadow: 0 2px 4px rgba(0, 0, 0, 0.05);
+            font-weight: 700;
+            letter-spacing: -0.5px;
+        }
+
+        .start-container .version {
+            font-size: 1rem;
+            margin-bottom: 1rem;
+            color: #95a5a6;
+            font-weight: 500;
+            padding: 0.25rem 0.75rem;
+            background: rgba(255, 255, 255, 0.5);
+            border-radius: 20px;
+            backdrop-filter: blur(5px);
+        }
+
+        .start-container .description {
+            font-size: 1.4rem;
+            margin-bottom: 2.5rem;
+            color: #7f8c8d;
+            max-width: 600px;
+            line-height: 1.6;
+            font-weight: 400;
+        }
+
+        .features {
+            display: flex;
+            justify-content: space-between;
+            width: 100%;
+            margin-bottom: 3rem;
+            gap: 1rem;
+        }
+
+        .feature {
+            flex: 1;
+            padding: 1.5rem;
+            margin: 0;
+            background: rgba(255, 255, 255, 0.7);
+            border-radius: 12px;
+            box-shadow: 0 4px 12px rgba(0, 0, 0, 0.08);
+            transition: all 0.3s ease;
+            backdrop-filter: blur(10px);
+            border: 1px solid rgba(255, 255, 255, 0.3);
+            animation: fadeIn 0.9s ease-out;
+            animation-fill-mode: both;
+        }
+
+        .feature:nth-child(1) {
+            animation-delay: 0.1s;
+        }
+
+        .feature:nth-child(2) {
+            animation-delay: 0.2s;
+        }
+
+        .feature:nth-child(3) {
+            animation-delay: 0.3s;
+        }
+
+        .feature:hover {
+            transform: translateY(-8px);
+            box-shadow: 0 8px 24px rgba(0, 0, 0, 0.12);
+            background: rgba(255, 255, 255, 0.85);
+        }
+
+        .feature h3 {
+            font-size: 1.5rem;
+            margin-bottom: 0.5rem;
+            color: #3498db;
+            font-weight: 600;
+        }
+
+        .feature p {
+            font-size: 1rem;
+            color: #7f8c8d;
+            line-height: 1.6;
+        }
+
+        .start-button {
+            padding: 1rem 2.5rem;
+            font-size: 1.2rem;
+            background: linear-gradient(135deg, #3498db 0%, #2980b9 100%);
+            color: white;
+            border: none;
+            border-radius: 50px;
+            cursor: pointer;
+            transition: all 0.3s ease;
+            font-weight: 600;
+            box-shadow: 0 4px 15px rgba(52, 152, 219, 0.3);
+            animation: fadeIn 1.1s ease-out;
+            animation-fill-mode: both;
+        }
+
+        .start-button:hover {
+            background: linear-gradient(135deg, #2980b9 0%, #21618c 100%);
+            transform: translateY(-3px);
+            box-shadow: 0 6px 20px rgba(52, 152, 219, 0.4);
+        }
+
+        .start-button:active {
+            transform: translateY(1px);
+            box-shadow: 0 2px 10px rgba(52, 152, 219, 0.3);
+        }
+    "#;
+
     rsx! {
-        document::Stylesheet { href: CSS }
-        document::Stylesheet { href: START_CSS }
+        // 内联样式标签
+        style { "{css_content}" }
+
+        document::Link { rel: "icon", href: FAVICON }
         div { id: "app",
-            img { src: LOGO  }
+            img { src: HEADER_SVG, id: "header" }
             h1 { "C2Rust Agent UI" }
-            p { "版本: 0.0.8" }
+            p { "版本: 0.0.3" }
 
             // 根据状态显示不同界面
             if *show_start.read() {

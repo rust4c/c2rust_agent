@@ -28,3 +28,15 @@ log = "0.4.27"
 lsp_services = { path = "crates/lsp_services" }
 prompt_builder = { path = "crates/prompt_builder" }
 ui_main = { path = "crates/ui_main" }
+
+[profile]
+
+[profile.wasm-dev]
+inherits = "dev"
+opt-level = 1
+
+[profile.server-dev]
+inherits = "dev"
+
+[profile.android-dev]
+inherits = "dev"

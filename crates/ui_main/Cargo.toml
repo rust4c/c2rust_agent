@@ -6,7 +6,7 @@ edition = "2024"
 # See more keys and their definitions at https://doc.rust-lang.org/cargo/reference/manifest.html
 
 [dependencies]
-dioxus = { version = "0.7.0-alpha.3" , features = [] }
+dioxus = { version = "0.7.0-rc.0" , features = [] }
 manganis = "0.6.2"
 commandline_tool = { path = "../commandline_tool" }
 llm_requester = { path = "../llm_requester" }
