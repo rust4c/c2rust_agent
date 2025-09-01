@@ -4,5 +4,6 @@
         "activityBar.background": "#00361B",
         "titleBar.activeBackground": "#004B26",
         "titleBar.activeForeground": "#E8FFF3"
-    }
+    },
+    "Codegeex.RepoIndex": true
 }
