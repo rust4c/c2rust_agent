@@ -6289,6 +6289,7 @@ name = "ui_main"
 version = "0.1.0"
 dependencies = [
  "anyhow",
+ "cc",
  "commandline_tool",
  "dioxus",
  "llm_requester",
