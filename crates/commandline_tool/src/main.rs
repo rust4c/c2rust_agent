@@ -1,15 +1,17 @@
 use std::path::Path;
 use commandline_tool::parse_args;
 use commandline_tool::Commands;
+use env_checker::ai_checker;
 use lsp_services::lsp_services::check_function_and_class_name;
 use cproject_analy::file_remanager::{CProjectPreprocessor, PreprocessConfig};
 use std::fs;
 // use env_checker::disk_inspection;
 use db_services::DatabaseManager;
 use anyhow::Result;
-use std::sync::Arc;
 use tokio; //添加 tokio 运行时的文件
 use env_checker::dbdata_init;
+use env_checker::ai_checker::{ai_service_init, AIConnectionStatus};
+use main_processor::single_process::SingleProcess;
 
 // 翻译模块
 use main_processor::{MainProcessor, ProjectType};
@@ -25,7 +27,7 @@ async fn _dbdata_create() -> DatabaseManager {
 #[tokio::main]
 async fn main() -> Result<()>{
     // 初始化数据库连接
-    let manager = _dbdata_create().await;
+    let manager: DatabaseManager = _dbdata_create().await;
 
     // 检查数据库状态
     match dbdata_init(manager).await {
@@ -36,6 +38,21 @@ async fn main() -> Result<()>{
             eprintln!("查询数据库状态失败: {}", e);
         }
     }
+
+    let ai_checkers = ai_service_init().await;
+    match ai_checkers {
+        Ok(status) => {
+            println!("AI 服务状态: {:?}", status);
+            match status {
+                AIConnectionStatus::AllConnected => println!("所有 AI 服务均已连接"),
+                AIConnectionStatus::AllDisconnected => println!("所有 AI 服务均未连接"),
+                _ => println!("部分 AI 服务连接状态不明"),
+            }
+        }
+        Err(e) => {
+            eprintln!("查询 AI 服务状态失败: {}", e);
+        }
+    }   
     
     //
     let cli = parse_args();
@@ -62,6 +79,7 @@ async fn main() -> Result<()>{
             println!("已选择预处理命令");
             println!("输入目录:{}", input_dir.display());
 
+            
             // 确定输出目录
             let output_dir = output_dir.clone().unwrap_or_else(|| {
                 let parent = input_dir
@@ -87,6 +105,7 @@ async fn main() -> Result<()>{
 
             println!("正在预处理项目...");
 
+            
             let config = PreprocessConfig::default();
             let mut preprocessor = CProjectPreprocessor::new(Some(config));
             
@@ -128,6 +147,7 @@ async fn main() -> Result<()>{
             println!("项目名称: {}", project_name.as_deref().unwrap_or("未指定"));
             println!("数据库: {}", db);
             Ok(())
+
             // input_dir.to_str().unwrap_or("未指定");
         }
 

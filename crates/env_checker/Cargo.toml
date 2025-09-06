@@ -5,5 +5,9 @@ edition = "2024"
 
 [dependencies]
 anyhow = "1.0.99"
-db_services = {path = "../db_services"}
 log = "0.4.27"
+tokio = { version = "1.0", features = ["rt", "macros", "sync", "time"] }
+
+
+db_services = {path = "../db_services"}
+llm_requester = {path = "../llm_requester"}

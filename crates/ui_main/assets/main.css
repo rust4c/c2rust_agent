@@ -1,9 +1,10 @@
 /* App-wide styling */
 body {
-    background-color: #0f1116;
+    background: linear-gradient(135deg, #1a1f2e 0%, #0f1116 100%);
     color: #ffffff;
-    font-family: 'Segoe UI', Tahoma, Geneva, Verdana, sans-serif;
+    font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, Oxygen, Ubuntu, Cantarell, sans-serif;
     margin: 20px;
+    line-height: 1.6;
 }
 
 #app {
@@ -52,28 +53,42 @@ body {
     display: flex;
     margin-bottom: 20px;
     border-bottom: 1px solid #444;
+    border-radius: 8px;
+    box-shadow: 0 2px 4px rgba(0, 0, 0, 0.1);
+    background: rgba(31, 31, 31, 0.5);
+    backdrop-filter: blur(10px);
 }
 
 .tab {
     padding: 10px 20px;
     cursor: pointer;
-    background-color: #1f1f1f;
+    background-color: rgba(31, 31, 31, 0.7);
     border: 1px solid #444;
     border-bottom: none;
     margin-right: 5px;
-    border-radius: 5px 5px 0 0;
+    border-radius: 8px 8px 0 0;
+    transition: all 0.3s ease;
+}
+
+.tab:hover {
+    background-color: rgba(47, 47, 47, 0.8);
+    transform: translateY(-2px);
 }
 
 .tab.active {
-    background-color: #2f2f2f;
+    background: linear-gradient(135deg, #2f2f2f 0%, #3a3a3a 100%);
     border-bottom: 1px solid #2f2f2f;
+    box-shadow: 0 -2px 5px rgba(0, 0, 0, 0.1);
 }
 
 .tab-content {
     display: none;
     padding: 20px;
-    background-color: #1f1f1f;
-    border-radius: 5px;
+    background-color: rgba(31, 31, 31, 0.7);
+    border-radius: 8px;
+    box-shadow: 0 2px 8px rgba(0, 0, 0, 0.2);
+    backdrop-filter: blur(5px);
+    animation: fadeIn 0.3s ease-out;
 }
 
 .tab-content.active {
@@ -87,37 +102,58 @@ body {
 .form-group label {
     display: block;
     margin-bottom: 5px;
+    font-weight: 500;
 }
 
 .form-group input, .form-group select, .form-group textarea {
     width: 100%;
-    padding: 8px;
-    background-color: #2f2f2f;
+    padding: 10px;
+    background-color: rgba(47, 47, 47, 0.7);
     border: 1px solid #444;
     color: white;
-    border-radius: 4px;
+    border-radius: 6px;
+    transition: all 0.3s ease;
+}
+
+.form-group input:focus, .form-group select:focus, .form-group textarea:focus {
+    outline: none;
+    border-color: #3498db;
+    box-shadow: 0 0 0 2px rgba(52, 152, 219, 0.2);
 }
 
 button {
-    background-color: #4a4a4a;
+    background: linear-gradient(135deg, #4a4a4a 0%, #5a5a5a 100%);
     color: white;
     border: none;
     padding: 10px 15px;
-    border-radius: 4px;
+    border-radius: 6px;
     cursor: pointer;
+    transition: all 0.3s ease;
+    font-weight: 500;
+    box-shadow: 0 2px 4px rgba(0, 0, 0, 0.1);
 }
 
 button:hover {
-    background-color: #5a5a5a;
+    background: linear-gradient(135deg, #5a5a5a 0%, #6a6a6a 100%);
+    transform: translateY(-2px);
+    box-shadow: 0 4px 8px rgba(0, 0, 0, 0.15);
+}
+
+button:active {
+    transform: translateY(0);
+    box-shadow: 0 1px 2px rgba(0, 0, 0, 0.1);
 }
 
 .result-container {
     margin-top: 20px;
     padding: 15px;
-    background-color: #2f2f2f;
-    border-radius: 5px;
+    background-color: rgba(47, 47, 47, 0.7);
+    border-radius: 8px;
     border: 1px solid #444;
     white-space: pre-wrap;
+    box-shadow: 0 2px 8px rgba(0, 0, 0, 0.2);
+    backdrop-filter: blur(5px);
+    animation: fadeIn 0.3s ease-out;
 }
 
 .loading {
@@ -132,5 +168,16 @@ button:hover {
 
 @keyframes spin {
     to { transform: rotate(360deg); }
+}
+
+@keyframes fadeIn {
+    from { 
+        opacity: 0; 
+        transform: translateY(10px); 
+    }
+    to { 
+        opacity: 1; 
+        transform: translateY(0); 
+    }
 }
 

@@ -17,19 +17,11 @@ pub enum DatabaseConnectionStatus {
     Unknown,
 }
 
+
+
 /// 初始化数据库并检查连接状态
 pub async fn dbdata_init(db_manager: DatabaseManager) -> Result<DatabaseConnectionStatus> {
-    info!("开始初始化数据库连接...");
-    
-    // // 尝试创建数据库管理器
-    // let db_manager = match DatabaseManager::new_default().await {
-    //     Ok(manager) => manager,
-    //     Err(e) => {
-    //         warn!("数据库管理器初始化失败: {}", e);
-    //         return Ok(DatabaseConnectionStatus::BothDisconnected);
-    //     }
-    // };
-    
+
     // 获取系统状态
     let status = db_manager.get_system_status().await;
     
@@ -66,8 +58,6 @@ pub async fn dbdata_init(db_manager: DatabaseManager) -> Result<DatabaseConnecti
         DatabaseConnectionStatus::Unknown => warn!("数据库连接状态未知"),
     }
     
-    // // 关闭数据库连接
-    // db_manager.close().await;
     
     Ok(connection_status)
 }
@@ -111,16 +101,9 @@ pub async fn check_database_existence() -> Result<(bool, bool)> {
 }
 
 /// 获取详细的数据库状态信息
-pub async fn get_detailed_database_status() -> Result<String> {
+pub async fn get_detailed_database_status(db_manager: DatabaseManager) -> Result<String> {
     info!("获取详细的数据库状态信息...");
-    
-    // 尝试创建数据库管理器
-    let db_manager = match DatabaseManager::new_default().await {
-        Ok(manager) => manager,
-        Err(e) => {
-            return Ok(format!("数据库管理器初始化失败: {}", e));
-        }
-    };
+
     
     // 获取系统状态
     let status = db_manager.get_system_status().await;
@@ -136,3 +119,4 @@ pub async fn get_detailed_database_status() -> Result<String> {
     
     Ok(status_info)
 }
+
