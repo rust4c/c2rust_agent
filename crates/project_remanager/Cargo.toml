@@ -1,0 +1,16 @@
+[package]
+name = "project_remanager"
+version = "0.1.0"
+edition = "2021"
+
+[[bin]]
+name = "project_remanager"
+path = "src/main.rs"
+
+[dependencies]
+anyhow = "1.0"
+serde = { version = "1.0", features = ["derive"] }
+toml = "0.8"
+
+[dev-dependencies]
+tempfile = "3.0"
