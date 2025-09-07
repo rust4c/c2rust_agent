@@ -8,6 +8,7 @@ llm_requester = { path = "../llm_requester" }
 prompt_builder = { path = "../prompt_builder" }
 rust_checker = { path = "../rust_checker" }
 db_services = { path = "../db_services" }
+env_checker = { path = "../env_checker" }
 
 anyhow = "1.0"
 indicatif = "0.18.0"
@@ -17,6 +18,7 @@ serde_json = "1.0"
 tokio = { version = "1.0", features = ["full"] }
 env_logger = "0.11.8"
 config = "0.15.14"
+tracing = "0.1"
 
 [dev-dependencies]
 tempfile = "3.0"

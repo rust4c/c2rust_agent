@@ -1799,7 +1799,9 @@ version = "0.1.0"
 dependencies = [
  "anyhow",
  "db_services",
+ "llm_requester",
  "log",
+ "tokio",
 ]
 
 [[package]]
@@ -3280,6 +3282,7 @@ dependencies = [
  "anyhow",
  "config",
  "db_services",
+ "env_checker",
  "env_logger",
  "indicatif",
  "llm_requester",
@@ -3290,6 +3293,7 @@ dependencies = [
  "serde_json",
  "tempfile",
  "tokio",
+ "tracing",
 ]
 
 [[package]]
