@@ -19,6 +19,9 @@ pub use translation_api::{
 };
 pub mod translation_api;
 
+pub mod single_process;
+pub use single_process::SingleProcess;
+
 const MAX_RETRY_ATTEMPTS: usize = 3;
 const CONCURRENT_LIMIT: usize = 4; // Adjust based on system capabilities
 

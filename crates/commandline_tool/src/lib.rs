@@ -6,8 +6,8 @@ use std::path::PathBuf;
 
 #[derive(Parser)]
 #[command(name = "c2rust-agent")]
-#[command(version = "1.0")]
-#[command(about = "C 到 Rust 代码转换工具", long_about = None)]
+#[command(version = "2.0")]
+#[command(about = "C to Rust", long_about = None)]
 
 pub struct Cli {
     #[command(subcommand)]
@@ -16,7 +16,8 @@ pub struct Cli {
 
 #[derive(Subcommand)]
 pub enum Commands {
-    /// Analysis C Language Project
+
+    /// Output C project analysis and deconstruction
     Analyze {
         /// C Project Catalog (required)
         #[arg(long, short, value_name = "DIR", help = "enter path",required = true)]
@@ -25,7 +26,7 @@ pub enum Commands {
 
     },
 
-    /// C Project pre-processing
+    /// Output the pre-processing results of the C project
     Preprocess{
         /// C Project Catalog (required)
         #[arg(long, short, value_name = "DIR", help = "enter path",required = true)]
@@ -43,16 +44,6 @@ pub enum Commands {
 
     },
 
-    /// Converting Project C to RUST
-    Translate {
-        /// C Project Catalog (required)
-        #[arg(long, value_name = "DIR", required = true)]
-        input_dir: PathBuf,
-
-        /// Export the Rust project catalog (optional)
-        #[arg(long, value_name = "OIR")]
-        output_dir: Option<PathBuf>,
-    },
 
     /// Parse Call Relationships
     AnalyzeRelations {
@@ -65,35 +56,68 @@ pub enum Commands {
         project_name: Option<String>,
 
         /// db Database File Path
-        #[arg(long, default_value = "relation_analysis.db")]
+        #[arg(long, default_value = "c2rust_metadata.db")]
         db: String,
     },
+
+    // /// db database operation
+    // Dbdatebase{
+    //     /// Database file path
+    //     #[arg(long, default_value = "c2rust_metadata.db")]
+    //     sqlite_path: Option<String>,
+
+    //     /// collection_name in Qdrant
+    //     #[arg(long, default_value = "c2rust_collection")]
+    //     qdrant_collection: Option<String>,
+    //     /// Qdrant host address
+    //     #[arg(long, default_value = "my-qdrant-server")]
+    //     qdrant_host: Option<String>,
+    //     /// Qdrant port
+    //     #[arg(long, default_value_t = 6333)]
+    //     qdrant_port: u16,
+    //     /// Vector size
+    //     #[arg(long, default_value_t = 1536)]
+    //     vector_size: usize,
+    // },
 
     /// Query and call relational database
     RelationQuery {
         /// Database file path
-        #[arg(long, default_value = "relation_analysis.db")]
+        #[arg(long, default_value = "c2rust_metadata.db")]
         db: String,
 
-        /// 项目名称（用于具体查询）
+        /// Project name (for specific query)
         #[arg(long)]
         project: Option<String>,
 
-        /// 查询类型
+        /// Query Type
         #[arg(long, value_enum, default_value_t = QueryType::ListProjects)]
         query_type: QueryType,
 
-        /// 目标函数名或文件路径
+        /// Target function name or file path
         #[arg(long)]
         target: Option<String>,
 
-        /// 搜索关键词
+        /// Search keywords
         #[arg(long)]
         keyword: Option<String>,
 
-        /// 结果数量限制
+        /// Limit on number of results
         #[arg(long, default_value_t = 10)]
         limit: usize,
+    },
+
+
+
+        /// Converting Project C to RUST
+    Translate {
+        /// C Project Catalog (required)
+        #[arg(long, value_name = "DIR", required = true)]
+        input_dir: PathBuf,
+
+        /// Export the Rust project catalog (optional)
+        #[arg(long, value_name = "OIR")]
+        output_dir: Option<PathBuf>,
     },
 }
 
