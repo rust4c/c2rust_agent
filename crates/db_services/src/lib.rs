@@ -1,7 +1,7 @@
 use anyhow::{anyhow, Result};
 use chrono::{DateTime, Utc};
 use log::{debug, info};
-use serde::{Deserialize, Serialize};
+use serde::{de, Deserialize, Serialize};
 use serde_json::{json, Value as JsonValue};
 use std::collections::HashMap;
 use std::sync::Arc;
@@ -65,6 +65,7 @@ pub struct SystemStatus {
 }
 
 /// 数据库管理器 - 统一管理 SQLite 和 Qdrant 数据库
+#[derive(Clone)]
 pub struct DatabaseManager {
     sqlite: Arc<Mutex<SqliteService>>,
     qdrant: Arc<Mutex<QdrantServer>>,

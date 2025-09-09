@@ -23,7 +23,7 @@ api_key = "your_api_key_here"
 # Database config options
 [qdrant]
 host = "localhost"
-port = 6333
+port = 6334
 collection_name = "default"
 vector_size = 1536
 
