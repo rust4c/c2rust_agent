@@ -1,14 +1,15 @@
-pub fn add(left: u64, right: u64) -> u64 {
-    left + right
+pub struct Processor {
+    // Processor state
 }
 
-#[cfg(test)]
-mod tests {
-    use super::*;
+impl Processor {
+    pub fn new() -> Self {
+        Processor {
+            // Initialize processor state
+        }
+    }
 
-    #[test]
-    fn it_works() {
-        let result = add(2, 2);
-        assert_eq!(result, 4);
+    pub fn execute_instruction(&mut self, instruction: u32) {
+        // Execute instruction
     }
 }

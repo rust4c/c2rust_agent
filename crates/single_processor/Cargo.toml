@@ -4,3 +4,10 @@ version = "0.1.0"
 edition = "2024"
 
 [dependencies]
+anyhow = "1.0.99"
+log = "0.4.28"
+tokio = "1.47.1"
+
+db_services = { path = "../db_services" }
+llm_requester = { path = "../llm_requester" }
+prompt_builder = { path = "../prompt_builder" }

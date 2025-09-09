@@ -6,6 +6,7 @@ pub mod openai_provider;
 pub mod xai_provider;
 
 pub mod pkg_config;
+pub mod search;
 
 pub async fn llm_request(messages: Vec<String>) -> Result<String> {
     let config = pkg_config::get_config()?;
