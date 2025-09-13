@@ -11,12 +11,12 @@ use anyhow::Result;
 use tokio; //添加 tokio 运行时的文件
 use env_checker::dbdata_init;
 use env_checker::ai_checker::{ai_service_init, AIConnectionStatus};
-use main_processor::single_process::SingleProcess;
+// use main_processor::single_process::SingleProcess;
 use single_processor::single_processes::singlefile_processor;
+use env_logger::Env;
 
-
-// 翻译模块
-use main_processor::{MainProcessor, ProjectType};
+// // 翻译模块
+// use main_processor::{MainProcessor, ProjectType};
 
 
 
@@ -28,6 +28,12 @@ async fn _dbdata_create() -> DatabaseManager {
 
 #[tokio::main]
 async fn main() -> Result<()>{
+    // 初始化日志系统，调试使用
+    env_logger::Builder::from_env(Env::default().default_filter_or("info"))
+        .format_timestamp(None)
+        .init();
+
+    
     // 初始化数据库连接
     let manager: DatabaseManager = _dbdata_create().await;
 
@@ -184,35 +190,43 @@ async fn main() -> Result<()>{
         } => {
             println!("已选择转换命令");
             println!("输入目录: {}", input_dir.display());
-            println!(
-                "输出目录: {}",
-                output_dir
-                    .as_ref()
-                    .map_or("未指定", |p| p.to_str().unwrap_or("未指定"))
-            );
+            // println!(
+            //     "输出目录: {}",
+            //     output_dir
+            //         .as_ref()
+            //         .map_or("未指定", |p| p.to_str().unwrap_or("未指定"))
+            // );
 
-            // 初始化翻译处理器
-            let processor = MainProcessor::new(input_dir.clone());
+            // // 初始化翻译处理器
+            // let processor = MainProcessor::new(input_dir.clone());
 
-            // 运行翻译工作流
-            match processor.run_translation_workflow().await{
-                Ok(stats) => {
-                    println!("翻译完成");
-                    println!("成功翻译:{} 个项目", stats.successful_translations.len());
-                    println!("失败: {} 个项目", stats.failed_translations.len());
+            // // 运行翻译工作流
+            // match processor.run_translation_workflow().await{
+            //     Ok(stats) => {
+            //         println!("翻译完成");
+            //         println!("成功翻译:{} 个项目", stats.successful_translations.len());
+            //         println!("失败: {} 个项目", stats.failed_translations.len());
 
-                    // 如果有输出目录, 将翻译的结果
-                    if let Some(output_path) = output_dir{
-                        // 这里太农家移动文件的逻辑
-                        println!("将翻译结果移动到: {}", output_path.display());
-                    }
-                }
-                Err(e) => {
-                    eprint!("翻译失败: {}", e);
-                }
-            }
+            //         // 如果有输出目录, 将翻译的结果
+            //         if let Some(output_path) = output_dir{
+            //             println!("将翻译结果移动到: {}", output_path.display());
+            //         }
+            //     }
+            //     Err(e) => {
+            //         eprint!("翻译失败: {}", e);
+            //     }
+            // }
             Ok(())
 
         }
+
+        Commands::Test{
+            input_dir
+        } => {
+            println!("已选择测试单文件处理命令");
+            println!("文件路径: {}", input_dir.display());
+            let _ = singlefile_processor(input_dir).await;
+            Ok(())
+    }
     }
 }

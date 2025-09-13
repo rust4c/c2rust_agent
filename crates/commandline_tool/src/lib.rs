@@ -119,6 +119,13 @@ pub enum Commands {
         #[arg(long, value_name = "OIR")]
         output_dir: Option<PathBuf>,
     },
+
+    /// test single file processing
+    Test{
+        /// C file path (required)
+        #[arg(long, value_name = "FILE", help = "enter file path",required = true)]
+        input_dir: PathBuf,
+    }
 }
 
 #[derive(Copy, Clone, PartialEq, Eq, PartialOrd, Ord, ValueEnum)]
