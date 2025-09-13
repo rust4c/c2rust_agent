@@ -71,7 +71,7 @@ libc = "0.2"
     Ok(())
 }
 
-// 处理单个文件函数 - 改为异步函数
+// 处理单个文件函数
 pub async fn singlefile_processor(file_path: &Path) -> Result<()> {
     println!("正在处理文件: {}", file_path.display());
 

@@ -12,6 +12,8 @@ use tokio; //添加 tokio 运行时的文件
 use env_checker::dbdata_init;
 use env_checker::ai_checker::{ai_service_init, AIConnectionStatus};
 use main_processor::single_process::SingleProcess;
+use single_processor::single_processes::singlefile_processor;
+
 
 // 翻译模块
 use main_processor::{MainProcessor, ProjectType};

@@ -603,6 +603,7 @@ dependencies = [
  "lsp_services",
  "main_processor",
  "prompt_builder",
+ "single_processor",
  "tokio",
 ]
 
