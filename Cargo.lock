@@ -5424,7 +5424,10 @@ dependencies = [
  "llm_requester",
  "log",
  "prompt_builder",
+ "serde",
+ "serde_json",
  "tokio",
+ "tracing",
 ]
 
 [[package]]
