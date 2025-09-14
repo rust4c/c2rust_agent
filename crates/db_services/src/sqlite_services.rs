@@ -259,9 +259,10 @@ impl SqliteService {
 
         let entry_iter = stmt.query_map([id], |row| self.row_to_code_entry(row))?;
 
-        for entry in entry_iter {
-            return Ok(Some(entry?));
-        }
+        // Not really loop
+        // for entry in entry_iter {
+        //     return Ok(Some(entry?));
+        // }
 
         Ok(None)
     }

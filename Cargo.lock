@@ -3346,6 +3346,7 @@ dependencies = [
  "rust_checker",
  "serde",
  "serde_json",
+ "single_processor",
  "tempfile",
  "tokio",
  "tracing",

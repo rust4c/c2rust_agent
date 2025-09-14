@@ -9,6 +9,7 @@ prompt_builder = { path = "../prompt_builder" }
 rust_checker = { path = "../rust_checker" }
 db_services = { path = "../db_services" }
 env_checker = { path = "../env_checker" }
+single_processor = { path = "../single_processor" }
 
 anyhow = "1.0"
 indicatif = "0.18.0"

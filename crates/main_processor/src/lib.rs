@@ -12,15 +12,7 @@ use tokio::fs;
 use tokio::sync::Semaphore;
 
 mod pkg_config;
-pub mod translation;
-pub use translation_api::{
-    translate_c_file, translate_c_project, ProjectTranslationResult, TranslationAPI,
-    TranslationConfig,
-};
-pub mod translation_api;
-
-pub mod single_process;
-pub use single_process::SingleProcess;
+use single_processor::single_processes;
 
 const MAX_RETRY_ATTEMPTS: usize = 3;
 const CONCURRENT_LIMIT: usize = 4; // Adjust based on system capabilities
