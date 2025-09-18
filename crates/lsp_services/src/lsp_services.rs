@@ -1,8 +1,11 @@
 use anyhow::{Result, anyhow};
+use chrono::Utc;
+use db_services::{DatabaseManager, create_database_manager};
+use dirs;
 use log::{debug, error, info, warn};
 use regex::Regex;
 use serde::Serialize;
-use serde_json::Value;
+use serde_json::{Value, json};
 use std::{
     collections::HashMap,
     fs,
@@ -62,6 +65,7 @@ pub struct ClangdAnalyzer {
     pub classes: Vec<ClassInfo>,
     pub variables: Vec<VariableInfo>,
     pub macros: Vec<MacroInfo>,
+    database_manager: Option<DatabaseManager>,
 }
 
 impl ClangdAnalyzer {
@@ -85,7 +89,49 @@ impl ClangdAnalyzer {
             classes: Vec::new(),
             variables: Vec::new(),
             macros: Vec::new(),
+            database_manager: None,
         }
+    }
+
+    /// Create a new ClangdAnalyzer with database manager
+    pub async fn new_with_database(
+        project_root: &str,
+        sqlite_path: Option<&str>,
+        qdrant_url: Option<&str>,
+        qdrant_collection: Option<&str>,
+        vector_size: Option<usize>,
+    ) -> Result<Self> {
+        info!("Initializing ClangdAnalyzer with database support");
+
+        let mut analyzer = Self::new(project_root);
+        let db_manager =
+            create_database_manager(sqlite_path, qdrant_url, qdrant_collection, vector_size)
+                .await?;
+
+        analyzer.database_manager = Some(db_manager);
+        info!("ClangdAnalyzer initialized with database support");
+
+        Ok(analyzer)
+    }
+
+    /// Enable database storage for this analyzer
+    pub async fn enable_database_storage(
+        &mut self,
+        sqlite_path: Option<&str>,
+        qdrant_url: Option<&str>,
+        qdrant_collection: Option<&str>,
+        vector_size: Option<usize>,
+    ) -> Result<()> {
+        info!("Enabling database storage for ClangdAnalyzer");
+
+        let db_manager =
+            create_database_manager(sqlite_path, qdrant_url, qdrant_collection, vector_size)
+                .await?;
+
+        self.database_manager = Some(db_manager);
+        info!("Database storage enabled for ClangdAnalyzer");
+
+        Ok(())
     }
 
     pub fn generate_compile_commands(&self) -> Result<()> {
@@ -839,6 +885,341 @@ impl ClangdAnalyzer {
             self.variables.clone(),
         )
     }
+
+    /// Save all analysis results to database
+    /// This is the unified entry point for persisting LSP analysis results
+    pub async fn save_analysis_results_to_database(&self) -> Result<()> {
+        let Some(ref db_manager) = self.database_manager else {
+            debug!("No database manager configured, skipping save");
+            return Ok(());
+        };
+
+        info!("Saving analysis results to database...");
+        // Log which SQLite DB file will be used
+        let db_path = db_manager.sqlite_db_path().await;
+        info!("SQLite DB path: {}", db_path);
+
+        // Save functions
+        if !self.functions.is_empty() {
+            self.save_functions_to_database(db_manager).await?;
+        }
+
+        // Save classes/structs
+        if !self.classes.is_empty() {
+            self.save_classes_to_database(db_manager).await?;
+        }
+
+        // Save variables
+        if !self.variables.is_empty() {
+            self.save_variables_to_database(db_manager).await?;
+        }
+
+        // Save macros
+        if !self.macros.is_empty() {
+            info!("Saving {} macros to database", self.macros.len());
+            self.save_macros_to_database(db_manager).await?;
+        }
+
+        // Summarize counts from SQLite to confirm persistence
+        match db_manager.sqlite_statistics().await {
+            Ok(stats) => {
+                info!(
+                    "SQLite row counts => code_entries: {}, analysis_results: {}, conversion_results: {}",
+                    stats.get("code_entries").cloned().unwrap_or(0),
+                    stats.get("analysis_results").cloned().unwrap_or(0),
+                    stats.get("conversion_results").cloned().unwrap_or(0)
+                );
+            }
+            Err(e) => warn!("Failed to read SQLite statistics: {}", e),
+        }
+
+        info!("Successfully saved all analysis results to database");
+        Ok(())
+    }
+
+    /// Save function definitions to database
+    async fn save_functions_to_database(&self, db_manager: &DatabaseManager) -> Result<()> {
+        info!("Saving {} functions to database", self.functions.len());
+
+        for function in &self.functions {
+            // First create a code entry for the function
+            let params_str = function
+                .parameters
+                .iter()
+                .map(|p| format!("{} {}", p.r#type, p.name))
+                .collect::<Vec<_>>()
+                .join(", ");
+            let code = format!(
+                "{} {}({});",
+                function.return_type, function.name, params_str
+            );
+
+            let code_entry = db_services::sqlite_services::CodeEntry {
+                id: String::new(), // Will be generated
+                code,
+                language: "c".to_string(),
+                function_name: function.name.clone(),
+                project: self.project_root.to_string_lossy().to_string(),
+                file_path: function.file.to_string_lossy().to_string(),
+                created_at: chrono::Utc::now(),
+                updated_at: chrono::Utc::now(),
+                metadata: Some(
+                    json!({
+                        "type": "function_definition",
+                        "line": function.line,
+                        "return_type": function.return_type,
+                        "parameters": function.parameters
+                    })
+                    .to_string(),
+                ),
+            };
+
+            debug!("Saving code entry for function {}", function.name);
+
+            // Save the code entry and get its ID
+            let code_id = match db_manager.save_code_entry(code_entry).await {
+                Ok(id) => id,
+                Err(e) => {
+                    warn!(
+                        "Failed to save code entry for function {}: {}",
+                        function.name, e
+                    );
+                    continue;
+                }
+            };
+
+            // Now create the analysis result using the code entry ID
+            let analysis_result = db_services::sqlite_services::AnalysisResult {
+                id: String::new(), // Will be generated by insert_analysis_result
+                code_id,
+                analysis_type: "function_definition".to_string(),
+                result: serde_json::to_string(&json!({
+                    "name": function.name,
+                    "file": function.file,
+                    "line": function.line,
+                    "return_type": function.return_type,
+                    "parameters": function.parameters,
+                    "language": "c" // Default to C, could be enhanced later
+                }))?,
+                score: None,
+                created_at: chrono::Utc::now(),
+            };
+
+            debug!("Saving Function metadata: {:?}", analysis_result);
+
+            if let Err(e) = db_manager.save_analysis_result(analysis_result).await {
+                warn!("Failed to save function {}: {}", function.name, e);
+            }
+        }
+
+        Ok(())
+    }
+
+    /// Save class/struct definitions to database
+    async fn save_classes_to_database(&self, db_manager: &DatabaseManager) -> Result<()> {
+        info!("Saving {} classes/structs to database", self.classes.len());
+
+        for class in &self.classes {
+            // First create a code entry for the class/struct
+            let members_str = class
+                .members
+                .iter()
+                .map(|m| format!("  {} {};", m.r#type, m.name))
+                .collect::<Vec<_>>()
+                .join("\n");
+            let code = format!("struct {} {{\n{}\n}};", class.name, members_str);
+
+            let code_entry = db_services::sqlite_services::CodeEntry {
+                id: String::new(), // Will be generated
+                code,
+                language: "c".to_string(),
+                function_name: String::new(),
+                project: self.project_root.to_string_lossy().to_string(),
+                file_path: class.file.to_string_lossy().to_string(),
+                created_at: chrono::Utc::now(),
+                updated_at: chrono::Utc::now(),
+                metadata: Some(
+                    json!({
+                        "type": "struct_definition",
+                        "line": class.line,
+                        "struct_name": class.name,
+                        "members": class.members
+                    })
+                    .to_string(),
+                ),
+            };
+
+            // Save the code entry and get its ID
+            let code_id = match db_manager.save_code_entry(code_entry).await {
+                Ok(id) => id,
+                Err(e) => {
+                    warn!(
+                        "Failed to save code entry for class/struct {}: {}",
+                        class.name, e
+                    );
+                    continue;
+                }
+            };
+
+            // Now create the analysis result using the code entry ID
+            let analysis_result = db_services::sqlite_services::AnalysisResult {
+                id: String::new(),
+                code_id,
+                analysis_type: "struct_definition".to_string(),
+                result: serde_json::to_string(&json!({
+                    "name": class.name,
+                    "file": class.file,
+                    "line": class.line,
+                    "members": class.members,
+                    "language": "c"
+                }))?,
+                score: None,
+                created_at: chrono::Utc::now(),
+            };
+
+            if let Err(e) = db_manager.save_analysis_result(analysis_result).await {
+                warn!("Failed to save class/struct {}: {}", class.name, e);
+            }
+        }
+
+        Ok(())
+    }
+
+    /// Save variable definitions to database
+    async fn save_variables_to_database(&self, db_manager: &DatabaseManager) -> Result<()> {
+        info!("Saving {} variables to database", self.variables.len());
+
+        for variable in &self.variables {
+            // First create a code entry for the variable
+            let code_entry = db_services::sqlite_services::CodeEntry {
+                id: String::new(), // Will be generated
+                code: format!("{} {};", variable.r#type, variable.name),
+                language: "c".to_string(),
+                function_name: String::new(),
+                project: self.project_root.to_string_lossy().to_string(),
+                file_path: variable.file.to_string_lossy().to_string(),
+                created_at: chrono::Utc::now(),
+                updated_at: chrono::Utc::now(),
+                metadata: Some(
+                    json!({
+                        "type": "variable_definition",
+                        "line": variable.line,
+                        "variable_type": variable.r#type
+                    })
+                    .to_string(),
+                ),
+            };
+
+            // Save the code entry and get its ID
+            let code_id = match db_manager.save_code_entry(code_entry).await {
+                Ok(id) => id,
+                Err(e) => {
+                    warn!(
+                        "Failed to save code entry for variable {}: {}",
+                        variable.name, e
+                    );
+                    continue;
+                }
+            };
+
+            // Now create the analysis result using the code entry ID
+            let analysis_result = db_services::sqlite_services::AnalysisResult {
+                id: String::new(),
+                code_id,
+                analysis_type: "variable_definition".to_string(),
+                result: serde_json::to_string(&json!({
+                    "name": variable.name,
+                    "file": variable.file,
+                    "line": variable.line,
+                    "type": variable.r#type,
+                    "language": "c"
+                }))?,
+                score: None,
+                created_at: chrono::Utc::now(),
+            };
+
+            if let Err(e) = db_manager.save_analysis_result(analysis_result).await {
+                warn!("Failed to save variable {}: {}", variable.name, e);
+            }
+        }
+
+        Ok(())
+    }
+
+    /// Save macro definitions to database
+    async fn save_macros_to_database(&self, db_manager: &DatabaseManager) -> Result<()> {
+        info!("Saving {} macros to database", self.macros.len());
+
+        for macro_info in &self.macros {
+            // First create a code entry for the macro
+            let code = format!("#define {} {}", macro_info.name, macro_info.value);
+
+            let code_entry = db_services::sqlite_services::CodeEntry {
+                id: String::new(), // Will be generated
+                code,
+                language: "c".to_string(),
+                function_name: String::new(),
+                project: self.project_root.to_string_lossy().to_string(),
+                file_path: macro_info.file.to_string_lossy().to_string(),
+                created_at: chrono::Utc::now(),
+                updated_at: chrono::Utc::now(),
+                metadata: Some(
+                    json!({
+                        "type": "macro_definition",
+                        "line": macro_info.line,
+                        "macro_name": macro_info.name,
+                        "value": macro_info.value
+                    })
+                    .to_string(),
+                ),
+            };
+
+            // Save the code entry and get its ID
+            let code_id = match db_manager.save_code_entry(code_entry).await {
+                Ok(id) => id,
+                Err(e) => {
+                    warn!(
+                        "Failed to save code entry for macro {}: {}",
+                        macro_info.name, e
+                    );
+                    continue;
+                }
+            };
+
+            // Now create the analysis result using the code entry ID
+            let analysis_result = db_services::sqlite_services::AnalysisResult {
+                id: String::new(),
+                code_id,
+                analysis_type: "macro_definition".to_string(),
+                result: serde_json::to_string(&json!({
+                    "name": macro_info.name,
+                    "file": macro_info.file,
+                    "line": macro_info.line,
+                    "value": macro_info.value,
+                    "language": "c"
+                }))?,
+                score: None,
+                created_at: chrono::Utc::now(),
+            };
+
+            if let Err(e) = db_manager.save_analysis_result(analysis_result).await {
+                warn!("Failed to save macro {}: {}", macro_info.name, e);
+            }
+        }
+
+        Ok(())
+    }
+
+    /// Analyze project and automatically save results to database
+    pub async fn analyze_and_save_project(&mut self) -> Result<()> {
+        // Perform analysis
+        self.analyze_project()?;
+
+        // Save results to database if database manager is available
+        self.save_analysis_results_to_database().await?;
+
+        Ok(())
+    }
 }
 
 pub fn check_function_and_class_name(project_path: &str, detailed: bool) -> Result<()> {
@@ -851,4 +1232,41 @@ pub fn check_function_and_class_name(project_path: &str, detailed: bool) -> Resu
 
     info!("\n✅ Analysis completed!");
     Ok(())
+}
+
+/// Analyze project with database support - the unified entry point for LSP analysis with persistence
+pub async fn analyze_project_with_database(
+    project_path: &str,
+    detailed: bool,
+    sqlite_path: Option<&str>,
+    qdrant_url: Option<&str>,
+    qdrant_collection: Option<&str>,
+    vector_size: Option<usize>,
+) -> Result<()> {
+    info!("🚀 Starting C/C++ code analysis with database support...");
+    info!("Project path: {}", project_path);
+
+    let mut analyzer = ClangdAnalyzer::new_with_database(
+        project_path,
+        sqlite_path,
+        qdrant_url,
+        qdrant_collection,
+        vector_size,
+    )
+    .await?;
+
+    // Analyze and automatically save to database
+    analyzer.analyze_and_save_project().await?;
+    // analyzer.print_analysis_results(detailed);
+
+    info!("\n✅ Analysis and database save completed!");
+    Ok(())
+}
+
+/// Simple wrapper for analyzing with default database settings
+pub async fn analyze_project_with_default_database(
+    project_path: &str,
+    detailed: bool,
+) -> Result<()> {
+    analyze_project_with_database(project_path, detailed, None, None, None, None).await
 }

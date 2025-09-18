@@ -12,7 +12,7 @@ mod pkg_config;
 use pkg_config::{get_config, qdrant_config, sqlite_config, DBConfig};
 mod qdrant_services;
 use qdrant_services::QdrantServer;
-mod sqlite_services;
+pub mod sqlite_services;
 use sqlite_services::{CodeEntry, ConversionResult, SqliteService};
 
 /// 接口信息结构体
@@ -747,6 +747,39 @@ impl DatabaseManager {
         self.sqlite.lock().await
     }
 
+    /// 获取正在使用的SQLite数据库文件路径（用于诊断）
+    pub async fn sqlite_db_path(&self) -> String {
+        let sqlite = self.sqlite.lock().await;
+        sqlite.db_path().to_string()
+    }
+
+    /// 获取SQLite统计信息（表内行数）
+    pub async fn sqlite_statistics(&self) -> std::result::Result<std::collections::HashMap<String, i64>, String> {
+        let sqlite = self.sqlite.lock().await;
+        sqlite
+            .get_statistics()
+            .map_err(|e| format!("Failed to get SQLite statistics: {}", e))
+    }
+
+    /// 保存代码条目
+    pub async fn save_code_entry(&self, entry: sqlite_services::CodeEntry) -> Result<String> {
+        let sqlite = self.sqlite.lock().await;
+        sqlite
+            .insert_code_entry(entry)
+            .map_err(|e| anyhow!("Failed to save code entry: {}", e))
+    }
+
+    /// 保存分析结果
+    pub async fn save_analysis_result(
+        &self,
+        result: sqlite_services::AnalysisResult,
+    ) -> Result<String> {
+        let sqlite = self.sqlite.lock().await;
+        sqlite
+            .insert_analysis_result(result)
+            .map_err(|e| anyhow!("Failed to save analysis result: {}", e))
+    }
+
     /// 关闭数据库连接
     pub async fn close(&self) {
         info!("数据库管理器正在关闭");
@@ -763,7 +796,37 @@ pub async fn create_database_manager(
     qdrant_collection: Option<&str>,
     vector_size: Option<usize>,
 ) -> Result<DatabaseManager> {
-    let config = get_config()?;
+    let mut config = get_config()?;
+
+    // Apply optional overrides
+    if let Some(path) = sqlite_path {
+        config.sqlite.path = path.to_string();
+    }
+
+    if let Some(collection) = qdrant_collection {
+        config.qdrant.collection_name = collection.to_string();
+    }
+
+    if let Some(vdim) = vector_size {
+        config.qdrant.vector_size = vdim;
+    }
+
+    if let Some(url) = qdrant_url {
+        // Accept forms like "http://host:port", "host:port", or just "host"
+        let trimmed = url.trim_start_matches("http://").trim_start_matches("https://");
+        let mut parts = trimmed.split(':');
+        if let Some(host) = parts.next() {
+            if !host.is_empty() {
+                config.qdrant.host = host.to_string();
+            }
+        }
+        if let Some(port_str) = parts.next() {
+            if let Ok(port) = port_str.parse::<u16>() {
+                config.qdrant.port = Some(port);
+            }
+        }
+    }
+
     DatabaseManager::new(config).await
 }
 

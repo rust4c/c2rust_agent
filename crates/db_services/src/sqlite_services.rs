@@ -97,6 +97,10 @@ pub struct AnalysisResult {
 }
 
 impl SqliteService {
+    /// Get the underlying database file path (for diagnostics)
+    pub fn db_path(&self) -> &str {
+        &self.db_path
+    }
     /// Create a new SQLite service instance with connection pooling
     pub fn new(sqlite_config: sqlite_config) -> Result<Self> {
         let db_path = sqlite_config.path;
@@ -257,12 +261,11 @@ impl SqliteService {
              FROM code_entries WHERE id = ?1",
         )?;
 
-        let entry_iter = stmt.query_map([id], |row| self.row_to_code_entry(row))?;
+        let mut entry_iter = stmt.query_map([id], |row| self.row_to_code_entry(row))?;
 
-        // Not really loop
-        // for entry in entry_iter {
-        //     return Ok(Some(entry?));
-        // }
+        if let Some(row) = entry_iter.next() {
+            return Ok(Some(row?));
+        }
 
         Ok(None)
     }

@@ -122,7 +122,7 @@ impl<'a> PromptBuilder<'a> {
         Ok(())
     }
 
-    /// Resolve input path to original path
+    /// Resolve input path to original path using loaded mappings; non-fatal if not found
     fn resolve_original_path(&self, input_path: &str) -> String {
         // If input path is a cached path, map to original path
         if let Some(original) = self.file_mappings.get(input_path) {
@@ -155,8 +155,45 @@ impl<'a> PromptBuilder<'a> {
             }
         }
 
-        warn!("Unable to resolve path mapping for: {}", input_path);
+        debug!(
+            "Unable to resolve cached path mapping for: {} (will try DB fallback)",
+            input_path
+        );
         input_path.to_string()
+    }
+
+    /// Try to resolve the original path via database by filename (latest updated entry)
+    async fn resolve_original_path_via_db(&self, input_path: &str) -> Option<String> {
+        let file_name = Path::new(input_path)
+            .file_name()
+            .and_then(|n| n.to_str())
+            .unwrap_or("");
+
+        if file_name.is_empty() {
+            return None;
+        }
+
+        let query = r#"
+            SELECT file_path
+            FROM code_entries
+            WHERE file_path LIKE ?
+            ORDER BY updated_at DESC
+            LIMIT 1
+        "#;
+
+        let like = format!("%{}", file_name);
+        match self
+            .db_manager
+            .execute_raw_query(query, vec![json!(like)])
+            .await
+        {
+            Ok(rows) => rows
+                .first()
+                .and_then(|r| r.get("file_path"))
+                .and_then(|v| v.as_str())
+                .map(|s| s.to_string()),
+            Err(_) => None,
+        }
     }
 
     /// Build context prompt for a specific file
@@ -165,7 +202,11 @@ impl<'a> PromptBuilder<'a> {
         file_path: &str,
         target_functions: Option<Vec<String>>,
     ) -> Result<String> {
-        let original_path = self.resolve_original_path(file_path);
+        // Resolve path using mappings first, then fallback to DB resolution by filename
+        let original_path = match self.resolve_original_path_via_db(file_path).await {
+            Some(p) => p,
+            None => self.resolve_original_path(file_path),
+        };
         info!(
             "Building context prompt for file {} (original path: {})",
             file_path, original_path
@@ -215,6 +256,8 @@ impl<'a> PromptBuilder<'a> {
             .and_then(|n| n.to_str())
             .unwrap_or(file_path);
         let full_prompt = self.build_complete_prompt(display_name, &prompt_sections);
+
+        // println!("Built prompt: {}", full_prompt);
 
         info!(
             "Successfully built prompt with {} context sections",
@@ -289,19 +332,18 @@ impl<'a> PromptBuilder<'a> {
             .and_then(|n| n.to_str())
             .unwrap_or("");
 
-        // Query interfaces table for file information
+        // Use existing schema: code_entries holds per-code metadata
+        // Summarize entries for the given file
         let query = r#"
-            SELECT file_path, language, project_name, COUNT(*) as interface_count
-            FROM interfaces
-            WHERE (file_path = ? OR file_path LIKE ?) AND project_name = ?
-            GROUP BY file_path, language, project_name
+            SELECT file_path, language, project, COUNT(*) AS entry_count
+            FROM code_entries
+            WHERE (file_path = ? OR file_path LIKE ?)
+            GROUP BY file_path, language, project
+            ORDER BY entry_count DESC
+            LIMIT 1
         "#;
 
-        let params = vec![
-            json!(file_path),
-            json!(format!("%{}", file_name)),
-            json!(self.project_name),
-        ];
+        let params = vec![json!(file_path), json!(format!("%{}", file_name))];
 
         match self.db_manager.execute_raw_query(query, params).await {
             Ok(results) => {
@@ -309,8 +351,8 @@ impl<'a> PromptBuilder<'a> {
                     Ok(json!({
                         "file_path": row.get("file_path").unwrap_or(&json!("unknown")),
                         "language": row.get("language").unwrap_or(&json!("c")),
-                        "project_name": row.get("project_name").unwrap_or(&json!("unknown")),
-                        "interface_count": row.get("interface_count").unwrap_or(&json!(0))
+                        "project_name": row.get("project").unwrap_or(&json!("unknown")),
+                        "interface_count": row.get("entry_count").unwrap_or(&json!(0))
                     }))
                 } else {
                     Ok(json!({
@@ -341,53 +383,87 @@ impl<'a> PromptBuilder<'a> {
             .file_name()
             .and_then(|n| n.to_str())
             .unwrap_or("");
-
+        // Pull function definitions from analysis_results joined with code_entries
         let query = r#"
-            SELECT function_name, file_path, line_number, return_type, parameters, signature
-            FROM function_definitions
-            WHERE (file_path = ? OR file_path LIKE ?) AND project_name = ?
-            ORDER BY line_number
+            SELECT ce.file_path AS file_path, ce.function_name AS function_name, ar.result AS result_json
+            FROM analysis_results ar
+            JOIN code_entries ce ON ce.id = ar.code_id
+            WHERE ar.analysis_type = 'function_definition'
+              AND (ce.file_path = ? OR ce.file_path LIKE ?)
+            ORDER BY ce.updated_at DESC
         "#;
 
-        let params = vec![
-            json!(file_path),
-            json!(format!("%{}", file_name)),
-            json!(self.project_name),
-        ];
+        let params = vec![json!(file_path), json!(format!("%{}", file_name))];
 
         match self.db_manager.execute_raw_query(query, params).await {
             Ok(results) => {
-                let functions: Vec<FunctionInfo> = results
-                    .into_iter()
-                    .map(|row| FunctionInfo {
-                        name: row
-                            .get("function_name")
+                let mut functions: Vec<FunctionInfo> = Vec::new();
+                for row in results {
+                    let file_path_val = row
+                        .get("file_path")
+                        .and_then(|v| v.as_str())
+                        .unwrap_or("")
+                        .to_string();
+
+                    let result_json = row
+                        .get("result_json")
+                        .and_then(|v| v.as_str())
+                        .unwrap_or("{}");
+
+                    let parsed: serde_json::Value =
+                        serde_json::from_str(result_json).unwrap_or(json!({}));
+                    let name = parsed.get("name").and_then(|v| v.as_str()).unwrap_or(
+                        row.get("function_name")
                             .and_then(|v| v.as_str())
-                            .unwrap_or("unknown")
-                            .to_string(),
-                        file_path: row
-                            .get("file_path")
-                            .and_then(|v| v.as_str())
-                            .unwrap_or("")
-                            .to_string(),
-                        line_number: row
-                            .get("line_number")
-                            .and_then(|v| v.as_i64())
-                            .map(|v| v as i32),
-                        return_type: row
-                            .get("return_type")
-                            .and_then(|v| v.as_str())
-                            .map(|s| s.to_string()),
-                        parameters: row
+                            .unwrap_or("unknown"),
+                    );
+                    let line = parsed
+                        .get("line")
+                        .and_then(|v| v.as_i64())
+                        .map(|v| v as i32);
+                    let return_type = parsed
+                        .get("return_type")
+                        .and_then(|v| v.as_str())
+                        .map(|s| s.to_string());
+                    // parameters is array of {name, type}
+                    let parameters_str =
+                        parsed
                             .get("parameters")
-                            .and_then(|v| v.as_str())
-                            .map(|s| s.to_string()),
-                        signature: row
-                            .get("signature")
-                            .and_then(|v| v.as_str())
-                            .map(|s| s.to_string()),
-                    })
-                    .collect();
+                            .and_then(|v| v.as_array())
+                            .map(|arr| {
+                                let parts: Vec<String> = arr
+                                    .iter()
+                                    .map(|p| {
+                                        let t = p
+                                            .get("type")
+                                            .or_else(|| p.get("r#type"))
+                                            .and_then(|v| v.as_str())
+                                            .unwrap_or("?");
+                                        let n = p
+                                            .get("name")
+                                            .and_then(|v| v.as_str())
+                                            .unwrap_or("param");
+                                        format!("{} {}", t, n)
+                                    })
+                                    .collect();
+                                parts.join(", ")
+                            });
+                    let signature = Some(format!(
+                        "{} {}({})",
+                        return_type.as_deref().unwrap_or("void"),
+                        name,
+                        parameters_str.as_deref().unwrap_or("")
+                    ));
+
+                    functions.push(FunctionInfo {
+                        name: name.to_string(),
+                        file_path: file_path_val,
+                        line_number: line,
+                        return_type,
+                        parameters: parameters_str,
+                        signature,
+                    });
+                }
 
                 debug!("Found {} defined functions", functions.len());
                 Ok(functions)
@@ -412,130 +488,10 @@ impl<'a> PromptBuilder<'a> {
             .and_then(|n| n.to_str())
             .unwrap_or("");
 
-        let mut relationships = HashMap::new();
-
-        // Get internal calls (within the file)
-        let internal_query = if let Some(target_funcs) = target_functions {
-            let placeholders = target_funcs
-                .iter()
-                .map(|_| "?")
-                .collect::<Vec<_>>()
-                .join(",");
-            format!(
-                r#"
-                SELECT caller_function, called_function, caller_line
-                FROM function_calls
-                WHERE (caller_file = ? OR caller_file LIKE ?) AND project_name = ?
-                AND (caller_function IN ({}) OR called_function IN ({}))
-                "#,
-                placeholders, placeholders
-            )
-        } else {
-            r#"
-            SELECT caller_function, called_function, caller_line
-            FROM function_calls
-            WHERE (caller_file = ? OR caller_file LIKE ?) AND project_name = ?
-            "#
-            .to_string()
-        };
-
-        let mut internal_params = vec![
-            json!(file_path),
-            json!(format!("%{}", file_name)),
-            json!(self.project_name),
-        ];
-
-        if let Some(target_funcs) = target_functions {
-            for func in target_funcs {
-                internal_params.push(json!(func));
-            }
-            for func in target_funcs {
-                internal_params.push(json!(func));
-            }
-        }
-
-        if let Ok(results) = self
-            .db_manager
-            .execute_raw_query(&internal_query, internal_params)
-            .await
-        {
-            let internal_calls = results
-                .into_iter()
-                .map(|row| CallRelationship {
-                    caller: row
-                        .get("caller_function")
-                        .and_then(|v| v.as_str())
-                        .unwrap_or("unknown")
-                        .to_string(),
-                    called: row
-                        .get("called_function")
-                        .and_then(|v| v.as_str())
-                        .unwrap_or("unknown")
-                        .to_string(),
-                    line: row
-                        .get("caller_line")
-                        .and_then(|v| v.as_i64())
-                        .map(|v| v as i32),
-                    caller_file: Some(file_path.to_string()),
-                    called_file: None,
-                })
-                .collect();
-            relationships.insert("internal_calls".to_string(), internal_calls);
-        }
-
-        // Get external calls (calls to functions in this file from other files)
-        let external_query = r#"
-            SELECT fc.caller_file, fc.caller_function, fc.called_function, fc.caller_line
-            FROM function_calls fc
-            JOIN function_definitions fd ON fc.called_function = fd.function_name
-            WHERE (fd.file_path = ? OR fd.file_path LIKE ?) AND fd.project_name = ?
-            AND fc.caller_file NOT LIKE ? AND fc.caller_file != ?
-        "#;
-
-        let external_params = vec![
-            json!(file_path),
-            json!(format!("%{}", file_name)),
-            json!(self.project_name),
-            json!(format!("%{}", file_name)),
-            json!(file_path),
-        ];
-
-        if let Ok(results) = self
-            .db_manager
-            .execute_raw_query(external_query, external_params)
-            .await
-        {
-            let external_calls = results
-                .into_iter()
-                .map(|row| CallRelationship {
-                    caller: row
-                        .get("caller_function")
-                        .and_then(|v| v.as_str())
-                        .unwrap_or("unknown")
-                        .to_string(),
-                    called: row
-                        .get("called_function")
-                        .and_then(|v| v.as_str())
-                        .unwrap_or("unknown")
-                        .to_string(),
-                    line: row
-                        .get("caller_line")
-                        .and_then(|v| v.as_i64())
-                        .map(|v| v as i32),
-                    caller_file: row
-                        .get("caller_file")
-                        .and_then(|v| v.as_str())
-                        .map(|s| s.to_string()),
-                    called_file: Some(file_path.to_string()),
-                })
-                .collect();
-            relationships.insert("external_calls".to_string(), external_calls);
-        }
-
-        debug!(
-            "Found call relationships with {} categories",
-            relationships.len()
-        );
+        // Currently, call graph tables are not persisted in the DB schema used by analyzer.
+        // Return empty relationships gracefully.
+        let relationships: HashMap<String, Vec<CallRelationship>> = HashMap::new();
+        debug!("Call relationships not available in current DB schema");
         Ok(relationships)
     }
 
@@ -548,96 +504,89 @@ impl<'a> PromptBuilder<'a> {
             .and_then(|n| n.to_str())
             .unwrap_or("");
 
-        let query = r#"
-            SELECT source_file, target_file, dependency_type
-            FROM file_dependencies
-            WHERE project_name = ? AND ((source_file = ? OR source_file LIKE ?) OR (target_file = ? OR target_file LIKE ?))
-        "#;
-
-        let params = vec![
-            json!(self.project_name),
-            json!(file_path),
-            json!(format!("%{}", file_name)),
-            json!(file_path),
-            json!(format!("%{}", file_name)),
-        ];
-
-        match self.db_manager.execute_raw_query(query, params).await {
-            Ok(results) => {
-                let dependencies: Vec<FileDependency> = results
-                    .into_iter()
-                    .map(|row| FileDependency {
-                        from: row
-                            .get("source_file")
-                            .and_then(|v| v.as_str())
-                            .unwrap_or("")
-                            .to_string(),
-                        to: row
-                            .get("target_file")
-                            .and_then(|v| v.as_str())
-                            .unwrap_or("")
-                            .to_string(),
-                        dependency_type: row
-                            .get("dependency_type")
-                            .and_then(|v| v.as_str())
-                            .unwrap_or("unknown")
-                            .to_string(),
-                    })
-                    .collect();
-
-                debug!("Found {} file dependencies", dependencies.len());
-                Ok(dependencies)
-            }
-            Err(e) => {
-                warn!("Failed to get file dependencies: {}", e);
-                Ok(Vec::new())
-            }
-        }
+        // Not available in current DB schema; return empty
+        debug!("File dependencies not available in current DB schema");
+        Ok(Vec::new())
     }
 
     /// Get function definition
     async fn get_function_definition(&self, function_name: &str) -> Result<Option<FunctionInfo>> {
         debug!("Getting function definition for: {}", function_name);
 
+        // Join code_entries and analysis_results for this function
         let query = r#"
-            SELECT function_name, file_path, line_number, return_type, parameters, signature
-            FROM function_definitions
-            WHERE function_name = ? AND project_name = ?
+            SELECT ce.file_path AS file_path, ce.function_name AS function_name, ar.result AS result_json
+            FROM code_entries ce
+            LEFT JOIN analysis_results ar ON ar.code_id = ce.id AND ar.analysis_type = 'function_definition'
+            WHERE ce.function_name = ?
+            ORDER BY ce.updated_at DESC
             LIMIT 1
         "#;
 
-        let params = vec![json!(function_name), json!(self.project_name)];
+        let params = vec![json!(function_name)];
 
         match self.db_manager.execute_raw_query(query, params).await {
             Ok(results) => {
                 if let Some(row) = results.first() {
-                    Ok(Some(FunctionInfo {
-                        name: row
-                            .get("function_name")
-                            .and_then(|v| v.as_str())
-                            .unwrap_or("unknown")
-                            .to_string(),
-                        file_path: row
-                            .get("file_path")
-                            .and_then(|v| v.as_str())
-                            .unwrap_or("")
-                            .to_string(),
-                        line_number: row
-                            .get("line_number")
-                            .and_then(|v| v.as_i64())
-                            .map(|v| v as i32),
-                        return_type: row
-                            .get("return_type")
-                            .and_then(|v| v.as_str())
-                            .map(|s| s.to_string()),
-                        parameters: row
+                    let file_path_val = row
+                        .get("file_path")
+                        .and_then(|v| v.as_str())
+                        .unwrap_or("")
+                        .to_string();
+                    let result_json = row
+                        .get("result_json")
+                        .and_then(|v| v.as_str())
+                        .unwrap_or("{}");
+                    let parsed: serde_json::Value =
+                        serde_json::from_str(result_json).unwrap_or(json!({}));
+                    let name = parsed
+                        .get("name")
+                        .and_then(|v| v.as_str())
+                        .unwrap_or(function_name);
+                    let line = parsed
+                        .get("line")
+                        .and_then(|v| v.as_i64())
+                        .map(|v| v as i32);
+                    let return_type = parsed
+                        .get("return_type")
+                        .and_then(|v| v.as_str())
+                        .map(|s| s.to_string());
+                    let parameters_str =
+                        parsed
                             .get("parameters")
-                            .and_then(|v| v.as_str())
-                            .map(|s| s.to_string()),
-                        signature: row
-                            .get("signature")
-                            .and_then(|v| v.as_str())
-                            .map(|s| s.to_string()),
+                            .and_then(|v| v.as_array())
+                            .map(|arr| {
+                                let parts: Vec<String> = arr
+                                    .iter()
+                                    .map(|p| {
+                                        let t = p
+                                            .get("type")
+                                            .or_else(|| p.get("r#type"))
+                                            .and_then(|v| v.as_str())
+                                            .unwrap_or("?");
+                                        let n = p
+                                            .get("name")
+                                            .and_then(|v| v.as_str())
+                                            .unwrap_or("param");
+                                        format!("{} {}", t, n)
+                                    })
+                                    .collect();
+                                parts.join(", ")
+                            });
+                    let signature = Some(format!(
+                        "{} {}({})",
+                        return_type.as_deref().unwrap_or("void"),
+                        name,
+                        parameters_str.as_deref().unwrap_or("")
+                    ));
+
+                    Ok(Some(FunctionInfo {
+                        name: name.to_string(),
+                        file_path: file_path_val,
+                        line_number: line,
+                        return_type,
+                        parameters: parameters_str,
+                        signature,
                     }))
                 } else {
                     Ok(None)
@@ -654,90 +603,18 @@ impl<'a> PromptBuilder<'a> {
     async fn get_function_callers(&self, function_name: &str) -> Result<Vec<CallRelationship>> {
         debug!("Getting function callers for: {}", function_name);
 
-        let query = r#"
-            SELECT caller_file, caller_function, caller_line
-            FROM function_calls
-            WHERE called_function = ? AND project_name = ?
-        "#;
-
-        let params = vec![json!(function_name), json!(self.project_name)];
-
-        match self.db_manager.execute_raw_query(query, params).await {
-            Ok(results) => {
-                let callers: Vec<CallRelationship> = results
-                    .into_iter()
-                    .map(|row| CallRelationship {
-                        caller: row
-                            .get("caller_function")
-                            .and_then(|v| v.as_str())
-                            .unwrap_or("unknown")
-                            .to_string(),
-                        called: function_name.to_string(),
-                        line: row
-                            .get("caller_line")
-                            .and_then(|v| v.as_i64())
-                            .map(|v| v as i32),
-                        caller_file: row
-                            .get("caller_file")
-                            .and_then(|v| v.as_str())
-                            .map(|s| s.to_string()),
-                        called_file: None,
-                    })
-                    .collect();
-
-                debug!("Found {} function callers", callers.len());
-                Ok(callers)
-            }
-            Err(e) => {
-                warn!("Failed to get function callers: {}", e);
-                Ok(Vec::new())
-            }
-        }
+        // Not available in current DB schema; return empty
+        debug!("Function callers not available in current DB schema");
+        Ok(Vec::new())
     }
 
     /// Get function callees
     async fn get_function_callees(&self, function_name: &str) -> Result<Vec<CallRelationship>> {
         debug!("Getting function callees for: {}", function_name);
 
-        let query = r#"
-            SELECT called_function, caller_line, called_file
-            FROM function_calls
-            WHERE caller_function = ? AND project_name = ?
-        "#;
-
-        let params = vec![json!(function_name), json!(self.project_name)];
-
-        match self.db_manager.execute_raw_query(query, params).await {
-            Ok(results) => {
-                let callees: Vec<CallRelationship> = results
-                    .into_iter()
-                    .map(|row| CallRelationship {
-                        caller: function_name.to_string(),
-                        called: row
-                            .get("called_function")
-                            .and_then(|v| v.as_str())
-                            .unwrap_or("unknown")
-                            .to_string(),
-                        line: row
-                            .get("caller_line")
-                            .and_then(|v| v.as_i64())
-                            .map(|v| v as i32),
-                        caller_file: None,
-                        called_file: row
-                            .get("called_file")
-                            .and_then(|v| v.as_str())
-                            .map(|s| s.to_string()),
-                    })
-                    .collect();
-
-                debug!("Found {} function callees", callees.len());
-                Ok(callees)
-            }
-            Err(e) => {
-                warn!("Failed to get function callees: {}", e);
-                Ok(Vec::new())
-            }
-        }
+        // Not available in current DB schema; return empty
+        debug!("Function callees not available in current DB schema");
+        Ok(Vec::new())
     }
 
     /// Get interface context from vector database

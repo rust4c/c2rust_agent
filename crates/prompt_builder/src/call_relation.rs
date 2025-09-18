@@ -102,7 +102,30 @@ pub struct CallRelationAnalyzer {
 impl CallRelationAnalyzer {
     /// 创建新的调用关系分析器
     pub fn new(db_manager: DatabaseManager, project_root: PathBuf) -> Result<Self> {
-        let clangd_analyzer = ClangdAnalyzer::new(&project_root.to_string_lossy());
+        // 不在这里创建ClangdAnalyzer，而是在需要时异步创建
+        Ok(Self {
+            db_manager,
+            project_root,
+            function_definitions: HashMap::new(),
+            function_calls: HashMap::new(),
+            file_dependencies: HashMap::new(),
+            clangd_analyzer: None,
+        })
+    }
+
+    /// 创建带数据库支持的调用关系分析器
+    pub async fn new_with_database(
+        db_manager: DatabaseManager,
+        project_root: PathBuf,
+    ) -> Result<Self> {
+        let clangd_analyzer = ClangdAnalyzer::new_with_database(
+            &project_root.to_string_lossy(),
+            None, // sqlite_path
+            None, // qdrant_url
+            None, // qdrant_collection
+            None, // vector_size
+        )
+        .await?;
 
         Ok(Self {
             db_manager,
@@ -248,9 +271,28 @@ impl CallRelationAnalyzer {
     ) -> Result<Vec<FunctionDefinition>> {
         let mut functions = Vec::new();
 
+        // 如果没有clangd_analyzer，创建一个带数据库支持的
+        if self.clangd_analyzer.is_none() {
+            let analyzer = ClangdAnalyzer::new_with_database(
+                &self.project_root.to_string_lossy(),
+                None,
+                None,
+                None,
+                None,
+            )
+            .await?;
+            self.clangd_analyzer = Some(analyzer);
+        }
+
         if let Some(ref mut analyzer) = self.clangd_analyzer {
             // 使用 ClangdAnalyzer 分析 C/C++ 代码
-            analyzer.analyze_with_clang_ast(file_path);
+            if let Err(e) = analyzer.analyze_with_clang_ast(file_path) {
+                warn!(
+                    "ClangdAnalyzer failed for {:?}: {}, falling back to regex",
+                    file_path, e
+                );
+                return self.extract_c_cpp_functions_with_regex(file_path).await;
+            }
 
             // 转换 ClangdAnalyzer 的结果到我们的格式
             for function in &analyzer.functions {
@@ -278,10 +320,57 @@ impl CallRelationAnalyzer {
                     functions.push(function_def);
                 }
             }
+
+            // 自动保存分析结果到数据库
+            if let Err(e) = analyzer.save_analysis_results_to_database().await {
+                warn!("Failed to save analysis results to database: {}", e);
+            }
         }
 
         info!(
             "从 {:?} 提取到 {} 个 C/C++ 函数",
+            file_path,
+            functions.len()
+        );
+        Ok(functions)
+    }
+
+    /// 使用正则表达式提取C/C++函数的回退方法
+    async fn extract_c_cpp_functions_with_regex(
+        &self,
+        file_path: &Path,
+    ) -> Result<Vec<FunctionDefinition>> {
+        let content = fs::read_to_string(file_path)
+            .with_context(|| format!("读取文件失败: {:?}", file_path))?;
+
+        let mut functions = Vec::new();
+
+        // 简单的C/C++函数定义正则表达式
+        let fn_regex = Regex::new(
+            r"(?m)^[\s]*(?:static\s+|extern\s+|inline\s+)*([a-zA-Z_][a-zA-Z0-9_*\s]+)\s+([a-zA-Z_][a-zA-Z0-9_]*)\s*\([^)]*\)\s*(?:\{|;)",
+        )?;
+
+        for (line_num, line) in content.lines().enumerate() {
+            if let Some(captures) = fn_regex.captures(line) {
+                let return_type = captures.get(1).unwrap().as_str().trim();
+                let function_name = captures.get(2).unwrap().as_str();
+
+                let function_def = FunctionDefinition {
+                    name: function_name.to_string(),
+                    file_path: file_path.to_string_lossy().to_string(),
+                    line_number: (line_num + 1) as u32,
+                    return_type: return_type.to_string(),
+                    parameters: Vec::new(), // 正则表达式无法精确解析参数
+                    signature: line.trim().to_string(),
+                    language: "c_cpp".to_string(),
+                };
+
+                functions.push(function_def);
+            }
+        }
+
+        info!(
+            "使用正则表达式从 {:?} 提取到 {} 个函数",
             file_path,
             functions.len()
         );
