@@ -524,6 +524,7 @@ impl CProjectPreprocessor {
     }
 
     /// 生成文件映射
+    // TODO: Implement file mapping generation logic
     fn generate_mapping(
         &mut self,
         categorized_files: &[FileCategory],
@@ -565,6 +566,7 @@ impl CProjectPreprocessor {
                     let file_name = self.get_file_name(file);
                     let target_dir = output_dir.join("individual_files").join(&file_name);
 
+                    // TODO: Change this
                     let file_type = if self.is_source_file(file) {
                         "source"
                     } else if self.is_header_file(file) {

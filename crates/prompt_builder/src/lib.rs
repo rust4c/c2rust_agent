@@ -203,6 +203,7 @@ impl<'a> PromptBuilder<'a> {
         target_functions: Option<Vec<String>>,
     ) -> Result<String> {
         // Resolve path using mappings first, then fallback to DB resolution by filename
+        // TODO: Use mapping.json instead of db
         let original_path = match self.resolve_original_path_via_db(file_path).await {
             Some(p) => p,
             None => self.resolve_original_path(file_path),
