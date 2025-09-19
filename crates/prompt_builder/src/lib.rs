@@ -6,21 +6,21 @@ use log::{debug, info, warn};
 use serde::{Deserialize, Serialize};
 use serde_json::json;
 use std::collections::HashMap;
-use std::path::Path;
+use std::path::{Path, PathBuf};
 use tokio::fs;
 
 /// File mapping information
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct FileMapping {
-    pub cached_path: String,
-    pub original_path: String,
+    pub cached_path: PathBuf,
+    pub original_path: PathBuf,
 }
 
 /// Function definition information
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct FunctionInfo {
     pub name: String,
-    pub file_path: String,
+    pub file_path: PathBuf,
     pub line_number: Option<i32>,
     pub return_type: Option<String>,
     pub parameters: Option<String>,
@@ -33,15 +33,15 @@ pub struct CallRelationship {
     pub caller: String,
     pub called: String,
     pub line: Option<i32>,
-    pub caller_file: Option<String>,
-    pub called_file: Option<String>,
+    pub caller_file: Option<PathBuf>,
+    pub called_file: Option<PathBuf>,
 }
 
 /// File dependency information
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct FileDependency {
-    pub from: String,
-    pub to: String,
+    pub from: PathBuf,
+    pub to: PathBuf,
     pub dependency_type: String,
 }
 
@@ -49,7 +49,7 @@ pub struct FileDependency {
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct InterfaceContext {
     pub name: String,
-    pub file_path: String,
+    pub file_path: PathBuf,
     pub language: String,
     pub inputs: Vec<String>,
     pub outputs: Vec<String>,
@@ -59,8 +59,8 @@ pub struct InterfaceContext {
 pub struct PromptBuilder<'a> {
     db_manager: &'a DatabaseManager,
     project_name: String,
-    file_mappings: HashMap<String, String>, // cached_path -> original_path
-    reverse_mappings: HashMap<String, String>, // original_path -> cached_path
+    file_mappings: HashMap<PathBuf, PathBuf>, // cached_path -> original_path
+    reverse_mappings: HashMap<PathBuf, PathBuf>, // original_path -> cached_path
     error_context: Vec<String>,
 }
 
@@ -69,7 +69,7 @@ impl<'a> PromptBuilder<'a> {
     pub async fn new(
         db_manager: &'a DatabaseManager,
         project_name: String,
-        indices_dir: Option<String>,
+        indices_dir: Option<PathBuf>,
     ) -> Result<Self> {
         let mut builder = Self {
             db_manager,
@@ -79,8 +79,8 @@ impl<'a> PromptBuilder<'a> {
             error_context: Vec::new(),
         };
 
-        if let Some(dir) = indices_dir {
-            builder.load_file_mappings(&dir).await?;
+        if let Some(dir) = indices_dir.as_ref() {
+            builder.load_file_mappings(dir).await?;
         }
 
         info!(
@@ -91,28 +91,55 @@ impl<'a> PromptBuilder<'a> {
     }
 
     /// Load file mappings from indices directory
-    async fn load_file_mappings(&mut self, indices_dir: &str) -> Result<()> {
-        let indices_path = Path::new(indices_dir);
-        let file_mappings_path = indices_path.join("file_mappings.json");
-
-        if !file_mappings_path.exists() {
-            warn!(
-                "File mappings file does not exist: {:?}",
-                file_mappings_path
-            );
-            return Ok(());
+    async fn load_file_mappings(&mut self, indices_dir: &Path) -> Result<()> {
+        // Try to locate mapping.json in a few likely places
+        let mut mapping_json_candidates: Vec<PathBuf> = Vec::new();
+        mapping_json_candidates.push(indices_dir.join("mapping.json"));
+        if let Some(p) = indices_dir.parent() {
+            mapping_json_candidates.push(p.join("mapping.json"));
+            if let Some(pp) = p.parent() {
+                mapping_json_candidates.push(pp.join("mapping.json"));
+            }
         }
 
-        let content = fs::read_to_string(&file_mappings_path).await?;
-        let mappings_data: HashMap<String, serde_json::Value> = serde_json::from_str(&content)?;
+        let mapping_json_path = mapping_json_candidates.iter().find(|p| p.exists()).cloned();
 
-        for (original_path, mapping_dict) in mappings_data {
-            if let Some(cached_path) = mapping_dict.get("cached_path").and_then(|v| v.as_str()) {
-                self.file_mappings
-                    .insert(cached_path.to_string(), original_path.clone());
-                self.reverse_mappings
-                    .insert(original_path, cached_path.to_string());
+        if let Some(path) = mapping_json_path.as_ref() {
+            debug!("Found mapping.json at: {:?}", path);
+        } else {
+            debug!(
+                "mapping.json not found in candidates: {:?}",
+                mapping_json_candidates
+            );
+        }
+
+        // Load mapping.json if present (format: { "mappings": [ { source_path, target_path } ] })
+        if let Some(mapping_path) = mapping_json_path {
+            let mapping_content = fs::read_to_string(&mapping_path).await?;
+            let root: serde_json::Value = serde_json::from_str(&mapping_content)?;
+            if let Some(arr) = root.get("mappings").and_then(|v| v.as_array()) {
+                for item in arr {
+                    let source = item.get("source_path").and_then(|v| v.as_str());
+                    let target = item.get("target_path").and_then(|v| v.as_str());
+                    if let (Some(source_path), Some(target_path)) = (source, target) {
+                        // target_path is the cached path; source_path is the original (may be just a filename)
+                        self.file_mappings
+                            .insert(PathBuf::from(target_path), PathBuf::from(source_path));
+                        self.reverse_mappings
+                            .insert(PathBuf::from(source_path), PathBuf::from(target_path));
+                    }
+                }
+            } else {
+                warn!(
+                    "mapping.json does not contain 'mappings' array: {:?}",
+                    mapping_path
+                );
             }
+        } else {
+            warn!(
+                "No mapping.json found near indices directory: {:?}",
+                indices_dir
+            );
         }
 
         info!(
@@ -123,94 +150,68 @@ impl<'a> PromptBuilder<'a> {
     }
 
     /// Resolve input path to original path using loaded mappings; non-fatal if not found
-    fn resolve_original_path(&self, input_path: &str) -> String {
+    // input: /Users/peng/Documents/AppCode/Rust/c2rust_agent/test-projects/translate_chibicc/src_cache/individual_files/chibicc
+    // mapping.json: /Users/peng/Documents/AppCode/Rust/c2rust_agent/test-projects/translate_chibicc/src_cache/mapping.json
+    // {
+    // "mappings": [
+    //   {
+    //     "category": "individual",
+    //     "file_type": "source",
+    //     "source_path": "unicode.c",
+    //     "target_path": "/Users/peng/Documents/AppCode/Rust/c2rust_agent/test-projects/translate_chibicc/src_cache/individual_files/unicode/unicode.c"
+    //   },
+    fn resolve_original_path(&self, input_path: &Path) -> PathBuf {
         // If input path is a cached path, map to original path
         if let Some(original) = self.file_mappings.get(input_path) {
             return original.clone();
         }
+        debug!("Started resolve file path:{:?}", &input_path);
 
         // If input path is already an original path, return as-is
         if self.reverse_mappings.contains_key(input_path) {
-            return input_path.to_string();
+            return input_path.to_path_buf();
         }
 
         // Try to match by filename
-        let input_filename = Path::new(input_path)
+        let input_module_name = input_path
             .file_name()
             .and_then(|n| n.to_str())
             .unwrap_or("");
 
         for (cached_path, original_path) in &self.file_mappings {
-            let cached_filename = Path::new(cached_path)
+            let cached_filename = cached_path
                 .file_name()
                 .and_then(|n| n.to_str())
                 .unwrap_or("");
-            let original_filename = Path::new(original_path)
+            let original_filename = original_path
                 .file_name()
                 .and_then(|n| n.to_str())
                 .unwrap_or("");
 
-            if cached_filename == input_filename || original_filename == input_filename {
+            if cached_filename == input_module_name || original_filename == input_module_name {
                 return original_path.clone();
             }
         }
 
-        debug!(
-            "Unable to resolve cached path mapping for: {} (will try DB fallback)",
-            input_path
+        warn!(
+            "Unable to resolve cached path mapping for: {}",
+            input_path.display()
         );
-        input_path.to_string()
-    }
-
-    /// Try to resolve the original path via database by filename (latest updated entry)
-    async fn resolve_original_path_via_db(&self, input_path: &str) -> Option<String> {
-        let file_name = Path::new(input_path)
-            .file_name()
-            .and_then(|n| n.to_str())
-            .unwrap_or("");
-
-        if file_name.is_empty() {
-            return None;
-        }
-
-        let query = r#"
-            SELECT file_path
-            FROM code_entries
-            WHERE file_path LIKE ?
-            ORDER BY updated_at DESC
-            LIMIT 1
-        "#;
-
-        let like = format!("%{}", file_name);
-        match self
-            .db_manager
-            .execute_raw_query(query, vec![json!(like)])
-            .await
-        {
-            Ok(rows) => rows
-                .first()
-                .and_then(|r| r.get("file_path"))
-                .and_then(|v| v.as_str())
-                .map(|s| s.to_string()),
-            Err(_) => None,
-        }
+        input_path.to_path_buf()
     }
 
     /// Build context prompt for a specific file
     pub async fn build_file_context_prompt(
         &self,
-        file_path: &str,
+        file_path: &Path,
         target_functions: Option<Vec<String>>,
     ) -> Result<String> {
-        // Resolve path using mappings first, then fallback to DB resolution by filename
-        // TODO: Use mapping.json instead of db
-        let original_path = match self.resolve_original_path_via_db(file_path).await {
-            Some(p) => p,
-            None => self.resolve_original_path(file_path),
-        };
+        // Resolve path using mappings only (mapping.json / file_mappings.json). DB does not store this mapping.
+        let original_path = self.resolve_original_path(file_path);
         info!(
             "Building context prompt for file {} (original path: {})",
-            file_path, original_path
+            file_path.display(),
+            original_path.display()
         );
 
         let mut prompt_sections = Vec::new();
@@ -252,10 +253,10 @@ impl<'a> PromptBuilder<'a> {
         }
 
         // 6. Build complete prompt
-        let display_name = Path::new(file_path)
+        let display_name = file_path
             .file_name()
             .and_then(|n| n.to_str())
-            .unwrap_or(file_path);
+            .unwrap_or_else(|| file_path.to_str().unwrap_or(""));
         let full_prompt = self.build_complete_prompt(display_name, &prompt_sections);
 
         // println!("Built prompt: {}", full_prompt);
@@ -325,13 +326,10 @@ impl<'a> PromptBuilder<'a> {
     }
 
     /// Get file basic information from database
-    async fn get_file_basic_info(&self, file_path: &str) -> Result<serde_json::Value> {
-        debug!("Getting file basic info for: {}", file_path);
+    async fn get_file_basic_info(&self, file_path: &Path) -> Result<serde_json::Value> {
+        debug!("Getting file basic info for: {}", file_path.display());
 
-        let file_name = Path::new(file_path)
-            .file_name()
-            .and_then(|n| n.to_str())
-            .unwrap_or("");
+        let file_name = file_path.file_name().and_then(|n| n.to_str()).unwrap_or("");
 
         // Use existing schema: code_entries holds per-code metadata
         // Summarize entries for the given file
@@ -344,7 +342,10 @@ impl<'a> PromptBuilder<'a> {
             LIMIT 1
         "#;
 
-        let params = vec![json!(file_path), json!(format!("%{}", file_name))];
+        let params = vec![
+            json!(file_path.to_string_lossy().to_string()),
+            json!(format!("%{}", file_name)),
+        ];
 
         match self.db_manager.execute_raw_query(query, params).await {
             Ok(results) => {
@@ -357,7 +358,7 @@ impl<'a> PromptBuilder<'a> {
                     }))
                 } else {
                     Ok(json!({
-                        "file_path": file_path,
+                        "file_path": file_path.to_string_lossy().to_string(),
                         "language": "c",
                         "project_name": self.project_name,
                         "interface_count": 0
@@ -367,7 +368,7 @@ impl<'a> PromptBuilder<'a> {
             Err(e) => {
                 warn!("Failed to get file basic info: {}", e);
                 Ok(json!({
-                    "file_path": file_path,
+                    "file_path": file_path.to_string_lossy().to_string(),
                     "language": "c",
                     "project_name": self.project_name,
                     "interface_count": 0
@@ -377,13 +378,10 @@ impl<'a> PromptBuilder<'a> {
     }
 
     /// Get functions defined in the file
-    async fn get_defined_functions(&self, file_path: &str) -> Result<Vec<FunctionInfo>> {
-        debug!("Getting defined functions for: {}", file_path);
+    async fn get_defined_functions(&self, file_path: &Path) -> Result<Vec<FunctionInfo>> {
+        debug!("Getting defined functions for: {}", file_path.display());
 
-        let file_name = Path::new(file_path)
-            .file_name()
-            .and_then(|n| n.to_str())
-            .unwrap_or("");
+        let file_name = file_path.file_name().and_then(|n| n.to_str()).unwrap_or("");
         // Pull function definitions from analysis_results joined with code_entries
         let query = r#"
             SELECT ce.file_path AS file_path, ce.function_name AS function_name, ar.result AS result_json
@@ -394,7 +392,10 @@ impl<'a> PromptBuilder<'a> {
             ORDER BY ce.updated_at DESC
         "#;
 
-        let params = vec![json!(file_path), json!(format!("%{}", file_name))];
+        let params = vec![
+            json!(file_path.to_string_lossy().to_string()),
+            json!(format!("%{}", file_name)),
+        ];
 
         match self.db_manager.execute_raw_query(query, params).await {
             Ok(results) => {
@@ -458,7 +459,7 @@ impl<'a> PromptBuilder<'a> {
 
                     functions.push(FunctionInfo {
                         name: name.to_string(),
-                        file_path: file_path_val,
+                        file_path: PathBuf::from(file_path_val),
                         line_number: line,
                         return_type,
                         parameters: parameters_str,
@@ -479,15 +480,12 @@ impl<'a> PromptBuilder<'a> {
     /// Get call relationships for the file
     async fn get_call_relationships(
         &self,
-        file_path: &str,
+        file_path: &Path,
         target_functions: Option<&Vec<String>>,
     ) -> Result<HashMap<String, Vec<CallRelationship>>> {
-        debug!("Getting call relationships for: {}", file_path);
+        debug!("Getting call relationships for: {}", file_path.display());
 
-        let file_name = Path::new(file_path)
-            .file_name()
-            .and_then(|n| n.to_str())
-            .unwrap_or("");
+        let file_name = file_path.file_name().and_then(|n| n.to_str()).unwrap_or("");
 
         // Currently, call graph tables are not persisted in the DB schema used by analyzer.
         // Return empty relationships gracefully.
@@ -497,13 +495,10 @@ impl<'a> PromptBuilder<'a> {
     }
 
     /// Get file dependencies
-    async fn get_file_dependencies(&self, file_path: &str) -> Result<Vec<FileDependency>> {
-        debug!("Getting file dependencies for: {}", file_path);
+    async fn get_file_dependencies(&self, file_path: &Path) -> Result<Vec<FileDependency>> {
+        debug!("Getting file dependencies for: {}", file_path.display());
 
-        let file_name = Path::new(file_path)
-            .file_name()
-            .and_then(|n| n.to_str())
-            .unwrap_or("");
+        let file_name = file_path.file_name().and_then(|n| n.to_str()).unwrap_or("");
 
         // Not available in current DB schema; return empty
         debug!("File dependencies not available in current DB schema");
@@ -583,7 +578,7 @@ impl<'a> PromptBuilder<'a> {
 
                     Ok(Some(FunctionInfo {
                         name: name.to_string(),
-                        file_path: file_path_val,
+                        file_path: PathBuf::from(file_path_val),
                         line_number: line,
                         return_type,
                         parameters: parameters_str,
@@ -619,13 +614,10 @@ impl<'a> PromptBuilder<'a> {
     }
 
     /// Get interface context from vector database
-    async fn get_interface_context(&self, file_path: &str) -> Result<Vec<InterfaceContext>> {
-        debug!("Getting interface context for: {}", file_path);
+    async fn get_interface_context(&self, file_path: &Path) -> Result<Vec<InterfaceContext>> {
+        debug!("Getting interface context for: {}", file_path.display());
 
-        let file_name = Path::new(file_path)
-            .file_name()
-            .and_then(|n| n.to_str())
-            .unwrap_or("");
+        let file_name = file_path.file_name().and_then(|n| n.to_str()).unwrap_or("");
 
         // Search for interfaces related to this file
         let interfaces = self
@@ -640,10 +632,10 @@ impl<'a> PromptBuilder<'a> {
                 .and_then(|n| n.to_str())
                 .unwrap_or("");
 
-            if file_path == interface.file_path || file_name == interface_file {
+            if file_path.to_string_lossy() == interface.file_path || file_name == interface_file {
                 relevant_interfaces.push(InterfaceContext {
                     name: interface.name,
-                    file_path: interface.file_path,
+                    file_path: PathBuf::from(interface.file_path),
                     language: interface.language,
                     inputs: interface
                         .inputs
@@ -739,7 +731,7 @@ impl<'a> PromptBuilder<'a> {
                     let caller_file = call
                         .caller_file
                         .as_ref()
-                        .and_then(|p| Path::new(p).file_name())
+                        .and_then(|p| p.file_name())
                         .and_then(|n| n.to_str())
                         .unwrap_or("unknown");
                     section.push_str(&format!(
@@ -763,14 +755,18 @@ impl<'a> PromptBuilder<'a> {
 
         let mut section = "## 文件依赖关系\n".to_string();
         for dep in dependencies.iter().take(10) {
-            let source_file = Path::new(&dep.from)
+            let source_file = dep
+                .from
                 .file_name()
                 .and_then(|n| n.to_str())
-                .unwrap_or(&dep.from);
-            let target_file = Path::new(&dep.to)
+                .map(|s| s.to_string())
+                .unwrap_or_else(|| dep.from.to_string_lossy().into_owned());
+            let target_file = dep
+                .to
                 .file_name()
                 .and_then(|n| n.to_str())
-                .unwrap_or(&dep.to);
+                .map(|s| s.to_string())
+                .unwrap_or_else(|| dep.to.to_string_lossy().into_owned());
 
             section.push_str(&format!(
                 "- `{}` → `{}` ({})\n",
@@ -787,10 +783,12 @@ impl<'a> PromptBuilder<'a> {
 
         let mut section = "## 相关接口信息\n".to_string();
         for interface in interfaces.iter().take(5) {
-            let file_name = Path::new(&interface.file_path)
+            let file_name = interface
+                .file_path
                 .file_name()
                 .and_then(|n| n.to_str())
-                .unwrap_or(&interface.file_path);
+                .map(|s| s.to_string())
+                .unwrap_or_else(|| interface.file_path.to_string_lossy().into_owned());
 
             section.push_str(&format!(
                 "\n### {}\n- 文件: {}\n- 语言: {}\n",
@@ -801,10 +799,12 @@ impl<'a> PromptBuilder<'a> {
     }
 
     fn format_function_definition(&self, func_def: &FunctionInfo) -> String {
-        let file_name = Path::new(&func_def.file_path)
+        let file_name = func_def
+            .file_path
             .file_name()
             .and_then(|n| n.to_str())
-            .unwrap_or(&func_def.file_path);
+            .map(|s| s.to_string())
+            .unwrap_or_else(|| func_def.file_path.to_string_lossy().into_owned());
 
         format!(
             "## 函数定义\n- 函数名: {}\n- 文件: {}\n- 行号: {}\n- 返回类型: {}\n- 函数签名: `{}`\n- 参数: {}\n",
@@ -827,7 +827,7 @@ impl<'a> PromptBuilder<'a> {
             let caller_file = caller
                 .caller_file
                 .as_ref()
-                .and_then(|p| Path::new(p).file_name())
+                .and_then(|p| p.file_name())
                 .and_then(|n| n.to_str())
                 .unwrap_or("unknown");
 
@@ -851,7 +851,7 @@ impl<'a> PromptBuilder<'a> {
             let called_file = callee
                 .called_file
                 .as_ref()
-                .and_then(|p| Path::new(p).file_name())
+                .and_then(|p| p.file_name())
                 .and_then(|n| n.to_str())
                 .unwrap_or("unknown");
 
@@ -937,11 +937,11 @@ impl<'a> PromptBuilder<'a> {
 
 // Implement fallback methods for error cases
 impl<'a> PromptBuilder<'a> {
-    fn get_fallback_prompt(&self, file_path: &str) -> String {
-        let file_name = Path::new(file_path)
+    fn get_fallback_prompt(&self, file_path: &Path) -> String {
+        let file_name = file_path
             .file_name()
             .and_then(|n| n.to_str())
-            .unwrap_or(file_path);
+            .unwrap_or_else(|| file_path.to_str().unwrap_or(""));
 
         format!(
             "# C到Rust转换\n\n正在转换文件: **{}**\n\n由于无法获取详细的上下文信息，请按照以下基本原则进行转换：\n\n1. 保持函数接口的基本结构\n2. 使用Rust标准的类型映射\n3. 添加适当的错误处理\n4. 确保内存安全\n\n请进行标准的C到Rust代码转换。\n",
@@ -990,6 +990,33 @@ mod tests {
         Ok(())
     }
 
+    async fn create_test_mapping_json(dir: &Path) -> Result<()> {
+        // Create a mapping.json that follows the { "mappings": [ { source_path, target_path } ] } format
+        let mappings = json!({
+            "mappings": [
+                {
+                    "category": "individual",
+                    "file_type": "source",
+                    "source_path": "unicode.c",
+                    "target_path": "/tmp/src_cache/individual_files/unicode/unicode.c"
+                },
+                {
+                    "category": "individual",
+                    "file_type": "source",
+                    "source_path": "lexer.c",
+                    "target_path": "/tmp/src_cache/individual_files/lexer/lexer.c"
+                }
+            ]
+        });
+
+        let mappings_file = dir.join("mapping.json");
+        let mut file = File::create(&mappings_file).await?;
+        file.write_all(mappings.to_string().as_bytes()).await?;
+        file.flush().await?;
+
+        Ok(())
+    }
+
     #[tokio::test]
     async fn test_prompt_builder_creation() {
         let db_manager = create_test_db_manager().await;
@@ -1012,7 +1039,7 @@ mod tests {
         let builder = PromptBuilder::new(
             &db_manager,
             "test_project".to_string(),
-            Some(temp_dir.path().to_string_lossy().to_string()),
+            Some(temp_dir.path().to_path_buf()),
         )
         .await;
 
@@ -1020,8 +1047,44 @@ mod tests {
         let builder = builder.unwrap();
         assert_eq!(builder.file_mappings.len(), 2);
         assert_eq!(
-            builder.file_mappings.get("cached_file.c"),
-            Some(&"original_file.c".to_string())
+            builder.file_mappings.get(Path::new("cached_file.c")),
+            Some(&PathBuf::from("original_file.c"))
+        );
+    }
+
+    #[tokio::test]
+    async fn test_mapping_json_loading_and_resolution() {
+        let temp_dir = tempdir().expect("Failed to create temp dir");
+        create_test_mapping_json(temp_dir.path())
+            .await
+            .expect("Failed to create mapping.json");
+
+        let db_manager = create_test_db_manager().await;
+        let builder = PromptBuilder::new(
+            &db_manager,
+            "test_project".to_string(),
+            Some(temp_dir.path().to_path_buf()),
+        )
+        .await
+        .expect("Failed to create builder");
+
+        // Ensure mapping.json was loaded and used: cached target path -> original source path (possibly just a filename)
+        assert_eq!(
+            builder.resolve_original_path(Path::new(
+                "/tmp/src_cache/individual_files/unicode/unicode.c"
+            )),
+            PathBuf::from("unicode.c")
+        );
+        assert_eq!(
+            builder
+                .resolve_original_path(Path::new("/tmp/src_cache/individual_files/lexer/lexer.c")),
+            PathBuf::from("lexer.c")
+        );
+
+        // Original path passthrough (if given as source_path itself)
+        assert_eq!(
+            builder.resolve_original_path(Path::new("unicode.c")),
+            PathBuf::from("unicode.c")
         );
     }
 
@@ -1036,25 +1099,28 @@ mod tests {
         let builder = PromptBuilder::new(
             &db_manager,
             "test_project".to_string(),
-            Some(temp_dir.path().to_string_lossy().to_string()),
+            Some(temp_dir.path().to_path_buf()),
         )
         .await
         .expect("Failed to create builder");
 
         // Test cached path resolution
         assert_eq!(
-            builder.resolve_original_path("cached_file.c"),
-            "original_file.c"
+            builder.resolve_original_path(Path::new("cached_file.c")),
+            PathBuf::from("original_file.c")
         );
 
         // Test original path passthrough
         assert_eq!(
-            builder.resolve_original_path("original_file.c"),
-            "original_file.c"
+            builder.resolve_original_path(Path::new("original_file.c")),
+            PathBuf::from("original_file.c")
         );
 
         // Test unknown path
-        assert_eq!(builder.resolve_original_path("unknown.c"), "unknown.c");
+        assert_eq!(
+            builder.resolve_original_path(Path::new("unknown.c")),
+            PathBuf::from("unknown.c")
+        );
     }
 
     #[tokio::test]
@@ -1064,7 +1130,9 @@ mod tests {
             .await
             .expect("Failed to create builder");
 
-        let result = builder.build_file_context_prompt("test_file.c", None).await;
+        let result = builder
+            .build_file_context_prompt(Path::new("test_file.c"), None)
+            .await;
         assert!(result.is_ok());
 
         let prompt = result.unwrap();
@@ -1134,7 +1202,7 @@ mod tests {
         // Test function info formatting
         let functions = vec![FunctionInfo {
             name: "test_func".to_string(),
-            file_path: "test.c".to_string(),
+            file_path: PathBuf::from("test.c"),
             line_number: Some(10),
             return_type: Some("int".to_string()),
             parameters: Some("int a, int b".to_string()),

@@ -10,7 +10,7 @@ use std::collections::{HashMap, HashSet};
 use std::fs;
 use std::path::{Path, PathBuf};
 use tokio::task;
-use tracing::{debug, error, info, warn};
+use log::{debug, error, info, warn};
 
 use db_services::DatabaseManager;
 use lsp_services::lsp_services::{ClangdAnalyzer, FunctionInfo, Parameter};
@@ -884,7 +884,7 @@ async fn async_function(param: i32) -> Result<(), String> {
 }
 
 fn private_function() {
-    println!("private");
+    debug!("private");
 }
 "#;
 

@@ -31,7 +31,7 @@ async fn _dbdata_create() -> DatabaseManager {
 #[tokio::main]
 async fn main() -> Result<()> {
     // 初始化日志系统，调试使用
-    env_logger::Builder::from_env(Env::default().default_filter_or("info"))
+    env_logger::Builder::from_env(Env::default().default_filter_or("debug"))
         .format_timestamp(None)
         .init();
 
