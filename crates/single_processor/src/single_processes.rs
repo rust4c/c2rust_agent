@@ -122,6 +122,10 @@ pub async fn singlefile_processor(file_path: &Path) -> Result<()> {
     // 读取合并后的代码内容并添加到提示词中
     info!("读取合并后的代码内容...");
     let merged_code = fs::read_to_string(&merged_file_path)?;
+    let enhanced_prompt = format!(
+        "{}\n\n--- 以下是完整C代码 ---\n{}\n\n请将上面所有C函数、类型、宏等全部转换为Rust，输出一个可编译的main.rs文件。",
+        prompt, merged_code
+    );
 
     info!("合并代码长度: {} 字符", merged_code.len());
 
@@ -135,38 +139,58 @@ pub async fn singlefile_processor(file_path: &Path) -> Result<()> {
 
     info!("生成的提示词长度: {} 字符", enhanced_prompt.len());
 
+    // // 调用LLM接口
+    // info!("调用LLM接口");
+    // let llm_response = llm_request_with_prompt(
+    //     vec![enhanced_prompt.clone()],
+    //     "你是一位C到Rust代码转换专家，特别擅长文件系统和FUSE相关的代码转换".to_string(),
+    // ).await?;
+
+    // // 解析JSON响应
+    // info!("解析Json响应");
+    // let json_response: Value = serde_json::from_str(&llm_response)?;
+    
+    // // // 这里储存响应是为了测试方便正式版请注释这部分代码
+    // // let output_json_test = file_path.join("llm_response.json");
+    // // let mut out_json_test = File::create(&output_json_test);
+
     // 调用LLM接口
-    info!("调用LLM接口...");
+    info!("调用LLM接口");
     let llm_response = llm_request_with_prompt(
         vec![enhanced_prompt.clone()],
-        "你是一位C到Rust代码转换专家，特别擅长文件系统和FUSE相关的代码转换".to_string(),
-    )
-    .await?;
+    "   你是一位C到Rust代码转换专家，特别擅长文件系统和FUSE相关的代码转换".to_string(),
+    ).await?;
 
-    info!("LLM响应长度: {} 字符", llm_response.len());
+    // 保存原始响应便于排查
+    let debug_json = file_path.join("llm_response_raw.txt");
+    std::fs::write(&debug_json, &llm_response)?;
+
+    // 预处理，去掉多余包裹
+    let llm_response_clean = llm_response
+        .trim()
+        .trim_start_matches("```json")
+        .trim_start_matches("```")
+        .trim_end_matches("```")
+        .trim();
 
     // 解析JSON响应
-    info!("解析LLM响应...");
-    let json_response: Value = serde_json::from_str(&llm_response)?;
+    info!("解析Json响应");
+    let json_response: Value = serde_json::from_str(llm_response_clean)?;
 
     // 提取rust_code字段
-    info!("提取rust_code字段...");
+    info!("提取Rust代码");
     let rust_code = json_response["rust_code"].as_str().ok_or_else(|| {
         error!("响应中缺少rust_code字段，完整响应: {}", llm_response);
         anyhow::anyhow!("响应中缺少rust_code字段")
     })?;
 
-    info!("提取的Rust代码长度: {} 字符", rust_code.len());
-
     // 创建 Rust 项目结构
-    info!("创建Rust项目结构...");
+    info!("创建Rust 项目结构");
     let rust_project_path = file_path.join("rust-project");
     create_rust_project_structure(&rust_project_path)?;
 
     // 输出结果到指定路径
-    info!("输出结果到指定路径...");
     let output_file_path = rust_project_path.join("src").join("main.rs");
-
     let mut output_file = File::create(&output_file_path)?;
     write!(output_file, "{}", rust_code)?;
     info!("转换结果已保存到: {:?}", output_file_path);

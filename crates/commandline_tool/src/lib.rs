@@ -60,26 +60,6 @@ pub enum Commands {
         db: String,
     },
 
-    // /// db database operation
-    // Dbdatebase{
-    //     /// Database file path
-    //     #[arg(long, default_value = "c2rust_metadata.db")]
-    //     sqlite_path: Option<String>,
-
-    //     /// collection_name in Qdrant
-    //     #[arg(long, default_value = "c2rust_collection")]
-    //     qdrant_collection: Option<String>,
-    //     /// Qdrant host address
-    //     #[arg(long, default_value = "my-qdrant-server")]
-    //     qdrant_host: Option<String>,
-    //     /// Qdrant port
-    //     #[arg(long, default_value_t = 6333)]
-    //     qdrant_port: u16,
-    //     /// Vector size
-    //     #[arg(long, default_value_t = 1536)]
-    //     vector_size: usize,
-    // },
-
     /// Query and call relational database
     RelationQuery {
         /// Database file path
