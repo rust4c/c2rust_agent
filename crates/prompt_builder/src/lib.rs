@@ -206,8 +206,22 @@ impl<'a> PromptBuilder<'a> {
         file_path: &Path,
         target_functions: Option<Vec<String>>,
     ) -> Result<String> {
-        // Resolve path using mappings only (mapping.json / file_mappings.json). DB does not store this mapping.
-        let original_path = self.resolve_original_path(file_path);
+        let mut original_path = if file_path.is_dir() {
+            // If input is a directory, try to find the actual file
+            let dir_name = file_path.file_name().and_then(|n| n.to_str()).unwrap_or("");
+            let mut found_path = None;
+            for (cached_path, orig_path) in &self.file_mappings {
+                if let Some(cached_filename) = cached_path.file_stem().and_then(|n| n.to_str()) {
+                    if cached_filename == dir_name {
+                        found_path = Some(orig_path.clone());
+                        break;
+                    }
+                }
+            }
+            found_path.unwrap_or_else(|| file_path.join(format!("{}.c", dir_name)))
+        } else {
+            self.resolve_original_path(file_path)
+        };
         info!(
             "Building context prompt for file {} (original path: {})",
             file_path.display(),
