@@ -55,7 +55,7 @@ COPY README.md README-CN.md ./
 
 # Build release binaries, excluding GUI crate that may require extra system libs
 # If your workspace does not include `ui_main`, the exclude is harmless.
-RUN cargo build --release --locked --workspace --exclude ui_main
+RUN cargo build --release --locked --workspace --exclude commandline_tool
 
 # Install available CLI binaries to PATH (ignore if some are not present)
 RUN set -eux; \
