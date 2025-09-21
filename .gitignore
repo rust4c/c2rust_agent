@@ -27,5 +27,6 @@ test_project
 test_file
 qdrant_storage/
 *_cache
+*.db
 
 # AI prompt
