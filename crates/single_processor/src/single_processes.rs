@@ -104,7 +104,12 @@ pub async fn singlefile_processor(file_path: &Path) -> Result<()> {
 
     // 创建PromptBuilder
     info!("创建PromptBuilder...");
-    let prompt_builder = PromptBuilder::new(&db_manager, "c_project".to_string(), None).await?;
+    let prompt_builder = PromptBuilder::new(
+        &db_manager,
+        "c_project".to_string(),
+        Some(file_path.to_path_buf()),
+    )
+    .await?;
 
     // 获取合并文件的文件名（不包含路径）
     let merged_file_name = merged_file_path
@@ -116,7 +121,7 @@ pub async fn singlefile_processor(file_path: &Path) -> Result<()> {
 
     // 构建提示词 - 使用文件名而不是完整路径
     let prompt = prompt_builder
-        .build_file_context_prompt(merged_file_name, None)
+        .build_file_context_prompt(file_path, None)
         .await?;
 
     // 读取合并后的代码内容并添加到提示词中
