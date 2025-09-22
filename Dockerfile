@@ -18,7 +18,23 @@ ENV DEBIAN_FRONTEND=noninteractive \
 		CARGO_HOME=/root/.cargo \
 		PATH=/root/.cargo/bin:/usr/local/sbin:/usr/local/bin:/usr/sbin:/usr/bin:/sbin:/bin \
 		CARGO_NET_GIT_FETCH_WITH_CLI=true \
-		RUST_LOG=info
+		RUST_LOG=info \
+        # TUNA mirror for rustup
+		RUSTUP_UPDATE_ROOT=https://mirrors.tuna.tsinghua.edu.cn/rustup/rustup \
+		RUSTUP_DIST_SERVER=https://mirrors.tuna.tsinghua.edu.cn/rustup
+
+# Switch APT sources to USTC mirror (supports DEB822 and legacy formats)
+RUN set -eux; \
+		if [ -f /etc/apt/sources.list.d/ubuntu.sources ]; then \
+			sed -i 's@//ports.ubuntu.com@//mirrors.ustc.edu.cn@g' /etc/apt/sources.list.d/ubuntu.sources || true; \
+			sed -i 's@//archive.ubuntu.com@//mirrors.ustc.edu.cn@g' /etc/apt/sources.list.d/ubuntu.sources || true; \
+			sed -i 's@//security.ubuntu.com@//mirrors.ustc.edu.cn@g' /etc/apt/sources.list.d/ubuntu.sources || true; \
+		fi; \
+		if [ -f /etc/apt/sources.list ]; then \
+			sed -i 's@//archive.ubuntu.com@//mirrors.ustc.edu.cn@g' /etc/apt/sources.list || true; \
+			sed -i 's@//security.ubuntu.com@//mirrors.ustc.edu.cn@g' /etc/apt/sources.list || true; \
+			sed -i 's@//ports.ubuntu.com@//mirrors.ustc.edu.cn@g' /etc/apt/sources.list || true; \
+		fi
 
 # System packages: build tools, VCS, SSL, SQLite, clang/LLVM, FUSE, etc.
 RUN apt-get update && \
@@ -29,6 +45,7 @@ RUN apt-get update && \
 			build-essential \
 			pkg-config \
 			cmake \
+            glib-2.0-dev \
 			python3 \
 			clang \
 			llvm \
@@ -36,13 +53,28 @@ RUN apt-get update && \
 			libssl-dev \
 			zlib1g-dev \
 			libsqlite3-dev \
+			libglib2.0-dev \
 			libfuse-dev \
 			tzdata \
+			openssh-server \
 		&& rm -rf /var/lib/apt/lists/*
 
 # Install Rust via rustup (stable) and useful components
 RUN curl -fsSL https://sh.rustup.rs | sh -s -- -y --profile minimal --default-toolchain stable && \
 		rustup component add rustfmt clippy
+
+# Configure Cargo to use TUNA mirror for crates.io
+RUN mkdir -p /root/.cargo && \
+		printf '%s\n' \
+			"[source.crates-io]" \
+			"replace-with = 'mirror'" \
+			"" \
+			"[source.mirror]" \
+			"registry = \"sparse+https://mirrors.tuna.tsinghua.edu.cn/crates.io-index/\"" \
+			"" \
+			"[registries.mirror]" \
+			"index = \"sparse+https://mirrors.tuna.tsinghua.edu.cn/crates.io-index/\"" \
+			> /root/.cargo/config.toml
 
 WORKDIR /opt/c2rust_agent
 
@@ -53,9 +85,8 @@ COPY src ./src
 COPY config ./config
 COPY README.md README-CN.md ./
 
-# Build release binaries, excluding GUI crate that may require extra system libs
-# If your workspace does not include `ui_main`, the exclude is harmless.
-RUN cargo build --release --locked --workspace --exclude commandline_tool
+# Build only the command-line tool as intended (avoids GUI deps)
+RUN cargo build --release --locked -p commandline_tool
 
 # Install available CLI binaries to PATH (ignore if some are not present)
 RUN set -eux; \
@@ -68,6 +99,21 @@ RUN set -eux; \
 
 # A neutral working directory for the checker to use as codegen_workdir
 WORKDIR /workspace
+
+# SSH server setup: create user and configure sshd
+RUN set -eux; \
+	useradd -m -s /bin/bash agent; \
+	echo 'agent:agent' | chpasswd; \
+	mkdir -p /home/agent/.ssh; \
+	chmod 700 /home/agent/.ssh; \
+	chown -R agent:agent /home/agent/.ssh; \
+	sed -i 's/^#\?PasswordAuthentication .*/PasswordAuthentication yes/' /etc/ssh/sshd_config; \
+	sed -i 's/^#\?PermitRootLogin .*/PermitRootLogin no/' /etc/ssh/sshd_config; \
+	sed -i 's/^#\?PubkeyAuthentication .*/PubkeyAuthentication yes/' /etc/ssh/sshd_config; \
+	printf '\nAllowUsers agent\nUseDNS no\nClientAliveInterval 60\nClientAliveCountMax 3\n' >> /etc/ssh/sshd_config
+
+# Expose SSH port
+EXPOSE 22
 
 # Default shell; no entrypoint to give the checker full control
 CMD ["bash"]

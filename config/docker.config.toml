@@ -1,0 +1,33 @@
+# Docker-specific configuration for c2rust_agent
+# This overrides the default config to point Qdrant host to the Compose service name.
+
+# LLMConfig
+provider = "ollama"
+
+[llm.ollama]
+model = "deepseek-r1:7b"
+base_url = "http://localhost:11434"
+api_key = ""
+
+[llm.openai]
+model = "gpt-3.5-turbo"
+api_key = "your_api_key_here"
+
+[llm.xai]
+model = "xai_model_name"
+api_key = "your_api_key_here"
+
+[llm.deepseek]
+model = "deepseek-chat"
+api_key = "your_api_key_here"
+
+# DBConfig
+[qdrant]
+host = "qdrant"      # Use the Docker Compose service name for in-network resolution
+port = 6334           # gRPC port as used by the Rust client in this project
+collection_name = "default"
+vector_size = 1536
+
+[sqlite]
+# Will be normalized relative to the project root (parent of config dir) by the code.
+path = "data/data.db"

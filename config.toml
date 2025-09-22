@@ -1,4 +1,4 @@
-# 测评使用，需放置在云主机 ～
+# 测评使用，需放置在云主机 ～/
 # 软件配置位于 config/config.toml
 
 [problem.foobar]
