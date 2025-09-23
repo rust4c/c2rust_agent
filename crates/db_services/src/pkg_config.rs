@@ -3,7 +3,7 @@ use serde::Deserialize;
 use std::path::{Path, PathBuf};
 
 #[derive(Debug, Clone, Deserialize)]
-pub struct qdrant_config {
+pub struct QdrantConfig {
     pub host: String,
     pub port: Option<u16>,
     pub collection_name: String,
@@ -11,14 +11,14 @@ pub struct qdrant_config {
 }
 
 #[derive(Debug, Clone, Deserialize)]
-pub struct sqlite_config {
+pub struct SqliteConfig {
     pub path: String,
 }
 
 #[derive(Debug, Clone, Deserialize)]
 pub struct DBConfig {
-    pub qdrant: qdrant_config,
-    pub sqlite: sqlite_config,
+    pub qdrant: QdrantConfig,
+    pub sqlite: SqliteConfig,
 }
 
 pub fn get_config() -> Result<DBConfig, config::ConfigError> {
@@ -70,9 +70,7 @@ pub fn get_config() -> Result<DBConfig, config::ConfigError> {
         let sqlite_path = PathBuf::from(&config.sqlite.path);
         if sqlite_path.is_relative() {
             let abs_sqlite = project_root.join(sqlite_path);
-            config.sqlite.path = abs_sqlite
-                .to_string_lossy()
-                .to_string();
+            config.sqlite.path = abs_sqlite.to_string_lossy().to_string();
         }
     }
 

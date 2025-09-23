@@ -6,11 +6,7 @@
 
 use anyhow::Result;
 use log::{info, warn, LevelFilter};
-use main_processor::{
-    translate_c_file, translate_c_project, ProjectTranslationResult, TranslationAPI,
-    TranslationConfig,
-};
-use std::path::Path;
+use main_processor::{process_batch_paths, process_single_path};
 use tempfile::TempDir;
 use tokio::fs;
 
@@ -88,17 +84,25 @@ async fn example_single_file_translation() -> Result<()> {
     fs::write(&c_file_path, EXAMPLE_C_CODE).await?;
     info!("Created test C file: {}", c_file_path.display());
 
-    // Translate using the convenience function
-    match translate_c_file(&c_file_path, Some(temp_dir.path())).await {
-        Ok(rust_code) => {
+    // Translate using the main processor function
+    match process_single_path(&c_file_path).await {
+        Ok(()) => {
             info!("✅ Translation successful!");
-            info!("Generated Rust code preview (first 300 chars):");
-            let preview = if rust_code.len() > 300 {
-                format!("{}...", &rust_code[..300])
-            } else {
-                rust_code
-            };
-            println!("{}", preview);
+
+            // Check if the output was created
+            let rust_project_path = c_file_path.parent().unwrap().join("rust-project");
+            let main_rs_path = rust_project_path.join("src").join("main.rs");
+
+            if main_rs_path.exists() {
+                let rust_code = fs::read_to_string(&main_rs_path).await?;
+                info!("Generated Rust code preview (first 300 chars):");
+                let preview = if rust_code.len() > 300 {
+                    format!("{}...", &rust_code[..300])
+                } else {
+                    rust_code
+                };
+                println!("{}", preview);
+            }
         }
         Err(e) => {
             warn!("❌ Translation failed: {}", e);
@@ -108,15 +112,177 @@ async fn example_single_file_translation() -> Result<()> {
     Ok(())
 }
 
-/// Example 2: Advanced configuration with custom settings
-async fn example_advanced_translation() -> Result<()> {
-    info!("=== Example 2: Advanced Translation Configuration ===");
+/// Example 2: Batch translation of multiple files
+async fn example_batch_translation() -> Result<()> {
+    info!("=== Example 2: Batch Translation ===");
 
     let temp_dir = TempDir::new()?;
-    let project_dir = temp_dir.path().join("c_project");
+
+    // Create multiple small C projects
+    let projects = vec![
+        (
+            "hello_world",
+            "#include <stdio.h>\nint main() { printf(\"Hello, World!\\n\"); return 0; }",
+        ),
+        (
+            "calculator",
+            r#"
+#include <stdio.h>
+int add(int a, int b) { return a + b; }
+int main() {
+    int result = add(5, 3);
+    printf("5 + 3 = %d\n", result);
+    return 0;
+}"#,
+        ),
+        (
+            "fibonacci",
+            r#"
+#include <stdio.h>
+int fibonacci(int n) {
+    if (n <= 1) return n;
+    return fibonacci(n-1) + fibonacci(n-2);
+}
+int main() {
+    printf("Fibonacci(10) = %d\n", fibonacci(10));
+    return 0;
+}"#,
+        ),
+    ];
+
+    let mut project_paths = Vec::new();
+
+    for (name, code) in projects {
+        let project_path = temp_dir.path().join(name);
+        fs::create_dir_all(&project_path).await?;
+        fs::write(project_path.join("main.c"), code).await?;
+        project_paths.push(project_path);
+    }
+
+    info!("Created {} test projects", project_paths.len());
+
+    // Perform batch translation
+    match process_batch_paths(project_paths).await {
+        Ok(()) => {
+            info!("✅ Batch translation completed successfully!");
+        }
+        Err(e) => {
+            warn!("❌ Some translations failed: {}", e);
+        }
+    }
+
+    Ok(())
+}
+
+/// Example 3: Working with directory structures
+async fn example_directory_structure() -> Result<()> {
+    info!("=== Example 3: Directory Structure Translation ===");
+
+    let temp_dir = TempDir::new()?;
+    let root_dir = temp_dir.path().join("c_projects_root");
+    fs::create_dir_all(&root_dir).await?;
+
+    // Create a directory structure with multiple C projects
+    let structure = vec![
+        (
+            "project_a",
+            "#include <stdio.h>\nint main() { printf(\"Project A\\n\"); return 0; }",
+        ),
+        (
+            "project_b",
+            "#include <stdio.h>\nint add(int a, int b) { return a + b; }\nint main() { return add(1,2); }",
+        ),
+        (
+            "project_c",
+            "#include <stdio.h>\nvoid helper() {}\nint main() { helper(); return 0; }",
+        ),
+    ];
+
+    let mut paths = Vec::new();
+    for (name, content) in structure {
+        let project_path = root_dir.join(name);
+        fs::create_dir_all(&project_path).await?;
+        fs::write(project_path.join("main.c"), content).await?;
+        paths.push(project_path);
+    }
+
+    info!("Created directory structure with multiple projects");
+
+    // Process all projects
+    match process_batch_paths(paths).await {
+        Ok(()) => {
+            info!("✅ Directory structure translation completed!");
+        }
+        Err(e) => {
+            warn!("❌ Some directory translations failed: {}", e);
+        }
+    }
+
+    Ok(())
+}
+
+/// Example 4: Error handling scenarios
+async fn example_error_handling() -> Result<()> {
+    info!("=== Example 4: Error Handling ===");
+
+    let temp_dir = TempDir::new()?;
+
+    // Create a problematic C file (intentionally malformed for testing)
+    let problematic_c = r#"
+// This C code has some complex patterns that might challenge translation
+#include <stdio.h>
+#include <stdlib.h>
+
+// Complex pointer usage
+int* get_array() {
+    static int arr[10] = {1, 2, 3, 4, 5, 6, 7, 8, 9, 10};
+    return arr;
+}
+
+// Function pointers
+typedef int (*operation_t)(int, int);
+
+int add(int a, int b) { return a + b; }
+int multiply(int a, int b) { return a * b; }
+
+int main() {
+    int* array = get_array();
+    printf("First element: %d\n", array[0]);
+
+    operation_t ops[] = {add, multiply};
+    printf("Add: %d, Multiply: %d\n", ops[0](2, 3), ops[1](2, 3));
+
+    return 0;
+}
+"#;
+
+    let c_file = temp_dir.path().join("complex.c");
+    fs::write(&c_file, problematic_c).await?;
+
+    info!("Created complex C file for testing error handling");
+
+    match process_single_path(&c_file).await {
+        Ok(()) => {
+            info!("✅ Complex translation succeeded!");
+        }
+        Err(e) => {
+            warn!("❌ Translation failed: {}", e);
+            info!("This demonstrates proper error handling in the translation pipeline");
+        }
+    }
+
+    Ok(())
+}
+
+/// Example 5: Multi-file project with headers
+async fn example_multi_file_project() -> Result<()> {
+    info!("=== Example 5: Multi-file Project ===");
+
+    let temp_dir = TempDir::new()?;
+    let project_dir = temp_dir.path().join("multi_file_project");
     fs::create_dir_all(&project_dir).await?;
 
-    // Create multiple C files for a project
+    // Create multiple files for a project
     let main_c = r#"
 #include "utils.h"
 #include <stdio.h>
@@ -156,261 +322,13 @@ int multiply_numbers(int a, int b);
 
     info!("Created multi-file C project");
 
-    // Configure translation with custom settings
-    let config = TranslationConfig {
-        test_mode: true, // Use test mode for this example
-        max_retries: 5,
-        verbose: true,
-        cache_dir: Some(temp_dir.path().join("cache").to_string_lossy().to_string()),
-        use_database: false, // Disable database for simplicity
-    };
-
-    let api = TranslationAPI::new(config);
-
-    // Translate the project
-    let result = api
-        .translate_project(&project_dir, Some(temp_dir.path()))
-        .await?;
-
-    display_translation_result(&result);
-
-    Ok(())
-}
-
-/// Example 3: Batch translation of multiple projects
-async fn example_batch_translation() -> Result<()> {
-    info!("=== Example 3: Batch Translation ===");
-
-    let temp_dir = TempDir::new()?;
-
-    // Create multiple small C projects
-    let projects = vec![
-        (
-            "hello_world",
-            "int main() { printf(\"Hello, World!\\n\"); return 0; }",
-        ),
-        (
-            "calculator",
-            r#"
-int add(int a, int b) { return a + b; }
-int main() {
-    int result = add(5, 3);
-    printf("5 + 3 = %d\n", result);
-    return 0;
-}"#,
-        ),
-        (
-            "fibonacci",
-            r#"
-int fibonacci(int n) {
-    if (n <= 1) return n;
-    return fibonacci(n-1) + fibonacci(n-2);
-}
-int main() {
-    printf("Fibonacci(10) = %d\n", fibonacci(10));
-    return 0;
-}"#,
-        ),
-    ];
-
-    let mut project_paths = Vec::new();
-
-    for (name, code) in projects {
-        let project_path = temp_dir.path().join(name);
-        fs::create_dir_all(&project_path).await?;
-        fs::write(
-            project_path.join("main.c"),
-            format!("#include <stdio.h>\n{}", code),
-        )
-        .await?;
-        project_paths.push(project_path);
-    }
-
-    info!("Created {} test projects", project_paths.len());
-
-    let config = TranslationConfig {
-        test_mode: true,
-        ..Default::default()
-    };
-    let api = TranslationAPI::new(config);
-
-    // Perform batch translation
-    let results = api.translate_batch(project_paths).await?;
-
-    // Display summary
-    info!("=== Batch Translation Results ===");
-    for (i, result) in results.iter().enumerate() {
-        println!(
-            "Project {}: {} - {}",
-            i + 1,
-            result.project_name,
-            if result.success {
-                "✅ Success"
-            } else {
-                "❌ Failed"
-            }
-        );
-
-        if !result.success {
-            if let Some(error) = &result.error_message {
-                println!("  Error: {}", error);
-            }
-        }
-    }
-
-    let stats = TranslationAPI::get_translation_summary(&results);
-    println!(
-        "\n📊 Summary: {} successful, {} failed",
-        stats.successful_translations, stats.failed_translations
-    );
-
-    Ok(())
-}
-
-/// Example 4: Auto-discovery and translation
-async fn example_auto_discovery() -> Result<()> {
-    info!("=== Example 4: Auto-Discovery Translation ===");
-
-    let temp_dir = TempDir::new()?;
-    let root_dir = temp_dir.path().join("c_projects_root");
-    fs::create_dir_all(&root_dir).await?;
-
-    // Create a directory structure with multiple C projects
-    let structure = vec![
-        (
-            "project_a/main.c",
-            "#include <stdio.h>\nint main() { printf(\"Project A\\n\"); return 0; }",
-        ),
-        (
-            "project_b/calculator.c",
-            "int add(int a, int b) { return a + b; }\nint main() { return add(1,2); }",
-        ),
-        (
-            "project_c/utils.c",
-            "void helper() {}\nint main() { helper(); return 0; }",
-        ),
-    ];
-
-    for (path, content) in structure {
-        let full_path = root_dir.join(path);
-        fs::create_dir_all(full_path.parent().unwrap()).await?;
-        fs::write(&full_path, content).await?;
-    }
-
-    info!("Created directory structure with multiple projects");
-
-    let config = TranslationConfig {
-        test_mode: true,
-        verbose: true,
-        ..Default::default()
-    };
-    let api = TranslationAPI::new(config);
-
-    // Auto-discover and translate
-    let results = api.auto_discover_and_translate(&root_dir).await?;
-
-    info!("Auto-discovered and translated {} projects", results.len());
-
-    for result in &results {
-        display_translation_result(result);
-    }
-
-    Ok(())
-}
-
-/// Helper function to display translation results
-fn display_translation_result(result: &ProjectTranslationResult) {
-    println!("\n--- Translation Result for '{}' ---", result.project_name);
-    println!(
-        "Status: {}",
-        if result.success {
-            "✅ Success"
-        } else {
-            "❌ Failed"
-        }
-    );
-
-    if let Some(error) = &result.error_message {
-        println!("Error: {}", error);
-    }
-
-    if !result.warnings.is_empty() {
-        println!("Warnings:");
-        for warning in &result.warnings {
-            println!("  ⚠️  {}", warning);
-        }
-    }
-
-    if let Some(rust_code) = &result.rust_code {
-        println!("Generated Rust code size: {} bytes", rust_code.len());
-        // Show a small preview
-        if rust_code.len() > 200 {
-            println!("Code preview:\n{}", &rust_code[..200]);
-            println!("... (truncated)");
-        } else {
-            println!("Full code:\n{}", rust_code);
-        }
-    }
-}
-
-/// Example 5: Error handling and retry scenarios
-async fn example_error_handling() -> Result<()> {
-    info!("=== Example 5: Error Handling and Retry ===");
-
-    let temp_dir = TempDir::new()?;
-
-    // Create a problematic C file (intentionally malformed for testing)
-    let problematic_c = r#"
-// This C code has issues that might cause translation problems
-#include <stdio.h>
-#include <nonexistent_header.h>  // This header doesn't exist
-
-// Undefined behavior examples
-int* dangerous_function() {
-    int local_var = 42;
-    return &local_var;  // Returning address of local variable
-}
-
-void memory_leak() {
-    char* buffer = malloc(1000);
-    // Forgot to free buffer
-}
-
-int main() {
-    int* ptr = dangerous_function();
-    printf("Value: %d\n", *ptr);  // Undefined behavior
-    memory_leak();
-    return 0;
-}
-"#;
-
-    let c_file = temp_dir.path().join("problematic.c");
-    fs::write(&c_file, problematic_c).await?;
-
-    info!("Created problematic C file for testing error handling");
-
-    let config = TranslationConfig {
-        test_mode: true, // Even in test mode, we can simulate error handling
-        max_retries: 2,
-        verbose: true,
-        ..Default::default()
-    };
-
-    let api = TranslationAPI::new(config);
-
-    match api
-        .translate_single_file(&c_file, Some(temp_dir.path()))
-        .await
-    {
-        Ok(result) => {
-            display_translation_result(&result);
-            if result.success {
-                info!("Translation succeeded despite problematic code!");
-            }
+    // Process the project
+    match process_single_path(&project_dir).await {
+        Ok(()) => {
+            info!("✅ Multi-file project translation completed!");
         }
         Err(e) => {
-            warn!("Translation failed as expected: {}", e);
-            info!("This demonstrates proper error handling in the translation pipeline");
+            warn!("❌ Multi-file translation failed: {}", e);
         }
     }
 
@@ -428,30 +346,31 @@ async fn main() -> Result<()> {
     example_single_file_translation().await?;
     println!("\n");
 
-    example_advanced_translation().await?;
-    println!("\n");
-
     example_batch_translation().await?;
     println!("\n");
 
-    example_auto_discovery().await?;
+    example_directory_structure().await?;
     println!("\n");
 
     example_error_handling().await?;
+    println!("\n");
+
+    example_multi_file_project().await?;
 
     info!("\n🎉 All examples completed successfully!");
     info!("==========================================");
 
     println!("\n📝 Key Takeaways:");
-    println!("1. Use `translate_c_file()` for quick single file translations");
-    println!("2. Use `TranslationAPI` with custom config for advanced scenarios");
-    println!("3. Batch translation handles multiple projects efficiently");
-    println!("4. Auto-discovery can find and translate entire directory trees");
-    println!("5. Proper error handling ensures robust translation workflows");
+    println!("1. Use `process_single_path()` for single file/directory translations");
+    println!("2. Use `process_batch_paths()` for batch processing multiple paths");
+    println!("3. The processor handles both individual files and directory structures");
+    println!("4. Proper error handling ensures robust translation workflows");
+    println!("5. Multi-file projects are automatically processed and combined");
+
     println!("\n💡 Next Steps:");
     println!("- Integrate with your own C projects");
-    println!("- Configure database support for context-aware translations");
-    println!("- Set up CI/CD pipelines for automated C-to-Rust migration");
+    println!("- Configure the system with proper API keys and settings");
+    println!("- Set up automated workflows for large-scale migrations");
 
     Ok(())
 }
@@ -469,9 +388,9 @@ mod tests {
 
         // Test that all example functions can be called without panicking
         assert!(example_single_file_translation().await.is_ok());
-        assert!(example_advanced_translation().await.is_ok());
         assert!(example_batch_translation().await.is_ok());
-        assert!(example_auto_discovery().await.is_ok());
+        assert!(example_directory_structure().await.is_ok());
         assert!(example_error_handling().await.is_ok());
+        assert!(example_multi_file_project().await.is_ok());
     }
 }

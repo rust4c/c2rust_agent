@@ -1,7 +1,7 @@
 use anyhow::{anyhow, Result};
 use chrono::{DateTime, Utc};
 use log::{debug, info};
-use serde::{de, Deserialize, Serialize};
+use serde::{Deserialize, Serialize};
 use serde_json::{json, Value as JsonValue};
 use std::collections::HashMap;
 use std::sync::Arc;
@@ -9,7 +9,7 @@ use std::sync::Arc;
 use tokio::sync::Mutex;
 
 mod pkg_config;
-use pkg_config::{get_config, qdrant_config, sqlite_config, DBConfig};
+use pkg_config::{get_config, DBConfig};
 mod qdrant_services;
 use qdrant_services::QdrantServer;
 pub mod sqlite_services;
@@ -754,7 +754,9 @@ impl DatabaseManager {
     }
 
     /// 获取SQLite统计信息（表内行数）
-    pub async fn sqlite_statistics(&self) -> std::result::Result<std::collections::HashMap<String, i64>, String> {
+    pub async fn sqlite_statistics(
+        &self,
+    ) -> std::result::Result<std::collections::HashMap<String, i64>, String> {
         let sqlite = self.sqlite.lock().await;
         sqlite
             .get_statistics()
@@ -813,7 +815,9 @@ pub async fn create_database_manager(
 
     if let Some(url) = qdrant_url {
         // Accept forms like "http://host:port", "host:port", or just "host"
-        let trimmed = url.trim_start_matches("http://").trim_start_matches("https://");
+        let trimmed = url
+            .trim_start_matches("http://")
+            .trim_start_matches("https://");
         let mut parts = trimmed.split(':');
         if let Some(host) = parts.next() {
             if !host.is_empty() {

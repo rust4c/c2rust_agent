@@ -4,16 +4,15 @@
 //! 专注于 C/Rust 文件的函数分析和数据库查询。
 
 use anyhow::{Context, Result};
+use log::{debug, info, warn};
 use regex::Regex;
 use serde::{Deserialize, Serialize};
-use std::collections::{HashMap, HashSet};
+use std::collections::HashMap;
 use std::fs;
 use std::path::{Path, PathBuf};
-use tokio::task;
-use log::{debug, error, info, warn};
 
 use db_services::DatabaseManager;
-use lsp_services::lsp_services::{ClangdAnalyzer, FunctionInfo, Parameter};
+use lsp_services::lsp_services::{ClangdAnalyzer, Parameter};
 
 /// 函数定义信息
 #[derive(Debug, Clone, Serialize)]
@@ -93,7 +92,6 @@ pub struct CallRelationAnalyzer {
     // 存储分析结果
     function_definitions: HashMap<String, FunctionDefinition>,
     function_calls: HashMap<String, Vec<FunctionCall>>,
-    file_dependencies: HashMap<String, HashSet<String>>,
 
     // 分析器
     clangd_analyzer: Option<ClangdAnalyzer>,
@@ -108,7 +106,6 @@ impl CallRelationAnalyzer {
             project_root,
             function_definitions: HashMap::new(),
             function_calls: HashMap::new(),
-            file_dependencies: HashMap::new(),
             clangd_analyzer: None,
         })
     }
@@ -132,7 +129,6 @@ impl CallRelationAnalyzer {
             project_root,
             function_definitions: HashMap::new(),
             function_calls: HashMap::new(),
-            file_dependencies: HashMap::new(),
             clangd_analyzer: Some(clangd_analyzer),
         })
     }
@@ -583,7 +579,7 @@ impl CallRelationAnalyzer {
         info!("创建关系数据库表");
 
         // 函数定义表
-        let create_function_definitions = r#"
+        let _create_function_definitions = r#"
             CREATE TABLE IF NOT EXISTS function_definitions (
                 id INTEGER PRIMARY KEY AUTOINCREMENT,
                 function_name TEXT NOT NULL,
@@ -600,7 +596,7 @@ impl CallRelationAnalyzer {
         "#;
 
         // 函数调用表
-        let create_function_calls = r#"
+        let _create_function_calls = r#"
             CREATE TABLE IF NOT EXISTS function_calls (
                 id INTEGER PRIMARY KEY AUTOINCREMENT,
                 caller_file TEXT NOT NULL,
@@ -615,7 +611,7 @@ impl CallRelationAnalyzer {
         "#;
 
         // 文件依赖表
-        let create_file_dependencies = r#"
+        let _create_file_dependencies = r#"
             CREATE TABLE IF NOT EXISTS file_dependencies (
                 id INTEGER PRIMARY KEY AUTOINCREMENT,
                 source_file TEXT NOT NULL,
@@ -866,7 +862,6 @@ pub struct CallRelationStatistics {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use std::path::PathBuf;
     use tempfile::TempDir;
 
     #[tokio::test]
@@ -934,7 +929,7 @@ fn private_function() {
         std::fs::write(&c_file, "int test() { return 0; }").unwrap();
         std::fs::write(&py_file, "def test(): pass").unwrap();
 
-        let input_files = vec![rust_file.clone(), c_file.clone(), py_file.clone()];
+        let _input_files = vec![rust_file.clone(), c_file.clone(), py_file.clone()];
 
         // 这里需要模拟 DatabaseManager
         // let db_manager = DatabaseManager::new_default().await.unwrap();

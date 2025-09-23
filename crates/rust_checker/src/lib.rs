@@ -95,7 +95,7 @@ mod tests {
             .unwrap();
 
         // 创建有效的源文件
-        let mut src_dir = project_path.join("src");
+        let src_dir = project_path.join("src");
         std::fs::create_dir(&src_dir).unwrap();
         let mut lib_file = File::create(src_dir.join("main.rs")).unwrap();
         lib_file.write_all(b"fn main() {}").unwrap();

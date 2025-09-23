@@ -7,7 +7,7 @@ use serde::{Deserialize, Serialize};
 use std::collections::HashMap;
 use uuid::Uuid;
 
-use crate::pkg_config::sqlite_config;
+use crate::pkg_config::SqliteConfig;
 
 /// Type alias for the connection pool
 type SqlitePool = Pool<SqliteConnectionManager>;
@@ -102,7 +102,7 @@ impl SqliteService {
         &self.db_path
     }
     /// Create a new SQLite service instance with connection pooling
-    pub fn new(sqlite_config: sqlite_config) -> Result<Self> {
+    pub fn new(sqlite_config: SqliteConfig) -> Result<Self> {
         let db_path = sqlite_config.path;
         let manager = SqliteConnectionManager::file(&db_path);
         let pool = Pool::builder()

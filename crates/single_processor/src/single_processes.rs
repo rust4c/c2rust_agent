@@ -8,20 +8,20 @@ use std::fs;
 use std::fs::File;
 use std::io::{Read, Write};
 use std::path::{Path, PathBuf};
-use tokio::time::{timeout, Duration};
+use tokio::time::{Duration, timeout};
 
 // 处理文件夹中的.c和.h文件
 fn process_c_h_files(dir_path: &Path) -> Result<PathBuf> {
     info!("开始处理C/H文件，路径: {:?}", dir_path);
-    
+
     let mut c_files = Vec::new();
     let mut h_files = Vec::new();
-    
+
     // 读取目录中的文件
     for entry in fs::read_dir(dir_path)? {
         let entry = entry?;
         let path = entry.path();
-        
+
         if path.is_file() {
             if let Some(ext) = path.extension() {
                 match ext.to_str().unwrap() {
@@ -32,64 +32,74 @@ fn process_c_h_files(dir_path: &Path) -> Result<PathBuf> {
             }
         }
     }
-    
-    info!("找到 {} 个.c文件 和 {} 个.h文件", c_files.len(), h_files.len());
-    
+
+    info!(
+        "找到 {} 个.c文件 和 {} 个.h文件",
+        c_files.len(),
+        h_files.len()
+    );
+
     // 根据文件情况处理
     if c_files.is_empty() && h_files.is_empty() {
         return Err(anyhow::anyhow!("目录中没有找到.c或.h文件"));
     }
-    
+
     // 如果只有.h文件，创建对应的.c文件
     if c_files.is_empty() && h_files.len() == 1 {
         let h_file = &h_files[0];
         let c_file_path = h_file.with_extension("c");
-        
+
         info!("只有.h文件，创建对应的.c文件: {:?}", c_file_path);
-        
+
         // 读取.h文件内容
         let mut h_content = String::new();
         File::open(h_file)?.read_to_string(&mut h_content)?;
-        
+
         // 写入.c文件
         let mut c_file = File::create(&c_file_path)?;
         c_file.write_all(h_content.as_bytes())?;
-        
+
         info!("已将.h文件内容写入新创建的.c文件");
         return Ok(c_file_path);
     }
-    
+
     // 如果只有一个.c文件和一个.h文件，将.h内容写入.c文件开头
     if c_files.len() == 1 && h_files.len() == 1 {
         let c_file = &c_files[0];
         let h_file = &h_files[0];
-        
+
         info!("有一个.c文件和一个.h文件，将.h内容写入.c文件开头");
-        
+
         // 读取.h文件内容
         let mut h_content = String::new();
         File::open(h_file)?.read_to_string(&mut h_content)?;
-        
+        debug!("h_content: {}", h_content);
+
         // 读取现有.c文件内容
         let mut c_content = String::new();
         File::open(c_file)?.read_to_string(&mut c_content)?;
-        
+        debug!("c_content: {}", c_content);
+
         // 将.h内容写入.c文件开头
         let mut file = File::create(c_file)?;
         write!(file, "{}{}", h_content, c_content)?;
-        
+
         info!("已将.h文件内容写入.c文件开头");
         return Ok(c_file.clone());
     }
-    
+
     // 如果只有一个.c文件，不做任何处理
     if c_files.len() == 1 && h_files.is_empty() {
         info!("只有一个.c文件，不做任何处理");
         return Ok(c_files[0].clone());
     }
-    
+
     // 其他情况返回错误
-    Err(anyhow::anyhow!("不支持的文件组合: {}个.c文件, {}个.h文件", c_files.len(), h_files.len()))
+    Err(anyhow::anyhow!(
+        "不支持的文件组合: {}个.c文件, {}个.h文件",
+        c_files.len(),
+        h_files.len()
+    ))
 }
 
 // 创建 Rust 项目结构
@@ -119,15 +129,15 @@ libc = "0.2"
 // 处理LLM响应并提取Rust代码
 fn process_llm_response(llm_response: &str, output_dir: &Path) -> Result<String> {
     info!("处理LLM响应");
-    
+
     // 保存原始响应便于排查
     let debug_path = output_dir.join("llm_response_raw.txt");
     fs::write(&debug_path, llm_response)?;
     info!("原始响应已保存到: {:?}", debug_path);
-    
+
     // 尝试多种方式解析响应
     let mut rust_code = None;
-    
+
     // 方法1: 尝试直接解析为JSON
     if let Ok(json_response) = serde_json::from_str::<Value>(llm_response) {
         if let Some(code) = json_response["rust_code"].as_str() {
@@ -144,7 +154,7 @@ fn process_llm_response(llm_response: &str, output_dir: &Path) -> Result<String>
             }
         }
     }
-    
+
     // 方法2: 尝试处理被代码块包裹的JSON
     if rust_code.is_none() {
         let cleaned_response = llm_response
@@ -153,7 +163,7 @@ fn process_llm_response(llm_response: &str, output_dir: &Path) -> Result<String>
             .trim_start_matches("```")
             .trim_end_matches("```")
             .trim();
-            
+
         if let Ok(json_response) = serde_json::from_str::<Value>(cleaned_response) {
             if let Some(code) = json_response["rust_code"].as_str() {
                 rust_code = Some(code.to_string());
@@ -161,7 +171,7 @@ fn process_llm_response(llm_response: &str, output_dir: &Path) -> Result<String>
             }
         }
     }
-    
+
     // 方法3: 尝试直接提取Rust代码块
     if rust_code.is_none() {
         if let Some(start_idx) = llm_response.find("```rust\n") {
@@ -180,37 +190,37 @@ fn process_llm_response(llm_response: &str, output_dir: &Path) -> Result<String>
             }
         }
     }
-    
+
     // 方法4: 如果以上方法都失败，尝试将整个响应作为代码
     if rust_code.is_none() {
         warn!("无法从响应中提取结构化代码，将整个响应作为代码保存");
         rust_code = Some(llm_response.to_string());
     }
-    
+
     // 保存处理后的代码
     let processed_code_path = output_dir.join("processed_rust_code.rs");
     fs::write(&processed_code_path, rust_code.as_ref().unwrap())?;
     info!("处理后的Rust代码已保存到: {:?}", processed_code_path);
-    
+
     rust_code.ok_or_else(|| anyhow::anyhow!("无法从LLM响应中提取Rust代码"))
 }
 
 // 构建包含源文件内容的提示词
 fn build_prompt_with_source_files(prompt: &str, file_path: &Path) -> Result<String> {
     info!("构建包含源文件内容的提示词");
-    
+
     // 处理C/H文件
     let processed_file = process_c_h_files(file_path)?;
-    
+
     // 读取处理后的文件内容
     let content = fs::read_to_string(&processed_file)?;
-    
+
     // 将源文件内容添加到原始提示词中
     let enhanced_prompt = format!(
         "{}\n\n--- 以下是处理后的C代码 ---\n{}\n\n请将上面的C代码转换为Rust，输出一个可编译的main.rs文件。",
         prompt, content
     );
-    
+
     Ok(enhanced_prompt)
 }
 
@@ -249,35 +259,40 @@ pub async fn singlefile_processor(file_path: &Path) -> Result<()> {
 
     // 调用LLM接口，添加超时处理
     info!("调用LLM接口");
-    
+
     // 设置超时时间为100分钟
     let timeout_duration = Duration::from_secs(6000);
-    
-    let llm_response = match timeout(timeout_duration, llm_request_with_prompt(
-        vec![enhanced_prompt],
-        "你是一位C到Rust代码转换专家，特别擅长文件系统和FUSE相关的代码转换".to_string(),
-    )).await {
+
+    let llm_response = match timeout(
+        timeout_duration,
+        llm_request_with_prompt(
+            vec![enhanced_prompt],
+            "你是一位C到Rust代码转换专家，特别擅长文件系统和FUSE相关的代码转换".to_string(),
+        ),
+    )
+    .await
+    {
         Ok(Ok(response)) => {
             info!("LLM响应接收成功，长度: {} 字符", response.len());
             response
         }
         Ok(Err(e)) => {
             error!("LLM请求失败: {}", e);
-            
+
             // 保存错误信息
             let error_path = file_path.join("llm_request_error.txt");
             fs::write(error_path, format!("LLM请求失败: {}", e))?;
-            
+
             return Err(e);
         }
         Err(_) => {
             let error_msg = "LLM请求超时，未能在10分钟内获取响应";
             error!("{}", error_msg);
-            
+
             // 保存超时信息
             let timeout_path = file_path.join("llm_request_timeout.txt");
             fs::write(timeout_path, error_msg)?;
-            
+
             return Err(anyhow::anyhow!(error_msg));
         }
     };

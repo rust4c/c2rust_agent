@@ -206,7 +206,7 @@ impl<'a> PromptBuilder<'a> {
         file_path: &Path,
         target_functions: Option<Vec<String>>,
     ) -> Result<String> {
-        let mut original_path = if file_path.is_dir() {
+        let original_path = if file_path.is_dir() {
             // If input is a directory, try to find the actual file
             let dir_name = file_path.file_name().and_then(|n| n.to_str()).unwrap_or("");
             let mut found_path = None;
@@ -495,13 +495,9 @@ impl<'a> PromptBuilder<'a> {
     async fn get_call_relationships(
         &self,
         file_path: &Path,
-        target_functions: Option<&Vec<String>>,
+        _target_functions: Option<&Vec<String>>,
     ) -> Result<HashMap<String, Vec<CallRelationship>>> {
         debug!("Getting call relationships for: {}", file_path.display());
-
-        let file_name = file_path.file_name().and_then(|n| n.to_str()).unwrap_or("");
-
-        // Currently, call graph tables are not persisted in the DB schema used by analyzer.
         // Return empty relationships gracefully.
         let relationships: HashMap<String, Vec<CallRelationship>> = HashMap::new();
         debug!("Call relationships not available in current DB schema");
@@ -511,8 +507,6 @@ impl<'a> PromptBuilder<'a> {
     /// Get file dependencies
     async fn get_file_dependencies(&self, file_path: &Path) -> Result<Vec<FileDependency>> {
         debug!("Getting file dependencies for: {}", file_path.display());
-
-        let file_name = file_path.file_name().and_then(|n| n.to_str()).unwrap_or("");
 
         // Not available in current DB schema; return empty
         debug!("File dependencies not available in current DB schema");
@@ -949,32 +943,31 @@ impl<'a> PromptBuilder<'a> {
     }
 }
 
-// Implement fallback methods for error cases
-impl<'a> PromptBuilder<'a> {
-    fn get_fallback_prompt(&self, file_path: &Path) -> String {
-        let file_name = file_path
-            .file_name()
-            .and_then(|n| n.to_str())
-            .unwrap_or_else(|| file_path.to_str().unwrap_or(""));
+// // Implement fallback methods for error cases
+// impl<'a> PromptBuilder<'a> {
+//     fn get_fallback_prompt(&self, file_path: &Path) -> String {
+//         let file_name = file_path
+//             .file_name()
+//             .and_then(|n| n.to_str())
+//             .unwrap_or_else(|| file_path.to_str().unwrap_or(""));
 
-        format!(
-            "# C到Rust转换\n\n正在转换文件: **{}**\n\n由于无法获取详细的上下文信息，请按照以下基本原则进行转换：\n\n1. 保持函数接口的基本结构\n2. 使用Rust标准的类型映射\n3. 添加适当的错误处理\n4. 确保内存安全\n\n请进行标准的C到Rust代码转换。\n",
-            file_name
-        )
-    }
+//         format!(
+//             "# C到Rust转换\n\n正在转换文件: **{}**\n\n由于无法获取详细的上下文信息，请按照以下基本原则进行转换：\n\n1. 保持函数接口的基本结构\n2. 使用Rust标准的类型映射\n3. 添加适当的错误处理\n4. 确保内存安全\n\n请进行标准的C到Rust代码转换。\n",
+//             file_name
+//         )
+//     }
 
-    fn get_fallback_function_prompt(&self, function_name: &str) -> String {
-        format!(
-            "# 函数转换\n\n正在转换函数: **{}**\n\n请按照标准的C到Rust转换原则进行转换：\n1. 保持函数签名的基本语义\n2. 使用Rust类型系统\n3. 添加错误处理\n4. 确保内存安全\n",
-            function_name
-        )
-    }
-}
+//     fn get_fallback_function_prompt(&self, function_name: &str) -> String {
+//         format!(
+//             "# 函数转换\n\n正在转换函数: **{}**\n\n请按照标准的C到Rust转换原则进行转换：\n1. 保持函数签名的基本语义\n2. 使用Rust类型系统\n3. 添加错误处理\n4. 确保内存安全\n",
+//             function_name
+//         )
+//     }
+// }
 
 #[cfg(test)]
 mod tests {
     use super::*;
-    use std::sync::Arc;
     use tempfile::tempdir;
     use tokio::fs::File;
     use tokio::io::AsyncWriteExt;

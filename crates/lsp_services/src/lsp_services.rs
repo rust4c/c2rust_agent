@@ -1,5 +1,4 @@
 use anyhow::{Result, anyhow};
-use chrono::Utc;
 use db_services::{DatabaseManager, create_database_manager};
 use dirs;
 use log::{debug, error, info, warn};
@@ -895,9 +894,6 @@ impl ClangdAnalyzer {
         };
 
         info!("Saving analysis results to database...");
-        // Log which SQLite DB file will be used
-        let db_path = db_manager.sqlite_db_path().await;
-        info!("SQLite DB path: {}", db_path);
 
         // Save functions
         if !self.functions.is_empty() {
@@ -918,19 +914,6 @@ impl ClangdAnalyzer {
         if !self.macros.is_empty() {
             info!("Saving {} macros to database", self.macros.len());
             self.save_macros_to_database(db_manager).await?;
-        }
-
-        // Summarize counts from SQLite to confirm persistence
-        match db_manager.sqlite_statistics().await {
-            Ok(stats) => {
-                info!(
-                    "SQLite row counts => code_entries: {}, analysis_results: {}, conversion_results: {}",
-                    stats.get("code_entries").cloned().unwrap_or(0),
-                    stats.get("analysis_results").cloned().unwrap_or(0),
-                    stats.get("conversion_results").cloned().unwrap_or(0)
-                );
-            }
-            Err(e) => warn!("Failed to read SQLite statistics: {}", e),
         }
 
         info!("Successfully saved all analysis results to database");
@@ -1048,6 +1031,8 @@ impl ClangdAnalyzer {
                     .to_string(),
                 ),
             };
+
+            debug!("Saving Class metadata: {:?}", code_entry);
 
             // Save the code entry and get its ID
             let code_id = match db_manager.save_code_entry(code_entry).await {
@@ -1237,7 +1222,7 @@ pub fn check_function_and_class_name(project_path: &str, detailed: bool) -> Resu
 /// Analyze project with database support - the unified entry point for LSP analysis with persistence
 pub async fn analyze_project_with_database(
     project_path: &str,
-    detailed: bool,
+    _detailed: bool,
     sqlite_path: Option<&str>,
     qdrant_url: Option<&str>,
     qdrant_collection: Option<&str>,

@@ -11,7 +11,7 @@ use std::time::Duration;
 use tokio::time::sleep;
 use uuid::Uuid;
 
-use crate::pkg_config::qdrant_config;
+use crate::pkg_config::QdrantConfig;
 
 const DEFAULT_BATCH_SIZE: usize = 100;
 const DEFAULT_TIMEOUT_SECS: u64 = 60;
@@ -22,13 +22,14 @@ pub struct QdrantServer {
     client: Qdrant,
     collection_name: String,
     vector_size: u64,
-    timeout: Duration,
+    _timeout: Duration,
     batch_size: usize,
 }
 
+#[allow(dead_code)]
 impl QdrantServer {
     /// 创建新的 Qdrant 服务器实例
-    pub async fn new(qdrant_config: qdrant_config) -> Result<Self> {
+    pub async fn new(qdrant_config: QdrantConfig) -> Result<Self> {
         // 确定端口（优先使用传入参数，否则使用默认）
         let port = qdrant_config.port.unwrap_or(DEFAULT_PORT);
         let host = qdrant_config.host;
@@ -46,7 +47,7 @@ impl QdrantServer {
             client,
             collection_name: qdrant_config.collection_name.to_string(),
             vector_size: qdrant_config.vector_size as u64,
-            timeout,
+            _timeout: timeout,
             batch_size: DEFAULT_BATCH_SIZE,
         };
 
@@ -386,7 +387,7 @@ mod tests {
         let host = env::var("QDRANT_HOST").unwrap_or("localhost".to_string());
         let port = env::var("QDRANT_PORT").map(|p| p.parse().unwrap()).ok();
 
-        let qdrant_config = qdrant_config {
+        let qdrant_config = QdrantConfig {
             host,
             port,
             collection_name: "test_collection".to_string(),
@@ -430,7 +431,7 @@ mod tests {
 
     #[tokio::test]
     async fn test_port_config() {
-        let qdrant_config = qdrant_config {
+        let qdrant_config = QdrantConfig {
             host: "localhost".to_string(),
             port: Some(6334),
             collection_name: "test_collection".to_string(),
