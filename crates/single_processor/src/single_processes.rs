@@ -127,13 +127,10 @@ libc = "0.2"
 }
 
 // 处理LLM响应并提取Rust代码
-fn process_llm_response(llm_response: &str, output_dir: &Path) -> Result<String> {
+fn process_llm_response(llm_response: &str, _output_dir: &Path) -> Result<String> {
     info!("处理LLM响应");
 
-    // 保存原始响应便于排查
-    let debug_path = output_dir.join("llm_response_raw.txt");
-    fs::write(&debug_path, llm_response)?;
-    info!("原始响应已保存到: {:?}", debug_path);
+    debug!("LLM Response: {}", llm_response);
 
     // 尝试多种方式解析响应
     let mut rust_code = None;
@@ -197,10 +194,7 @@ fn process_llm_response(llm_response: &str, output_dir: &Path) -> Result<String>
         rust_code = Some(llm_response.to_string());
     }
 
-    // 保存处理后的代码
-    let processed_code_path = output_dir.join("processed_rust_code.rs");
-    fs::write(&processed_code_path, rust_code.as_ref().unwrap())?;
-    info!("处理后的Rust代码已保存到: {:?}", processed_code_path);
+    debug!("Output Rust Code: {:?}", &rust_code.as_ref());
 
     rust_code.ok_or_else(|| anyhow::anyhow!("无法从LLM响应中提取Rust代码"))
 }
@@ -251,11 +245,7 @@ pub async fn singlefile_processor(file_path: &Path) -> Result<()> {
 
     info!("生成的提示词长度: {} 字符", enhanced_prompt.len());
 
-    // 输出提示词到文件用于调试
-    info!("输出提示词到文件用于调试...");
-    let output_promote = file_path.join("merged_promot.txt");
-    let mut output_file = File::create(&output_promote)?;
-    writeln!(output_file, "{}", enhanced_prompt)?;
+    debug!("Prompt Output: {}", enhanced_prompt);
 
     // 调用LLM接口，添加超时处理
     info!("调用LLM接口");
@@ -278,11 +268,6 @@ pub async fn singlefile_processor(file_path: &Path) -> Result<()> {
         }
         Ok(Err(e)) => {
             error!("LLM请求失败: {}", e);
-
-            // 保存错误信息
-            let error_path = file_path.join("llm_request_error.txt");
-            fs::write(error_path, format!("LLM请求失败: {}", e))?;
-
             return Err(e);
         }
         Err(_) => {
