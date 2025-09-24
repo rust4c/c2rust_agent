@@ -57,6 +57,7 @@ RUN apt-get update && \
 			libfuse-dev \
 			tzdata \
 			openssh-server \
+			openssh-client \
 		&& rm -rf /var/lib/apt/lists/*
 
 # Install Rust via rustup (stable) and useful components
