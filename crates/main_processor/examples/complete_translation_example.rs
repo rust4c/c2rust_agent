@@ -6,7 +6,7 @@
 
 use anyhow::Result;
 use log::{info, warn, LevelFilter};
-use main_processor::{process_batch_paths, process_single_path};
+use main_processor::{pkg_config, MainProcessor};
 use tempfile::TempDir;
 use tokio::fs;
 
@@ -84,8 +84,10 @@ async fn example_single_file_translation() -> Result<()> {
     fs::write(&c_file_path, EXAMPLE_C_CODE).await?;
     info!("Created test C file: {}", c_file_path.display());
 
-    // Translate using the main processor function
-    match process_single_path(&c_file_path).await {
+    // Create processor and translate
+    let cfg = pkg_config::get_config().unwrap_or_default();
+    let processor = MainProcessor::new(cfg);
+    match processor.process_single(&c_file_path).await {
         Ok(()) => {
             info!("✅ Translation successful!");
 
@@ -162,7 +164,9 @@ int main() {
     info!("Created {} test projects", project_paths.len());
 
     // Perform batch translation
-    match process_batch_paths(project_paths).await {
+    let cfg = pkg_config::get_config().unwrap_or_default();
+    let processor = MainProcessor::new(cfg);
+    match processor.process_batch(project_paths).await {
         Ok(()) => {
             info!("✅ Batch translation completed successfully!");
         }
@@ -209,7 +213,9 @@ async fn example_directory_structure() -> Result<()> {
     info!("Created directory structure with multiple projects");
 
     // Process all projects
-    match process_batch_paths(paths).await {
+    let cfg = pkg_config::get_config().unwrap_or_default();
+    let processor = MainProcessor::new(cfg);
+    match processor.process_batch(paths).await {
         Ok(()) => {
             info!("✅ Directory structure translation completed!");
         }
@@ -261,7 +267,9 @@ int main() {
 
     info!("Created complex C file for testing error handling");
 
-    match process_single_path(&c_file).await {
+    let cfg = pkg_config::get_config().unwrap_or_default();
+    let processor = MainProcessor::new(cfg);
+    match processor.process_single(&c_file).await {
         Ok(()) => {
             info!("✅ Complex translation succeeded!");
         }
@@ -323,7 +331,9 @@ int multiply_numbers(int a, int b);
     info!("Created multi-file C project");
 
     // Process the project
-    match process_single_path(&project_dir).await {
+    let cfg = pkg_config::get_config().unwrap_or_default();
+    let processor = MainProcessor::new(cfg);
+    match processor.process_single(&project_dir).await {
         Ok(()) => {
             info!("✅ Multi-file project translation completed!");
         }

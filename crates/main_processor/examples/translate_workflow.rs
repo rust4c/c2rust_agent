@@ -2,7 +2,7 @@ use anyhow::Result;
 use db_services::DatabaseManager;
 use env_logger;
 use log::info;
-use main_processor::{process_batch_paths, process_single_path};
+use main_processor::{pkg_config, MainProcessor};
 use std::path::PathBuf;
 use tokio::fs;
 
@@ -10,6 +10,10 @@ use tokio::fs;
 async fn main() -> Result<()> {
     // Initialize logger
     env_logger::init();
+
+    // Load config and create processor
+    let cfg = pkg_config::get_config().unwrap_or_default();
+    let processor = MainProcessor::new(cfg);
 
     // Parse command line arguments
     let args: Vec<String> = std::env::args().collect();
@@ -32,8 +36,19 @@ async fn main() -> Result<()> {
     info!("Starting C to Rust translation workflow");
     info!("Input directory: {}", input_dir.display());
 
-    // Discover C projects in the input directory
-    let projects = discover_c_projects(&input_dir).await?;
+    // Discover projects: if input_dir looks like a src_cache (has individual_files/),
+    // use the dedicated traversal; otherwise fall back to generic discovery.
+    let projects = if input_dir.join("individual_files").exists() {
+        info!(
+            "Detected src_cache structure at {} — using individual_files traversal",
+            input_dir.display()
+        );
+        processor
+            .discover_src_cache_projects(&input_dir)
+            .await?
+    } else {
+        discover_c_projects(&input_dir).await?
+    };
 
     if projects.is_empty() {
         println!("No C projects found in {}", input_dir.display());
@@ -47,7 +62,7 @@ async fn main() -> Result<()> {
 
     // Process all projects using batch processing
     println!("\nStarting batch translation...");
-    match process_batch_paths(projects).await {
+    match processor.process_batch(projects).await {
         Ok(()) => {
             println!("✅ All translations completed successfully!");
         }
@@ -123,11 +138,15 @@ async fn example_with_database(input_dir: PathBuf) -> Result<()> {
         projects.len()
     );
 
+    // Create a processor with default config
+    let cfg = pkg_config::get_config().unwrap_or_default();
+    let processor = MainProcessor::new(cfg);
+
     // Process each project individually for better control
     for project in projects {
         println!("Processing: {}", project.display());
 
-        match process_single_path(&project).await {
+        match processor.process_single(&project).await {
             Ok(()) => {
                 println!("✅ Successfully processed: {}", project.display());
             }
@@ -173,7 +192,10 @@ async fn example_targeted_processing(input_dir: PathBuf) -> Result<()> {
 
     // Process each project
     let project_dirs: Vec<PathBuf> = projects.keys().cloned().collect();
-    process_batch_paths(project_dirs).await?;
+    // Use a fresh processor with default config
+    let cfg = pkg_config::get_config().unwrap_or_default();
+    let processor = MainProcessor::new(cfg);
+    processor.process_batch(project_dirs).await?;
 
     Ok(())
 }

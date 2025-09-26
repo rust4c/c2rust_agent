@@ -7,8 +7,7 @@ use std::sync::Arc;
 use std::time::Duration;
 use tokio::sync::Semaphore;
 
-mod pkg_config;
-use pkg_config::get_config;
+use crate::pkg_config::MainProcessorConfig;
 
 // 进度条样式
 fn progress_style_spinner() -> ProgressStyle {
@@ -26,10 +25,64 @@ pub async fn process_single_path(path: &Path) -> Result<()> {
     singlefile_processor(path).await
 }
 
+/// 遍历 src_cache 目录，收集可处理的目标目录
+/// 参考结构:
+/// src_cache/
+///   ├── individual_files/   <- 这里的每个子目录都是一个可处理单元
+///   ├── mapping.json        <- 可选，暂不使用
+///   ├── paired_files/       <- 预留，暂不使用
+///   └── unrelated_files/    <- 忽略
+pub async fn discover_src_cache_projects(root: &Path) -> Result<Vec<PathBuf>> {
+    use tokio::fs;
+
+    if !root.exists() {
+        return Err(anyhow!("路径不存在: {}", root.display()));
+    }
+
+    let individual = root.join("individual_files");
+    if !individual.exists() {
+        return Err(anyhow!(
+            "src_cache 目录缺少 individual_files: {}",
+            individual.display()
+        ));
+    }
+
+    let mut out = Vec::new();
+    let mut entries = fs::read_dir(&individual).await?;
+    while let Some(entry) = entries.next_entry().await? {
+        let p = entry.path();
+        if !p.is_dir() {
+            continue;
+        }
+
+        // 仅挑选包含 .c/.h 文件的目录，避免无效任务
+        let mut has_ch = false;
+        let mut sub = fs::read_dir(&p).await?;
+        while let Some(se) = sub.next_entry().await? {
+            let fp = se.path();
+            if fp.is_file() {
+                if let Some(ext) = fp.extension() {
+                    if ext == "c" || ext == "h" {
+                        has_ch = true;
+                        break;
+                    }
+                }
+            }
+        }
+
+        if has_ch {
+            out.push(p);
+        }
+    }
+
+    // 稳定排序，便于可重复性
+    out.sort();
+    Ok(out)
+}
+
 // 批量并发处理：带进度条和重试
-pub async fn process_batch_paths(paths: Vec<PathBuf>) -> Result<()> {
+pub async fn process_batch_paths(cfg: MainProcessorConfig, paths: Vec<PathBuf>) -> Result<()> {
     info!("开始处理");
-    let cfg = get_config()?;
     let concurrent = if cfg.concurrent_limit == 0 {
         1
     } else {
