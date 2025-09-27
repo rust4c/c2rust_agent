@@ -27,25 +27,20 @@ C2Rust Agent is a sophisticated tool that leverages Large Language Models (LLMs)
 ```mermaid
 flowchart LR
     A[C Project Sources] --> B[File Scanner]
-    B --> C[LSP Services (clangd)]
-    C --> D[Database: SQLite + Qdrant]
-    B --> E[Preprocessor (cache & units)]
-    E --> F[Code Analysis & AST Generation]
+    B --> C[LSP Services]
+    C --> D[Database]
+    B --> E[Preprocessor]
+    E --> F[Code Analysis]
     D --> G[Prompt Builder]
     F --> H[Main Processor]
     G --> H
     H --> I[LLM Requester]
     I --> J[Generated Rust Code]
-    J --> K[Rust Checker (compile & iterate)]
+    J --> K[Rust Checker]
     K --> L{Validation Passed?}
     L -->|No| H
-    L -->|Yes| M[Project Reorganizer (workspace)]
+    L -->|Yes| M[Project Reorganizer]
     M --> N[Final Rust Project]
-  
-    class A,B,C,E,F,G,H,I,K,M process
-    class D,J data
-    class L decision
-    class N output
 ```
 
 Note: If the Mermaid diagram does not render in your viewer, open this file on GitHub or use VS Code's Markdown Preview.
