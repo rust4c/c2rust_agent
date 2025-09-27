@@ -1,6 +1,3 @@
-
-
-
 use clap::{Parser, Subcommand, ValueEnum};
 use std::path::PathBuf;
 
@@ -16,32 +13,29 @@ pub struct Cli {
 
 #[derive(Subcommand)]
 pub enum Commands {
-
     /// Output C project analysis and deconstruction
     Analyze {
         /// C Project Catalog (required)
-        #[arg(long, short, value_name = "DIR", help = "enter path",required = true)]
+        #[arg(long, short, value_name = "DIR", help = "enter path", required = true)]
         input_dir: PathBuf,
     },
 
     /// Output the pre-processing results of the C project
-    Preprocess{
+    Preprocess {
         /// C Project Catalog (required)
-        #[arg(long, short, value_name = "DIR", help = "enter path",required = true)]
+        #[arg(long, short, value_name = "DIR", help = "enter path", required = true)]
         input_dir: PathBuf,
-        
+
         /// Pre processed output path
         #[arg(
-            long, 
-            short, 
-            value_name = "DIR", 
+            long,
+            short,
+            value_name = "DIR",
             help = "Output path (default: input_dir's parent/(input_dir_name + \"cache\")",
             required = false
         )]
         output_dir: Option<PathBuf>,
-
     },
-
 
     // /// Parse Call Relationships
     // AnalyzeRelations {
@@ -81,10 +75,7 @@ pub enum Commands {
     //     #[arg(long, default_value_t = 10)]
     //     limit: usize,
     // },
-
-
-
-        /// Converting Project C to RUST
+    /// Converting Project C to RUST
     Translate {
         /// C Project Catalog (required)
         #[arg(long, value_name = "DIR", required = true)]
@@ -96,15 +87,14 @@ pub enum Commands {
     },
 
     /// test single file processing
-    Test{
+    Test {
         /// C file path (required)
-        #[arg(long, value_name = "FILE", help = "enter file path",required = true)]
+        #[arg(long, value_name = "FILE", help = "enter file path", required = true)]
         input_dir: PathBuf,
-    }
+    },
 }
 
-#[derive(Copy, Clone, PartialEq, Eq, PartialOrd, Ord, ValueEnum)]
-#[derive(Debug)]
+#[derive(Copy, Clone, PartialEq, Eq, PartialOrd, Ord, ValueEnum, Debug)]
 pub enum QueryType {
     /// 列出所有可用项目
     ListProjects,

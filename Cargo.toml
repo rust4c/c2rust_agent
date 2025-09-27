@@ -10,18 +10,15 @@ members = [
     "crates/ui_main",
 ]
 resolver = "3"
+default-members = [
+    "crates/commandline_tool"
+]
 
-[package]
-name = "c2rust_agent"
-version = "0.1.0"
-edition = "2021"
-
-[dependencies]
+[workspace.dependencies]
 anyhow = "1.0.99"
 commandline_tool = { path = "crates/commandline_tool" }
 cproject_analy = { path = "crates/cproject_analy" }
 db_services = { path = "crates/db_services" }
-env_logger = "0.11.8"
 file_scanner = { path = "crates/file_scanner" }
 llm_requester = { path = "crates/llm_requester" }
 log = "0.4.27"

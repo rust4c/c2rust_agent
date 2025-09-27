@@ -67,11 +67,7 @@ int main() {
 "#;
 
 /// Initialize logging for the example
-fn init_logging() {
-    env_logger::Builder::new()
-        .filter_level(LevelFilter::Info)
-        .init();
-}
+fn init_logging() {}
 
 /// Example 1: Quick single file translation
 async fn example_single_file_translation() -> Result<()> {

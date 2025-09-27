@@ -14,11 +14,14 @@ use env_checker::ai_checker::{AIConnectionStatus, ai_service_init};
 use env_checker::dbdata_init;
 use tokio; //添加 tokio 运行时的文件
 // use main_processor::single_process::SingleProcess;
-use env_logger::Env;
-use single_processor::single_processes::singlefile_processor;
-use main_processor::{process_single_path, process_batch_paths};
 use log::{debug, error, info, warn};
+use main_processor::{process_batch_paths, process_single_path};
+use single_processor::single_processes::singlefile_processor;
 use std::collections::HashSet;
+use tracing_subscriber::filter::LevelFilter as SubLevel;
+use tracing_log::LogTracer;
+use tracing_subscriber::fmt;
+use tracing_subscriber::prelude::*;
 
 // // 翻译模块
 // use main_processor::{MainProcessor, ProjectType};
@@ -30,8 +33,6 @@ async fn _dbdata_create() -> DatabaseManager {
         .expect("Failed to create DatabaseManager");
     manager
 }
-
-
 
 /// 发现C项目 - 简化版本
 async fn discover_c_projects(dir: &PathBuf) -> Result<Vec<PathBuf>> {
@@ -61,7 +62,7 @@ async fn discover_c_projects(dir: &PathBuf) -> Result<Vec<PathBuf>> {
         .filter_map(|e| e.ok())
     {
         let path = entry.path();
-        
+
         if path.is_file() {
             if let Some(ext) = path.extension() {
                 if ext == "c" || ext == "h" {
@@ -81,10 +82,18 @@ async fn discover_c_projects(dir: &PathBuf) -> Result<Vec<PathBuf>> {
 
 #[tokio::main]
 async fn main() -> Result<()> {
-    // 初始化日志系统，调试使用
-    env_logger::Builder::from_env(Env::default().default_filter_or("debug"))
-        .format_timestamp(None)
-        .init();
+    // 初始化日志系统，使用 tracing 统一处理 log 宏与 tracing 事件
+    // 将 log::log! 重定向到 tracing
+    let _ = LogTracer::init();
+    // 控制台简洁输出，默认 debug 级别
+    let fmt_layer = fmt::layer()
+        .with_target(false)
+        .with_level(true)
+        .with_timer(fmt::time::uptime());
+    let subscriber = tracing_subscriber::registry()
+        .with(fmt_layer)
+        .with(SubLevel::DEBUG);
+    let _ = subscriber.try_init();
 
     // 初始化数据库连接
     let manager: DatabaseManager = _dbdata_create().await;
@@ -217,63 +226,64 @@ async fn main() -> Result<()> {
         //     Ok(())
         // }
 
-// main.rs 中 Translate 命令的修改部分
-
+        // main.rs 中 Translate 命令的修改部分
         Commands::Translate {
-        input_dir,
-        output_dir: _, // 暂时忽略output_dir参数
-    } => {
-        info!("已选择转换命令");
-        info!("输入目录: {}", input_dir.display());
+            input_dir,
+            output_dir: _, // 暂时忽略output_dir参数
+        } => {
+            info!("已选择转换命令");
+            info!("输入目录: {}", input_dir.display());
 
-        if !input_dir.exists() {
-            error!("错误: 输入目录不存在: {}", input_dir.display());
-            return Ok(());
-        }
+            let cfg = main_processor::pkg_config::get_config()?;
 
-        // 发现C项目
-        info!("正在发现C项目...");
-        let projects = match discover_c_projects(input_dir).await {
-            Ok(projects) => projects,
-            Err(e) => {
-                error!("发现C项目失败: {}", e);
+            if !input_dir.exists() {
+                error!("错误: 输入目录不存在: {}", input_dir.display());
                 return Ok(());
             }
-        };
 
-        if projects.is_empty() {
-            warn!("在目录 {} 中没有找到C项目", input_dir.display());
-            return Ok(());
-        }
+            // 发现C项目
+            info!("正在发现C项目...");
+            let projects = match discover_c_projects(input_dir).await {
+                Ok(projects) => projects,
+                Err(e) => {
+                    error!("发现C项目失败: {}", e);
+                    return Ok(());
+                }
+            };
 
-        info!("发现 {} 个C项目:", projects.len());
-        for (i, project) in projects.iter().enumerate() {
-            info!("  {}. {}", i + 1, project.display());
-        }
-
-        // 使用批量处理功能进行转换
-        info!("开始批量转换...");
-        match process_batch_paths(projects).await {
-            Ok(()) => {
-                info!("✅ 所有C到Rust转换完成!");
-                println!("🎉 转换成功完成!");
-                println!("📁 转换结果保存在各项目目录下的 'rust-project' 文件夹中");
+            if projects.is_empty() {
+                warn!("在目录 {} 中没有找到C项目", input_dir.display());
+                return Ok(());
             }
-            Err(e) => {
-                error!("❌ 转换过程中出现错误: {}", e);
-                println!("⚠️  转换失败，错误详情: {}", e);
-                
-                // 提供更具体的错误信息
-                if e.to_string().contains("max_retry_attempts") {
-                    println!("💡 提示: 请创建配置文件 config/config.toml");
-                    println!("     内容示例:");
-                    println!("     max_retry_attempts = 3");
-                    println!("     concurrent_limit = 5");
+
+            info!("发现 {} 个C项目:", projects.len());
+            for (i, project) in projects.iter().enumerate() {
+                info!("  {}. {}", i + 1, project.display());
+            }
+
+            // 使用批量处理功能进行转换
+            info!("开始批量转换...");
+            match process_batch_paths(cfg, projects).await {
+                Ok(()) => {
+                    info!("✅ 所有C到Rust转换完成!");
+                    println!("🎉 转换成功完成!");
+                    println!("📁 转换结果保存在各项目目录下的 'rust-project' 文件夹中");
+                }
+                Err(e) => {
+                    error!("❌ 转换过程中出现错误: {}", e);
+                    println!("⚠️  转换失败，错误详情: {}", e);
+
+                    // 提供更具体的错误信息
+                    if e.to_string().contains("max_retry_attempts") {
+                        println!("💡 提示: 请创建配置文件 config/config.toml");
+                        println!("     内容示例:");
+                        println!("     max_retry_attempts = 3");
+                        println!("     concurrent_limit = 5");
+                    }
                 }
             }
+            Ok(())
         }
-        Ok(())
-    }
 
         Commands::Test { input_dir } => {
             info!("已选择测试单文件处理命令");

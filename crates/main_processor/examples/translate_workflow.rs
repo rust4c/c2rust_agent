@@ -1,6 +1,5 @@
 use anyhow::Result;
 use db_services::DatabaseManager;
-use env_logger;
 use log::info;
 use main_processor::{pkg_config, MainProcessor};
 use std::path::PathBuf;
@@ -8,8 +7,7 @@ use tokio::fs;
 
 #[tokio::main]
 async fn main() -> Result<()> {
-    // Initialize logger
-    env_logger::init();
+    // Examples rely on the application's logging initialization.
 
     // Load config and create processor
     let cfg = pkg_config::get_config().unwrap_or_default();
@@ -43,9 +41,7 @@ async fn main() -> Result<()> {
             "Detected src_cache structure at {} — using individual_files traversal",
             input_dir.display()
         );
-        processor
-            .discover_src_cache_projects(&input_dir)
-            .await?
+        processor.discover_src_cache_projects(&input_dir).await?
     } else {
         discover_c_projects(&input_dir).await?
     };

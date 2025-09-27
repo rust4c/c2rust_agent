@@ -1,6 +1,8 @@
 # LLMConfig
 # LLM Model config options
 provider = "ollama"
+max_retry_attempts = 3
+concurrent_limit = 5
 
 [llm.ollama]
 model = "deepseek-r1:7b"
