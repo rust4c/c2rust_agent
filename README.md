@@ -1,7 +1,8 @@
 # C2Rust Agent
+
 [English](README.md) | [中文](README-CN.md)
 
-An intelligent LLM-powered tool for converting C projects to idiomatic Rust code.
+An intelligent LLM-powered tool for converting C projects to idiomatic Rust code with database-driven context awareness and LSP analysis.
 
 [![Rust](https://img.shields.io/badge/rust-1.70+-orange.svg)](https://www.rust-lang.org)
 [![License: MIT](https://img.shields.io/badge/License-MIT-yellow.svg)](https://opensource.org/licenses/MIT)
@@ -9,92 +10,82 @@ An intelligent LLM-powered tool for converting C projects to idiomatic Rust code
 
 ## Overview
 
-C2Rust Agent is an advanced code translation system that leverages Large Language Models (LLMs) to convert C projects into safe, idiomatic Rust code. Unlike simple transpilers, this tool understands code semantics and produces human-readable, maintainable Rust code following best practices.
+C2Rust Agent is a sophisticated tool that leverages Large Language Models (LLMs) to translate C projects into idiomatic Rust code. Unlike simple syntax translators, it provides semantic understanding through LSP analysis, database-driven context, and intelligent project reorganization.
 
 ## Key Features
 
-- **Intelligent Translation**: Uses LLM to understand C code semantics and generate idiomatic Rust
-- **Project-Level Analysis**: Processes entire C projects, maintaining structure and relationships
-- **Context-Aware**: Leverages database-stored code relationships for better translation quality
-- **Iterative Refinement**: Automatically retries translation with error feedback until code compiles
-- **Multiple Project Types**: Handles single files, paired header/source files, and multi-module projects
-- **LSP Integration**: Provides Language Server Protocol support for IDE integration
-- **Database Backend**: Stores code analysis and translation history
+- **🧠 LLM-Powered Translation**: Uses advanced language models (OpenAI, Ollama, XAI, DeepSeek) for semantic understanding
+- **🔍 LSP Analysis**: Deep code analysis using Language Server Protocol for understanding dependencies and relationships
+- **🗄️ Database Context**: Persistent storage with SQLite and Qdrant vector database for context-aware translations
+- **📁 Project Reorganization**: Automatically reorganizes scattered translations into proper Rust workspace structure
+- **⚡ Concurrent Processing**: Parallel processing with progress tracking and retry mechanisms
+- **🎯 Multiple Project Types**: Supports single files, paired files (header/source), and complex multi-module projects
+- **✅ Validation**: Automatic Rust compiler validation with error feedback loops
 
 ## Architecture
 
-```
-┌─────────────────┐    ┌─────────────────┐    ┌─────────────────┐
-│   C Project     │───▶│  LSP Services   │───▶│   Database      │
-│   Analysis      │    │  (Code Index)   │    │  (SQLite+Qdrant)│
-└─────────────────┘    └─────────────────┘    └─────────────────┘
-         │                                              │
-         ▼                                              ▼
-┌─────────────────┐    ┌─────────────────┐    ┌─────────────────┐
-│  Preprocessor   │───▶│ Main Processor  │◀───│ Prompt Builder  │
-│  (Cache & Map)  │    │ (Translation)   │    │ (Context Gen)   │
-└─────────────────┘    └─────────────────┘    └─────────────────┘
-         │                       │
-         ▼                       ▼
-┌─────────────────┐    ┌─────────────────┐
-│  File Scanner   │    │   LLM Service   │
-│  (Discovery)    │    │  (Translation)  │
-└─────────────────┘    └─────────────────┘
-                                │
-                                ▼
-                     ┌─────────────────┐
-                     │  Rust Checker   │
-                     │ (Validation)    │
-                     └─────────────────┘
+```mermaid
+flowchart LR
+    A[C Project Sources] --> B[File Scanner]
+    B --> C[LSP Services (clangd)]
+    C --> D[Database: SQLite + Qdrant]
+    B --> E[Preprocessor (cache & units)]
+    E --> F[Code Analysis & AST Generation]
+    D --> G[Prompt Builder]
+    F --> H[Main Processor]
+    G --> H
+    H --> I[LLM Requester]
+    I --> J[Generated Rust Code]
+    J --> K[Rust Checker (compile & iterate)]
+    K --> L{Validation Passed?}
+    L -->|No| H
+    L -->|Yes| M[Project Reorganizer (workspace)]
+    M --> N[Final Rust Project]
+  
+    class A,B,C,E,F,G,H,I,K,M process
+    class D,J data
+    class L decision
+    class N output
 ```
 
-### Core Components
+Note: If the Mermaid diagram does not render in your viewer, open this file on GitHub or use VS Code's Markdown Preview.
 
-- **LSP Services**: Analyzes C code structure and relationships
-- **Database Services**: Stores code analysis in SQLite + Qdrant vector database
-- **Preprocessor**: Generates cache and file mappings, splits into compilation units
-- **Main Processor**: Orchestrates translation workflow with retry logic
-- **Prompt Builder**: Generates context-aware prompts for LLM translation
-- **LLM Requester**: Interfaces with language models for code translation
-- **Rust Checker**: Validates generated Rust code compilation
+Core components:
+
+- LSP Services: Analyzes code structure and relationships
+- Database Services: Stores analysis and embeddings (SQLite + Qdrant)
+- Preprocessor: Caches files and splits compilation units
+- Main Processor: Orchestrates translation with retry logic
+- Prompt Builder: Context assembly for high-quality prompts
+- LLM Requester: Provider-agnostic LLM API layer
+- Rust Checker: Compiles and feeds back errors for refinement
 
 ## Installation
 
 ### Prerequisites
 
-1. **Rust**: Install from [rustup.rs](https://rustup.rs/)
-   ```bash
-   curl --proto '=https' --tlsv1.2 -sSf https://sh.rustup.rs | sh
-   ```
-
-2. **Qdrant Vector Database**: Required for semantic code search
-   ```bash
-   # Using Docker
-   docker run -p 6333:6333 qdrant/qdrant
-
-   # Or install locally
-   # See: https://qdrant.tech/documentation/guides/installation/
-   ```
-
-3. **LLM API Access**: Configure access to OpenAI GPT, Claude, or other compatible models
+- Rust 1.70+
+- C/C++ compiler (for clangd LSP)
+- Clangd language server
+- Docker (optional, for containerized setup)
 
 ### Build from Source
 
 ```bash
-# Clone the repository
-git clone https://github.com/rust4c/c2rust_agent.git
+git clone https://github.com/yourusername/c2rust_agent.git
 cd c2rust_agent
-
-# Build all components
 cargo build --release
+```
 
-# Run tests
-cargo test
+### Docker Setup
+
+```bash
+docker-compose up -d
 ```
 
 ## Configuration
 
-Create `config/config.toml`:
+Create config.toml:
 
 ```toml
 # LLM provider selection
@@ -127,6 +118,11 @@ vector_size = 1536
 
 [sqlite]
 path = "data.db"
+
+# Processing configuration
+[main_processor]
+max_retry_attempts = 3
+concurrent_limit = 4
 ```
 
 ## Usage
@@ -134,42 +130,76 @@ path = "data.db"
 ### Command Line Interface
 
 ```bash
-# Analyze and translate a C project
-c2rust-agent translate /path/to/c/project --output /path/to/rust/project
+# Basic translation workflow
+cargo run --bin commandline_tool -- translate /path/to/c/project
 
 # With database context
-c2rust-agent translate /path/to/c/project --with-db --output ./rust_output
+cargo run --bin commandline_tool -- preprocess /path/to/c/project
+cargo run --bin commandline_tool -- translate /path/to/c/project
 
-# Dry run (analysis only)
-c2rust-agent analyze /path/to/c/project --dry-run
+# Analyze project structure
+cargo run --bin commandline_tool -- analyze /path/to/c/project
+
+# Query relationships
+cargo run --bin commandline_tool -- relation-query "function_name"
 ```
 
 ### Programmatic API
 
 ```rust
-use main_processor::{MainProcessor, ProjectInfo, ProjectType};
+use main_processor::{MainProcessor, pkg_config};
+use cproject_analy::PreProcessor;
 
 #[tokio::main]
-async fn main() -> Result<()> {
-    // Initialize processor
-    let processor = MainProcessor::new("./cache").await?;
-
-    // Create project info
-    let project = ProjectInfo {
-        name: "my_c_project".to_string(),
-        path: "/path/to/c/project".into(),
-        project_type: ProjectType::PairedFiles,
-    };
-
-    // Run translation
-    let stats = processor.run_translation_workflow().await?;
-    println!("Translation completed: {:?}", stats);
-
+async fn main() -> anyhow::Result<()> {
+    // Step 1: Preprocess C project (required for complex projects)
+    let mut preprocessor = PreProcessor::new_default();
+    preprocessor.initialize_database().await?;
+  
+    let stats = preprocessor.preprocess_project(
+        &std::path::Path::new("/path/to/c/project"),
+        &std::path::Path::new("./cache")
+    ).await?;
+  
+    // Step 2: Main processing (translation)
+    let config = pkg_config::get_config()?;
+    let processor = MainProcessor::new(config);
+  
+    // Single file/directory
+    processor.process_single("/path/to/c/project").await?;
+  
+    // Batch processing
+    let paths = vec![/* your paths */];
+    processor.process_batch(paths).await?;
+  
     Ok(())
 }
 ```
 
-## Translation Process
+### GUI Interface
+
+```bash
+cargo run --bin ui_main
+```
+
+Launch the Dioxus-based web interface for interactive translation.
+
+## Translation Workflow
+
+### For C Projects (Recommended):
+
+1. **Preprocessing**: Use `cproject_analy` to analyze and cache project structure
+2. **Main Processing**: Use `main_processor` for LLM-powered translation
+3. **Reorganization**: Use `project_remanager` to create proper Rust workspace
+
+```bash
+# Complete workflow
+cargo run --bin commandline_tool -- preprocess ./c_project
+cargo run --bin commandline_tool -- translate ./c_project
+cargo run --bin project_remanager -- ./cache/src_cache ./output/rust_project
+```
+
+### Processing Pipeline
 
 1. **Discovery**: Scans C project structure and identifies compilation units
 2. **Analysis**: Uses LSP services to understand code relationships and dependencies
@@ -178,88 +208,59 @@ async fn main() -> Result<()> {
 5. **Translation**: LLM converts C code to Rust with semantic understanding
 6. **Validation**: Rust compiler checks generated code
 7. **Refinement**: Automatic retry with error feedback if compilation fails
+8. **Reorganization**: Assembles individual translations into cohesive workspace
 
-### Supported Project Types
+## Supported Project Types
 
-- **Single File**: Simple C programs (main.c → main.rs)
-- **Paired Files**: Header/source pairs (.h/.c → lib.rs + modules)
+- **Single File**: Simple C programs (`main.c` → main.rs)
+- **Paired Files**: Header/source pairs (`.h/.c` → lib.rs + modules)
 - **Multi-Module**: Complex projects with multiple independent modules
+- **Library Projects**: Projects without main functions become library crates
+- **Mixed Workspaces**: Combination of binaries and libraries
 
-### Translation Features
+## Translation Features
 
-- Memory safety through Rust ownership system
-- Error handling with `Result<T, E>` types
-- Proper use of `Option<T>` for nullable pointers
-- Idiomatic Rust patterns (iterators, pattern matching)
-- Automatic `unsafe` block annotation where needed
-- `#[repr(C)]` for C-compatible structs
+- **Memory Safety**: Automatic conversion to Rust ownership system
+- **Error Handling**: `Result<T, E>` types for error propagation
+- **Null Safety**: `Option<T>` for nullable pointers
+- **Idiomatic Patterns**: Iterators, pattern matching, and Rust conventions
+- **Unsafe Annotation**: Automatic `unsafe` blocks where needed
+- **C Compatibility**: `#[repr(C)]` for C-compatible structs
+- **FFI Support**: Proper `extern "C"` function declarations
 
 ## Examples
 
-### Input C Code
-```c
-#include <stdio.h>
-#include <stdlib.h>
+### Single File Translation
 
-typedef struct {
-    int x, y;
-} Point;
-
-Point* create_point(int x, int y) {
-    Point* p = malloc(sizeof(Point));
-    if (p == NULL) return NULL;
-    p->x = x;
-    p->y = y;
-    return p;
-}
-
-void free_point(Point* p) {
-    free(p);
-}
-```
-
-### Generated Rust Code
 ```rust
-#[repr(C)]
-pub struct Point {
-    pub x: i32,
-    pub y: i32,
-}
+use main_processor::{MainProcessor, pkg_config};
 
-impl Point {
-    pub fn new(x: i32, y: i32) -> Self {
-        Point { x, y }
-    }
-}
-
-pub fn create_point(x: i32, y: i32) -> Option<Box<Point>> {
-    Some(Box::new(Point::new(x, y)))
-}
-
-// Note: free_point not needed - Rust handles memory automatically
+let config = pkg_config::get_config().unwrap_or_default();
+let processor = MainProcessor::new(config);
+processor.process_single("./example.c").await?;
 ```
+
+### Project Reorganization
+
+```rust
+use project_remanager::ProjectReorganizer;
+
+let reorganizer = ProjectReorganizer::new(
+    "./cache/src_cache".into(),
+    "./output/rust_project".into()
+);
+reorganizer.reorganize()?;
+```
+
+See `examples/` for complete examples.
 
 ## Development
 
-### Project Structure
+### Building
 
-```
-c2rust_agent/
-├── crates/
-│   ├── commandline_tool/     # CLI interface
-│   ├── cproject_analy/       # C project analysis
-│   ├── db_services/          # Database operations
-│   ├── env_checker/          # Environment validation
-│   ├── file_scanner/         # File discovery
-│   ├── llm_requester/        # LLM API interface
-│   ├── lsp_services/         # Language server integration
-│   ├── main_processor/       # Core translation logic
-│   ├── prompt_builder/       # Context-aware prompt generation
-│   ├── rust_checker/         # Rust code validation
-│   └── ui_main/             # GUI interface
-├── config/                   # Configuration files
-├── test-projects/           # Test cases
-└── target/                  # Build artifacts
+```bash
+cargo build
+cargo test
 ```
 
 ### Running Tests
@@ -268,42 +269,60 @@ c2rust_agent/
 # Run all tests
 cargo test
 
-# Run specific crate tests
+# Specific crate tests
 cargo test -p main_processor
-
-# Run with logging
-RUST_LOG=debug cargo test
+cargo test -p project_remanager
 ```
 
 ### Contributing
 
 1. Fork the repository
-2. Create a feature branch: `git checkout -b feature/amazing-feature`
-3. Commit changes: `git commit -m 'Add amazing feature'`
-4. Push to branch: `git push origin feature/amazing-feature`
-5. Open a Pull Request
+2. Create a feature branch
+3. Add tests for new functionality
+4. Ensure all tests pass
+5. Submit a pull request
+
+## Crate Documentation
+
+- `main_processor` - Core translation engine
+- `cproject_analy` - C project preprocessing
+- `project_remanager` - Workspace reorganization
+- `lsp_services` - LSP integration
+- `db_services` - Database management
 
 ## Limitations
 
-- Currently supports C99 standard (C11/C18 features in development)
-- Complex macros may require manual adjustment
-- Inline assembly is not automatically translated
-- Some platform-specific code may need manual review
+- Requires manual review of generated unsafe code
+- Complex macro expansions may need refinement
+- Platform-specific code requires attention
+- Large projects may need iterative processing
+- LLM API costs for extensive translations
+
+## Performance
+
+- **Concurrent Processing**: Configurable parallelism via `MainProcessorConfig`
+- **Caching**: Intelligent caching reduces redundant API calls
+- **Database Indexing**: Vector similarity search for context retrieval
+- **Progress Tracking**: Real-time progress bars and statistics
 
 ## License
 
-This project is licensed under the MIT License - see the [LICENSE](LICENSE) file for details.
+This project is licensed under the MIT License - see the LICENSE file for details.
 
 ## Acknowledgments
 
-- [c2rust](https://github.com/immunant/c2rust) - Inspiration for transpilation approach
-- [tree-sitter](https://tree-sitter.github.io/) - Code parsing technology
-- [Qdrant](https://qdrant.tech/) - Vector database for semantic search
-- Rust community for excellent tooling and libraries
+- Rust community for excellent tooling — https://www.rust-lang.org/
+- LLVM clangd team — https://clangd.llvm.org/
+- SQLite — https://www.sqlite.org/
+- Qdrant — https://qdrant.tech/
+- Dioxus — https://dioxuslabs.com/
+- c2rust (inspiration) — https://github.com/immunant/c2rust
+- Ollama — https://ollama.com/
+- OpenAI — https://openai.com/
+- xAI — https://x.ai/
+- DeepSeek — https://deepseek.com/
 
 ## Support
 
-- 📖 [Documentation](https://github.com/rust4c/c2rust_agent/wiki)
-- 🐛 [Issues](https://github.com/rust4c/c2rust_agent/issues)
-- 💬 [Discussions](https://github.com/rust4c/c2rust_agent/discussions)
-- 📧 Contact: rust4c@example.com
+- 🐛 Bug Reports: [GitHub Issues](https://github.com/rust4c/c2rust_agent/issues)
+- 📧 Contact: m18511047688@163.com
