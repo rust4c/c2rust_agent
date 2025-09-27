@@ -6,7 +6,7 @@ use lsp_services::lsp_services::{
     analyze_project_with_default_database, check_function_and_class_name,
 };
 use std::fs;
-use std::path::Path;
+use std::path::{Path, PathBuf};
 // use env_checker::disk_inspection;
 use anyhow::Result;
 use db_services::DatabaseManager;
@@ -16,6 +16,9 @@ use tokio; //添加 tokio 运行时的文件
 // use main_processor::single_process::SingleProcess;
 use env_logger::Env;
 use single_processor::single_processes::singlefile_processor;
+use main_processor::{process_single_path, process_batch_paths};
+use log::{debug, error, info, warn};
+use std::collections::HashSet;
 
 // // 翻译模块
 // use main_processor::{MainProcessor, ProjectType};
@@ -26,6 +29,54 @@ async fn _dbdata_create() -> DatabaseManager {
         .await
         .expect("Failed to create DatabaseManager");
     manager
+}
+
+
+
+/// 发现C项目 - 简化版本
+async fn discover_c_projects(dir: &PathBuf) -> Result<Vec<PathBuf>> {
+    let mut projects = Vec::new();
+    let mut processed_dirs = HashSet::new();
+
+    // 如果是文件，直接处理其父目录
+    if dir.is_file() {
+        if let Some(ext) = dir.extension() {
+            if (ext == "c" || ext == "h") && dir.parent().is_some() {
+                let parent = dir.parent().unwrap();
+                if !processed_dirs.contains(parent) {
+                    projects.push(parent.to_path_buf());
+                    processed_dirs.insert(parent.to_path_buf());
+                }
+            }
+        }
+        return Ok(projects);
+    }
+
+    // 使用walkdir来避免递归问题
+    use walkdir::WalkDir;
+
+    for entry in WalkDir::new(dir)
+        .max_depth(10) // 限制深度避免无限遍历
+        .into_iter()
+        .filter_map(|e| e.ok())
+    {
+        let path = entry.path();
+        
+        if path.is_file() {
+            if let Some(ext) = path.extension() {
+                if ext == "c" || ext == "h" {
+                    if let Some(parent) = path.parent() {
+                        if !processed_dirs.contains(parent) {
+                            projects.push(parent.to_path_buf());
+                            processed_dirs.insert(parent.to_path_buf());
+                        }
+                    }
+                }
+            }
+        }
+    }
+
+    Ok(projects)
 }
 
 #[tokio::main]
@@ -41,25 +92,25 @@ async fn main() -> Result<()> {
     // 检查数据库状态
     match dbdata_init(manager).await {
         Ok(status) => {
-            println!("数据库状态: {:?}", status);
+            info!("数据库状态: {:?}", status);
         }
         Err(e) => {
-            eprintln!("查询数据库状态失败: {}", e);
+            error!("查询数据库状态失败: {}", e);
         }
     }
 
     let ai_checkers = ai_service_init().await;
     match ai_checkers {
         Ok(status) => {
-            println!("AI 服务状态: {:?}", status);
+            info!("AI 服务状态: {:?}", status);
             match status {
-                AIConnectionStatus::AllConnected => println!("所有 AI 服务均已连接"),
-                AIConnectionStatus::AllDisconnected => println!("所有 AI 服务均未连接"),
-                _ => println!("部分 AI 服务连接状态不明"),
+                AIConnectionStatus::AllConnected => info!("AI 服务已连接"),
+                AIConnectionStatus::AllDisconnected => error!("所有 AI 服务均未连接"),
+                _ => warn!("部分 AI 服务连接状态不明"),
             }
         }
         Err(e) => {
-            eprintln!("查询 AI 服务状态失败: {}", e);
+            error!("查询 AI 服务状态失败: {}", e);
         }
     }
 
@@ -68,15 +119,15 @@ async fn main() -> Result<()> {
 
     match &cli.command {
         Commands::Analyze { input_dir } => {
-            println!("已选择分析命令");
-            println!("输入目录: {}", input_dir.display());
+            debug!("已选择分析命令");
+            info!("输入目录: {}", input_dir.display());
             let input_dir = input_dir.to_str().unwrap_or("未指定");
 
             // 使用带数据库支持的分析功能
             match analyze_project_with_default_database(input_dir, false).await {
-                Ok(_) => println!("✅ 分析完成，结果已保存到数据库"),
+                Ok(_) => info!("✅ 分析完成，结果已保存到数据库"),
                 Err(e) => {
-                    eprintln!("⚠️ 数据库分析失败，尝试基础分析: {}", e);
+                    error!("⚠️ 数据库分析失败，尝试基础分析: {}", e);
                     let _ = check_function_and_class_name(input_dir, false);
                 }
             }
@@ -87,8 +138,8 @@ async fn main() -> Result<()> {
             input_dir,
             output_dir,
         } => {
-            println!("已选择预处理命令");
-            println!("输入目录:{}", input_dir.display());
+            debug!("已选择预处理命令");
+            info!("输入目录:{}", input_dir.display());
 
             // 确定输出目录
             let output_dir = output_dir.clone().unwrap_or_else(|| {
@@ -102,124 +153,131 @@ async fn main() -> Result<()> {
                 let cache_dir_name = format!("{}_cache", dir_name);
                 parent.join(cache_dir_name)
             });
-            println!("输出目录: {}", output_dir.display());
+            info!("输出目录: {}", output_dir.display());
 
             // 确保输出目录存在
             if let Err(e) = fs::create_dir_all(&output_dir) {
-                eprintln!("创建输出目录失败: {}", e);
+                error!("创建输出目录失败: {}", e);
                 return Ok(());
             }
 
-            println!("正在预处理项目...");
+            info!("正在预处理项目...");
 
             let config = PreprocessConfig::default();
             let mut preprocessor = CProjectPreprocessor::new(Some(config));
 
             if let Err(e) = preprocessor.preprocess_project(input_dir, &output_dir) {
-                eprintln!("预处理失败: {}", e);
+                error!("预处理失败: {}", e);
                 return Ok(());
             }
 
             // 使用预处理后的目录进行分析
-            println!("预处理完成，缓存目录: {}", output_dir.display());
-            println!("开始分析项目...");
+            info!("预处理完成，缓存目录: {}", output_dir.display());
+            info!("开始分析项目...");
 
             // 使用带数据库支持的分析功能
             match analyze_project_with_default_database(output_dir.to_str().unwrap(), false).await {
-                Ok(_) => println!("✅ 项目分析完成，结果已保存到数据库"),
+                Ok(_) => info!("✅ 项目分析完成，结果已保存到数据库"),
                 Err(e) => {
-                    eprintln!("⚠️ 数据库分析失败，尝试基础分析: {}", e);
+                    error!("⚠️ 数据库分析失败，尝试基础分析: {}", e);
                     let _ = check_function_and_class_name(output_dir.to_str().unwrap(), false);
                 }
             }
             Ok(())
         }
 
-        // Commands::Dbdatebase {
-        //     sqlite_path,
-        //     qdrant_collection,
-        //     qdrant_host,
-        //     qdrant_port,
-        //     vector_size
+        // Commands::AnalyzeRelations {
+        //     input_dir,
+        //     project_name,
         // } => {
-        //     println!("已选择数据库配置命令");
-        //     // manager.update_sqlite_path(sqlite_path.clone());
-        //     // manager.update_qdrant_config(qdrant_collection.clone(), qdrant_host.clone(),
-        //     //     *qdrant_port, *vector_size);
+        //     info!("已选择关系分析命令");
+        //     info!("输入目录: {}", input_dir.display());
+        //     info!("项目名称: {}", project_name.as_deref().unwrap_or("未指定"));
+        //     Ok(())
 
+        //     // input_dir.to_str().unwrap_or("未指定");
+        // }
+
+        // Commands::RelationQuery {
+        //     db,
+        //     project,
+        //     query_type,
+        //     target,
+        //     keyword,
+        //     limit,
+        // } => {
+        //     info!("已选择关系查询命令");
+        //     info!("数据库: {}", db);
+        //     info!("项目: {}", project.as_deref().unwrap_or("未指定"));
+        //     info!("查询类型: {:?}", query_type);
+        //     info!("目标: {}", target.as_deref().unwrap_or("未指定"));
+        //     info!("关键词: {}", keyword.as_deref().unwrap_or("未指定"));
+        //     info!("结果限制: {}", limit);
+        //     // "未指定"
         //     Ok(())
         // }
-        Commands::AnalyzeRelations {
-            input_dir,
-            project_name,
-            db,
-        } => {
-            println!("已选择关系分析命令");
-            println!("输入目录: {}", input_dir.display());
-            println!("项目名称: {}", project_name.as_deref().unwrap_or("未指定"));
-            println!("数据库: {}", db);
-            Ok(())
 
-            // input_dir.to_str().unwrap_or("未指定");
-        }
-
-        Commands::RelationQuery {
-            db,
-            project,
-            query_type,
-            target,
-            keyword,
-            limit,
-        } => {
-            println!("已选择关系查询命令");
-            println!("数据库: {}", db);
-            println!("项目: {}", project.as_deref().unwrap_or("未指定"));
-            println!("查询类型: {:?}", query_type);
-            println!("目标: {}", target.as_deref().unwrap_or("未指定"));
-            println!("关键词: {}", keyword.as_deref().unwrap_or("未指定"));
-            println!("结果限制: {}", limit);
-            // "未指定"
-            Ok(())
-        }
+// main.rs 中 Translate 命令的修改部分
 
         Commands::Translate {
-            input_dir,
-            output_dir,
-        } => {
-            println!("已选择转换命令");
-            println!("输入目录: {}", input_dir.display());
-            // println!(
-            //     "输出目录: {}",
-            //     output_dir
-            //         .as_ref()
-            //         .map_or("未指定", |p| p.to_str().unwrap_or("未指定"))
-            // );
+        input_dir,
+        output_dir: _, // 暂时忽略output_dir参数
+    } => {
+        info!("已选择转换命令");
+        info!("输入目录: {}", input_dir.display());
 
-            // // 初始化翻译处理器
-            // let processor = MainProcessor::new(input_dir.clone());
-
-            // // 运行翻译工作流
-            // match processor.run_translation_workflow().await{
-            //     Ok(stats) => {
-            //         println!("翻译完成");
-            //         println!("成功翻译:{} 个项目", stats.successful_translations.len());
-            //         println!("失败: {} 个项目", stats.failed_translations.len());
-
-            //         // 如果有输出目录, 将翻译的结果
-            //         if let Some(output_path) = output_dir{
-            //             println!("将翻译结果移动到: {}", output_path.display());
-            //         }
-            //     }
-            //     Err(e) => {
-            //         eprint!("翻译失败: {}", e);
-            //     }
-            // }
-            Ok(())
+        if !input_dir.exists() {
+            error!("错误: 输入目录不存在: {}", input_dir.display());
+            return Ok(());
         }
 
+        // 发现C项目
+        info!("正在发现C项目...");
+        let projects = match discover_c_projects(input_dir).await {
+            Ok(projects) => projects,
+            Err(e) => {
+                error!("发现C项目失败: {}", e);
+                return Ok(());
+            }
+        };
+
+        if projects.is_empty() {
+            warn!("在目录 {} 中没有找到C项目", input_dir.display());
+            return Ok(());
+        }
+
+        info!("发现 {} 个C项目:", projects.len());
+        for (i, project) in projects.iter().enumerate() {
+            info!("  {}. {}", i + 1, project.display());
+        }
+
+        // 使用批量处理功能进行转换
+        info!("开始批量转换...");
+        match process_batch_paths(projects).await {
+            Ok(()) => {
+                info!("✅ 所有C到Rust转换完成!");
+                println!("🎉 转换成功完成!");
+                println!("📁 转换结果保存在各项目目录下的 'rust-project' 文件夹中");
+            }
+            Err(e) => {
+                error!("❌ 转换过程中出现错误: {}", e);
+                println!("⚠️  转换失败，错误详情: {}", e);
+                
+                // 提供更具体的错误信息
+                if e.to_string().contains("max_retry_attempts") {
+                    println!("💡 提示: 请创建配置文件 config/config.toml");
+                    println!("     内容示例:");
+                    println!("     max_retry_attempts = 3");
+                    println!("     concurrent_limit = 5");
+                }
+            }
+        }
+        Ok(())
+    }
+
         Commands::Test { input_dir } => {
-            println!("已选择测试单文件处理命令");
-            println!("文件路径: {}", input_dir.display());
+            info!("已选择测试单文件处理命令");
+            info!("文件路径: {}", input_dir.display());
             let _ = singlefile_processor(input_dir).await;
             Ok(())
         }

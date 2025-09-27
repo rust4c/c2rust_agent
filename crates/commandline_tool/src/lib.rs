@@ -22,8 +22,6 @@ pub enum Commands {
         /// C Project Catalog (required)
         #[arg(long, short, value_name = "DIR", help = "enter path",required = true)]
         input_dir: PathBuf,
-
-
     },
 
     /// Output the pre-processing results of the C project
@@ -31,7 +29,7 @@ pub enum Commands {
         /// C Project Catalog (required)
         #[arg(long, short, value_name = "DIR", help = "enter path",required = true)]
         input_dir: PathBuf,
-
+        
         /// Pre processed output path
         #[arg(
             long, 
@@ -45,47 +43,44 @@ pub enum Commands {
     },
 
 
-    /// Parse Call Relationships
-    AnalyzeRelations {
-        /// C Project Catalog (required)
-        #[arg(long, value_name = "DIR", required = true)]
-        input_dir: PathBuf,
+    // /// Parse Call Relationships
+    // AnalyzeRelations {
+    //     /// C Project Catalog (required)
+    //     #[arg(long, value_name = "DIR", required = true)]
+    //     input_dir: PathBuf,
 
-        /// Project name (optional)
-        #[arg(long)]
-        project_name: Option<String>,
+    //     /// Project name (optional)
+    //     #[arg(long)]
+    //     project_name: Option<String>,
 
-        /// db Database File Path
-        #[arg(long, default_value = "c2rust_metadata.db")]
-        db: String,
-    },
+    // },
 
-    /// Query and call relational database
-    RelationQuery {
-        /// Database file path
-        #[arg(long, default_value = "c2rust_metadata.db")]
-        db: String,
+    // /// Query and call relational database
+    // RelationQuery {
+    //     /// Database file path
+    //     #[arg(long, default_value = "c2rust_metadata.db")]
+    //     db: String,
 
-        /// Project name (for specific query)
-        #[arg(long)]
-        project: Option<String>,
+    //     /// Project name (for specific query)
+    //     #[arg(long)]
+    //     project: Option<String>,
 
-        /// Query Type
-        #[arg(long, value_enum, default_value_t = QueryType::ListProjects)]
-        query_type: QueryType,
+    //     /// Query Type
+    //     #[arg(long, value_enum, default_value_t = QueryType::ListProjects)]
+    //     query_type: QueryType,
 
-        /// Target function name or file path
-        #[arg(long)]
-        target: Option<String>,
+    //     /// Target function name or file path
+    //     #[arg(long)]
+    //     target: Option<String>,
 
-        /// Search keywords
-        #[arg(long)]
-        keyword: Option<String>,
+    //     /// Search keywords
+    //     #[arg(long)]
+    //     keyword: Option<String>,
 
-        /// Limit on number of results
-        #[arg(long, default_value_t = 10)]
-        limit: usize,
-    },
+    //     /// Limit on number of results
+    //     #[arg(long, default_value_t = 10)]
+    //     limit: usize,
+    // },
 
 
 
