@@ -1,4 +1,17 @@
-import { Button, TextEdit } from "std-widgets.slint";
+import { Button, TextEdit, LineEdit, StandardButton } from "std-widgets.slint";
+
+export component PanicDialog inherits Dialog {
+    title: "发生错误";
+    in-out property <string> message;
+
+    VerticalLayout {
+        padding: 12px;
+        spacing: 8px;
+        Text { text: "程序发生异常 (panic)"; font-weight: 600; }
+        TextEdit { text <=> root.message; wrap: word-wrap; read-only: true; }
+    }
+    StandardButton { kind: ok; }
+}
 
 export component MainWindow inherits Window {
     width: 640px;
@@ -19,13 +32,13 @@ export component MainWindow inherits Window {
         HorizontalLayout {
             spacing: 8px;
             Text { text: "输入目录:"; }
-            TextInput { text <=> root.input_dir; }
+            LineEdit { text <=> root.input_dir; horizontal-stretch: 1; }
         }
 
         HorizontalLayout {
             spacing: 8px;
             Text { text: "输出目录:"; }
-            TextInput { text <=> root.output_dir; }
+            LineEdit { text <=> root.output_dir; horizontal-stretch: 1; }
         }
 
         HorizontalLayout {

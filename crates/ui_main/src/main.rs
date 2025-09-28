@@ -11,6 +11,41 @@ fn main() {
 
     let ui = MainWindow::new().expect("failed to load UI");
 
+    // Install a panic hook to surface panics via dialog and append to log
+    {
+        let ui_weak = ui.as_weak();
+        std::panic::set_hook(Box::new(move |panic_info| {
+            let payload = panic_info
+                .payload()
+                .downcast_ref::<&str>()
+                .map(|s| s.to_string())
+                .or_else(|| panic_info.payload().downcast_ref::<String>().cloned())
+                .unwrap_or_else(|| "Unknown panic".to_string());
+            let location = panic_info
+                .location()
+                .map(|l| format!("{}:{}", l.file(), l.line()))
+                .unwrap_or_else(|| "<unknown location>".to_string());
+            let msg = format!("Panic at {}\n{}\n", location, payload);
+
+            // Update UI on main thread
+            let ui_weak2 = ui_weak.clone();
+            slint::invoke_from_event_loop(move || {
+                if let Some(ui) = ui_weak2.upgrade() {
+                    // Append to log area
+                    let old: String = ui.get_log_text().into();
+                    ui.set_log_text(format!("{}{}", old, msg).into());
+
+                    // Show panic dialog
+                    if let Ok(dlg) = PanicDialog::new() {
+                        dlg.set_message(msg.clone().into());
+                        let _ = dlg.show();
+                    }
+                }
+            })
+            .ok();
+        }));
+    }
+
     // Initialize services once with debug=false for UI; could be toggled later
     {
         let rt2 = rt.clone();

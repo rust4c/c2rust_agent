@@ -1,3 +1,6 @@
+use slint_build::CompilerConfiguration;
+
 fn main() {
-    slint_build::compile("src/app.slint").unwrap();
+    let c = CompilerConfiguration::new().with_style("cupertino".to_string());
+    slint_build::compile_with_config("src/app.slint", c).unwrap();
 }
