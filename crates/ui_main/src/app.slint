@@ -1,0 +1,47 @@
+import { Button, TextEdit } from "std-widgets.slint";
+
+export component MainWindow inherits Window {
+    width: 640px;
+    height: 420px;
+    title: "C2Rust Agent UI (Slint)";
+
+    in-out property <string> input_dir;
+    in-out property <string> output_dir;
+    in-out property <string> log_text;
+    callback analyze_click();
+    callback preprocess_click();
+    callback translate_click();
+
+    VerticalLayout {
+        spacing: 12px;
+        Text { text: "C2Rust Agent"; font-size: 22px; }
+
+        HorizontalLayout {
+            spacing: 8px;
+            Text { text: "输入目录:"; }
+            TextInput { text <=> root.input_dir; }
+        }
+
+        HorizontalLayout {
+            spacing: 8px;
+            Text { text: "输出目录:"; }
+            TextInput { text <=> root.output_dir; }
+        }
+
+        HorizontalLayout {
+            spacing: 8px;
+            Button { text: "分析"; clicked => { root.analyze_click(); } }
+            Button { text: "预处理"; clicked => { root.preprocess_click(); } }
+            Button { text: "转换"; clicked => { root.translate_click(); } }
+        }
+
+        Rectangle {
+            border-radius: 6px;
+            VerticalLayout {
+                padding: 6px;
+                Text { text: "日志"; }
+                TextEdit { text <=> root.log_text; wrap: word-wrap; read-only: true; }
+            }
+        }
+    }
+}

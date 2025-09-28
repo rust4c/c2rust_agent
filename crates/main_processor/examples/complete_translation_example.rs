@@ -5,7 +5,7 @@
 //! progress tracking, and code formatting.
 
 use anyhow::Result;
-use log::{info, warn, LevelFilter};
+use log::{info, warn};
 use main_processor::{pkg_config, MainProcessor};
 use tempfile::TempDir;
 use tokio::fs;

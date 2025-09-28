@@ -224,30 +224,28 @@ pub async fn process_batch_paths(cfg: MainProcessorConfig, paths: Vec<PathBuf>) 
                 let file_name = path_buf.file_name().unwrap_or_default().to_string_lossy();
                 let mut attempt = 0usize;
                 // 最近一条细节信息，展示在进度条消息尾部，避免额外的日志栏位
-                let mut last_detail: Option<String> = None;
-                let mut set_status = |status: &str, last_detail: &Option<String>| {
-                    if let Some(detail) = last_detail.as_ref() {
-                        pb_clone.set_message(format!("{} | {}", status, detail));
-                    } else {
-                        pb_clone.set_message(status.to_string());
-                    }
-                };
+                let mut _last_detail: Option<String> = None;
+                let set_status =
+                    |status: &str, last_detail: &Option<String>| match last_detail.as_ref() {
+                        Some(detail) => pb_clone.set_message(format!("{} | {}", status, detail)),
+                        None => pb_clone.set_message(status.to_string()),
+                    };
 
                 loop {
                     attempt += 1;
 
                     // 更新进度显示，类似 Docker 的运行状态
                     if attempt == 1 {
-                        last_detail = Some("开始处理".to_string());
+                        _last_detail = Some("开始处理".to_string());
                         let status = format!("🔄 正在处理: {} (第 {} 次尝试)", file_name, attempt);
-                        set_status(&status, &last_detail);
+                        set_status(&status, &_last_detail);
                     } else {
-                        last_detail = Some(format!("重试第 {}/{} 次", attempt, max_retries));
+                        _last_detail = Some(format!("重试第 {}/{} 次", attempt, max_retries));
                         let status = format!(
                             "🔄 重新尝试: {} (第 {}/{} 次)",
                             file_name, attempt, max_retries
                         );
-                        set_status(&status, &last_detail);
+                        set_status(&status, &_last_detail);
                     }
 
                     match singlefile_processor(&path_buf).await {
@@ -261,9 +259,9 @@ pub async fn process_batch_paths(cfg: MainProcessorConfig, paths: Vec<PathBuf>) 
                         Err(err) if attempt < max_retries => {
                             // 需要重试
                             let err_short = err.to_string().chars().take(80).collect::<String>();
-                            last_detail = Some(format!("失败: {}", err_short));
+                            _last_detail = Some(format!("失败: {}", err_short));
                             let status = format!("⚠️  第 {} 次尝试失败: {}", attempt, file_name);
-                            set_status(&status, &last_detail);
+                            set_status(&status, &_last_detail);
                             // 短暂延迟后重试
                             tokio::time::sleep(Duration::from_millis(500)).await;
                         }

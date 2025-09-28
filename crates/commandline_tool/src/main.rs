@@ -14,7 +14,7 @@ use env_checker::dbdata_init;
 use tokio; //添加 tokio 运行时的文件
 // use main_processor::single_process::SingleProcess;
 use log::{debug, error, info, warn};
-use main_processor::{process_batch_paths, process_single_path};
+use main_processor::process_batch_paths;
 use project_remanager::ProjectReorganizer;
 use single_processor::single_processes::singlefile_processor;
 use std::collections::HashSet;
@@ -197,37 +197,6 @@ async fn main() -> Result<()> {
             }
             Ok(())
         }
-
-        // Commands::AnalyzeRelations {
-        //     input_dir,
-        //     project_name,
-        // } => {
-        //     info!("已选择关系分析命令");
-        //     info!("输入目录: {}", input_dir.display());
-        //     info!("项目名称: {}", project_name.as_deref().unwrap_or("未指定"));
-        //     Ok(())
-
-        //     // input_dir.to_str().unwrap_or("未指定");
-        // }
-
-        // Commands::RelationQuery {
-        //     db,
-        //     project,
-        //     query_type,
-        //     target,
-        //     keyword,
-        //     limit,
-        // } => {
-        //     info!("已选择关系查询命令");
-        //     info!("数据库: {}", db);
-        //     info!("项目: {}", project.as_deref().unwrap_or("未指定"));
-        //     info!("查询类型: {:?}", query_type);
-        //     info!("目标: {}", target.as_deref().unwrap_or("未指定"));
-        //     info!("关键词: {}", keyword.as_deref().unwrap_or("未指定"));
-        //     info!("结果限制: {}", limit);
-        //     // "未指定"
-        //     Ok(())
-        // }
 
         // main.rs 中 Translate 命令的修改部分
         Commands::Translate {
