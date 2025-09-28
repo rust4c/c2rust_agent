@@ -1,0 +1,59 @@
+name: Auto Release
+
+on:
+  push:
+    branches:
+      - main
+      - release
+      - 'release/*'
+  workflow_dispatch:
+
+permissions:
+  contents: write
+
+concurrency:
+  group: auto-release-${{ github.ref }}
+  cancel-in-progress: false
+
+jobs:
+  prerelease_on_main:
+    if: github.ref == 'refs/heads/main'
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - name: Compute prerelease tag
+        id: vars
+        run: |
+          short_sha="${GITHUB_SHA::7}"
+          echo "TAG=prerelease-${GITHUB_RUN_NUMBER}-${short_sha}" >> $GITHUB_OUTPUT
+          echo "NAME=Prerelease ${GITHUB_RUN_NUMBER} (${short_sha})" >> $GITHUB_OUTPUT
+      - name: Create GitHub prerelease
+        uses: softprops/action-gh-release@v2
+        with:
+          tag_name: ${{ steps.vars.outputs.TAG }}
+          name: ${{ steps.vars.outputs.NAME }}
+          prerelease: true
+          generate_release_notes: true
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+
+  release_on_release_branch:
+    if: startsWith(github.ref, 'refs/heads/release')
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - name: Compute release tag
+        id: vars
+        run: |
+          date_tag=$(date -u +'%Y%m%d')
+          echo "TAG=release-${date_tag}-${GITHUB_RUN_NUMBER}" >> $GITHUB_OUTPUT
+          echo "NAME=Release ${date_tag} (${GITHUB_RUN_NUMBER})" >> $GITHUB_OUTPUT
+      - name: Create GitHub release
+        uses: softprops/action-gh-release@v2
+        with:
+          tag_name: ${{ steps.vars.outputs.TAG }}
+          name: ${{ steps.vars.outputs.NAME }}
+          prerelease: false
+          generate_release_notes: true
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
