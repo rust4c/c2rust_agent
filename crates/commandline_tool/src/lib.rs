@@ -7,6 +7,9 @@ use std::path::PathBuf;
 #[command(about = "C to Rust", long_about = None)]
 
 pub struct Cli {
+    /// 显示调试日志 (默认关闭)
+    #[arg(long, short = 'd', global = true, help = "show debug log")]
+    pub debug: bool,
     #[command(subcommand)]
     pub command: Commands,
 }

@@ -90,7 +90,7 @@ fn process_c_h_files(dir_path: &Path) -> Result<PathBuf> {
 
     // 如果只有一个.c文件，不做任何处理
     if c_files.len() == 1 && h_files.is_empty() {
-        info!("只有一个.c文件，不做任何处理");
+        info!("处理完成");
         return Ok(c_files[0].clone());
     }
 

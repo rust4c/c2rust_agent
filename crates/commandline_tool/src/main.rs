@@ -1,7 +1,6 @@
 use commandline_tool::Commands;
 use commandline_tool::parse_args;
 use cproject_analy::file_remanager::{CProjectPreprocessor, PreprocessConfig};
-use env_checker::ai_checker;
 use lsp_services::lsp_services::{
     analyze_project_with_default_database, check_function_and_class_name,
 };
@@ -16,10 +15,11 @@ use tokio; //添加 tokio 运行时的文件
 // use main_processor::single_process::SingleProcess;
 use log::{debug, error, info, warn};
 use main_processor::{process_batch_paths, process_single_path};
+use project_remanager::ProjectReorganizer;
 use single_processor::single_processes::singlefile_processor;
 use std::collections::HashSet;
-use tracing_subscriber::filter::LevelFilter as SubLevel;
 use tracing_log::LogTracer;
+use tracing_subscriber::filter::LevelFilter as SubLevel;
 use tracing_subscriber::fmt;
 use tracing_subscriber::prelude::*;
 
@@ -82,17 +82,21 @@ async fn discover_c_projects(dir: &PathBuf) -> Result<Vec<PathBuf>> {
 
 #[tokio::main]
 async fn main() -> Result<()> {
+    // 先解析 CLI，读取 --debug 开关
+    let cli = parse_args();
+
     // 初始化日志系统，使用 tracing 统一处理 log 宏与 tracing 事件
-    // 将 log::log! 重定向到 tracing
     let _ = LogTracer::init();
-    // 控制台简洁输出，默认 debug 级别
     let fmt_layer = fmt::layer()
         .with_target(false)
         .with_level(true)
         .with_timer(fmt::time::uptime());
-    let subscriber = tracing_subscriber::registry()
-        .with(fmt_layer)
-        .with(SubLevel::DEBUG);
+    let level = if cli.debug {
+        SubLevel::DEBUG
+    } else {
+        SubLevel::INFO
+    };
+    let subscriber = tracing_subscriber::registry().with(fmt_layer).with(level);
     let _ = subscriber.try_init();
 
     // 初始化数据库连接
@@ -123,8 +127,7 @@ async fn main() -> Result<()> {
         }
     }
 
-    //
-    let cli = parse_args();
+    // cli 已解析
 
     match &cli.command {
         Commands::Analyze { input_dir } => {
@@ -229,7 +232,7 @@ async fn main() -> Result<()> {
         // main.rs 中 Translate 命令的修改部分
         Commands::Translate {
             input_dir,
-            output_dir: _, // 暂时忽略output_dir参数
+            output_dir, // 若提供则用于最终重组输出
         } => {
             info!("已选择转换命令");
             info!("输入目录: {}", input_dir.display());
@@ -241,9 +244,33 @@ async fn main() -> Result<()> {
                 return Ok(());
             }
 
-            // 发现C项目
+            // 第一步：预处理 -> 生成 src_cache
+            info!("开始预处理 (preprocess)...");
+            let cache_dir = {
+                let parent = input_dir.parent().unwrap_or_else(|| Path::new("."));
+                let dir_name = input_dir
+                    .file_name()
+                    .map(|n| n.to_string_lossy().into_owned())
+                    .unwrap_or_else(|| "project".to_string());
+                parent.join(format!("{}_cache", dir_name))
+            };
+
+            // 如果 cache 目录不存在才运行预处理，避免重复开销
+            if !cache_dir.exists() {
+                let config = PreprocessConfig::default();
+                let mut preprocessor = CProjectPreprocessor::new(Some(config));
+                if let Err(e) = preprocessor.preprocess_project(input_dir, &cache_dir) {
+                    error!("预处理失败: {}", e);
+                    return Ok(());
+                }
+                info!("预处理完成，缓存目录: {}", cache_dir.display());
+            } else {
+                info!("检测到已有缓存目录: {}，跳过预处理", cache_dir.display());
+            }
+
+            // 第二步：发现 C 项目（基于 cache 目录）
             info!("正在发现C项目...");
-            let projects = match discover_c_projects(input_dir).await {
+            let projects = match discover_c_projects(&cache_dir).await {
                 Ok(projects) => projects,
                 Err(e) => {
                     error!("发现C项目失败: {}", e);
@@ -261,13 +288,33 @@ async fn main() -> Result<()> {
                 info!("  {}. {}", i + 1, project.display());
             }
 
-            // 使用批量处理功能进行转换
+            // 第三步：批量转换 C -> Rust
             info!("开始批量转换...");
             match process_batch_paths(cfg, projects).await {
                 Ok(()) => {
                     info!("✅ 所有C到Rust转换完成!");
                     println!("🎉 转换成功完成!");
-                    println!("📁 转换结果保存在各项目目录下的 'rust-project' 文件夹中");
+                    println!(
+                        "📁 转换结果保存在各项目目录下的 'rust-project' 或 'rust_project' 文件夹中"
+                    );
+
+                    // 第四步：重组为一个 Rust 工作区
+                    let workspace_out = output_dir.clone().unwrap_or_else(|| {
+                        let parent = input_dir.parent().unwrap_or_else(|| Path::new("."));
+                        let dir_name = input_dir
+                            .file_name()
+                            .map(|n| n.to_string_lossy().into_owned())
+                            .unwrap_or_else(|| "project".to_string());
+                        parent.join(format!("{}_workspace", dir_name))
+                    });
+                    info!("开始重组项目: {}", workspace_out.display());
+                    let reorganizer =
+                        ProjectReorganizer::new(cache_dir.clone(), workspace_out.clone());
+                    if let Err(e) = reorganizer.reorganize() {
+                        error!("重组项目失败: {}", e);
+                    } else {
+                        println!("📦 已生成工作区: {}", workspace_out.display());
+                    }
                 }
                 Err(e) => {
                     error!("❌ 转换过程中出现错误: {}", e);

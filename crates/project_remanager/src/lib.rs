@@ -118,10 +118,16 @@ impl ProjectReorganizer {
                 continue;
             }
 
-            let rust_project_path = project_dir.join("rust_project");
-            if !rust_project_path.exists() {
+            // 支持两种命名：rust_project 与 rust-project
+            let rust_project_path_underscore = project_dir.join("rust_project");
+            let rust_project_path_dash = project_dir.join("rust-project");
+            let rust_project_path = if rust_project_path_underscore.exists() {
+                rust_project_path_underscore
+            } else if rust_project_path_dash.exists() {
+                rust_project_path_dash
+            } else {
                 continue;
-            }
+            };
 
             let project_name = project_dir
                 .file_name()

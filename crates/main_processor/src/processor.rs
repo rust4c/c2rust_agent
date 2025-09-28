@@ -9,7 +9,6 @@ use tokio::sync::Semaphore;
 
 use crate::pkg_config::MainProcessorConfig;
 
-// Docker 风格的进度条样式
 fn progress_style_docker_step() -> ProgressStyle {
     ProgressStyle::with_template("{prefix:.bold.blue} [{elapsed_precise}] {spinner:.green} {msg}")
         .unwrap()
@@ -167,6 +166,9 @@ pub async fn discover_src_cache_projects(root: &Path) -> Result<Vec<PathBuf>> {
 
 // 批量并发处理：Docker 风格的进度显示
 pub async fn process_batch_paths(cfg: MainProcessorConfig, paths: Vec<PathBuf>) -> Result<()> {
+    // 使用 progress bar 的 suspend 包裹日志，避免打断进度条渲染
+    // 参考示例：通过 suspend 在进度条上方输出日志
+    // 由于 overall 进度条稍后才创建，这里先直接打印一次启动日志
     info!("🚀 开始批量处理 C2Rust 转换任务");
 
     let concurrent = if cfg.concurrent_limit == 0 {
@@ -184,6 +186,14 @@ pub async fn process_batch_paths(cfg: MainProcessorConfig, paths: Vec<PathBuf>) 
     overall.set_prefix("BATCH");
     overall.set_message("正在处理 C2Rust 转换任务");
 
+    // 从这里开始，所有日志尽量通过 suspend 包裹，避免与进度条冲突
+    overall.suspend(|| {
+        info!(
+            "📦 任务数: {}，并发度: {} (0 表示串行，已规范为至少 1)",
+            total_tasks, concurrent
+        );
+    });
+
     let sem = Arc::new(Semaphore::new(concurrent));
     let mut handles = Vec::with_capacity(total_tasks);
 
@@ -198,15 +208,8 @@ pub async fn process_batch_paths(cfg: MainProcessorConfig, paths: Vec<PathBuf>) 
             p.file_name().unwrap_or_default().to_string_lossy()
         ));
 
-        // 为该任务创建一个滚动日志小窗口
-        let log_pb = m.add(ProgressBar::new_spinner());
-        log_pb.set_style(ProgressStyle::with_template("{prefix:.dim} {msg}").unwrap());
-        log_pb.set_prefix("日志");
-        log_pb.enable_steady_tick(Duration::from_millis(300));
-
         let permit = sem.clone();
         let pb_clone = pb.clone();
-        let log_pb_clone = log_pb.clone();
         let overall_clone = overall.clone();
         let max_retries = cfg.max_retry_attempts.max(1);
         let path_buf = p.clone();
@@ -220,15 +223,14 @@ pub async fn process_batch_paths(cfg: MainProcessorConfig, paths: Vec<PathBuf>) 
 
                 let file_name = path_buf.file_name().unwrap_or_default().to_string_lossy();
                 let mut attempt = 0usize;
-                use std::collections::VecDeque;
-                let mut log_buf: VecDeque<String> = VecDeque::with_capacity(6);
-                let mut update_log_window = |line: String| {
-                    if log_buf.len() == log_buf.capacity() {
-                        log_buf.pop_front();
+                // 最近一条细节信息，展示在进度条消息尾部，避免额外的日志栏位
+                let mut last_detail: Option<String> = None;
+                let mut set_status = |status: &str, last_detail: &Option<String>| {
+                    if let Some(detail) = last_detail.as_ref() {
+                        pb_clone.set_message(format!("{} | {}", status, detail));
+                    } else {
+                        pb_clone.set_message(status.to_string());
                     }
-                    log_buf.push_back(line);
-                    let combined = log_buf.iter().cloned().collect::<Vec<_>>().join("\n");
-                    log_pb_clone.set_message(combined);
                 };
 
                 loop {
@@ -236,17 +238,16 @@ pub async fn process_batch_paths(cfg: MainProcessorConfig, paths: Vec<PathBuf>) 
 
                     // 更新进度显示，类似 Docker 的运行状态
                     if attempt == 1 {
-                        pb_clone.set_message(format!(
-                            "🔄 正在处理: {} (第 {} 次尝试)",
-                            file_name, attempt
-                        ));
-                        update_log_window(format!("{} 开始处理", file_name));
+                        last_detail = Some("开始处理".to_string());
+                        let status = format!("🔄 正在处理: {} (第 {} 次尝试)", file_name, attempt);
+                        set_status(&status, &last_detail);
                     } else {
-                        pb_clone.set_message(format!(
+                        last_detail = Some(format!("重试第 {}/{} 次", attempt, max_retries));
+                        let status = format!(
                             "🔄 重新尝试: {} (第 {}/{} 次)",
                             file_name, attempt, max_retries
-                        ));
-                        update_log_window(format!("重试第 {}/{} 次", attempt, max_retries));
+                        );
+                        set_status(&status, &last_detail);
                     }
 
                     match singlefile_processor(&path_buf).await {
@@ -254,20 +255,15 @@ pub async fn process_batch_paths(cfg: MainProcessorConfig, paths: Vec<PathBuf>) 
                             // 成功完成
                             pb_clone.set_style(progress_style_docker_completed());
                             pb_clone.finish_with_message(format!("✅ 成功处理: {}", file_name));
-                            update_log_window("处理完成".to_string());
-                            log_pb_clone.set_style(progress_style_docker_completed());
-                            log_pb_clone.finish_and_clear();
                             overall_clone.inc(1);
                             break Ok(());
                         }
                         Err(err) if attempt < max_retries => {
                             // 需要重试
                             let err_short = err.to_string().chars().take(80).collect::<String>();
-                            pb_clone.set_message(format!(
-                                "⚠️  第 {} 次尝试失败: {} - {}",
-                                attempt, file_name, err_short
-                            ));
-                            update_log_window(format!("失败: {}", err_short));
+                            last_detail = Some(format!("失败: {}", err_short));
+                            let status = format!("⚠️  第 {} 次尝试失败: {}", attempt, file_name);
+                            set_status(&status, &last_detail);
                             // 短暂延迟后重试
                             tokio::time::sleep(Duration::from_millis(500)).await;
                         }
@@ -279,8 +275,6 @@ pub async fn process_batch_paths(cfg: MainProcessorConfig, paths: Vec<PathBuf>) 
                                 file_name,
                                 err.to_string().chars().take(80).collect::<String>()
                             ));
-                            update_log_window("已达到最大重试次数".to_string());
-                            log_pb_clone.set_style(progress_style_docker_failed());
                             overall_clone.inc(1);
                             break Err(err);
                         }
@@ -307,10 +301,12 @@ pub async fn process_batch_paths(cfg: MainProcessorConfig, paths: Vec<PathBuf>) 
     if failures == 0 {
         overall.set_style(progress_style_docker_completed());
         overall.finish_with_message(format!("🎉 全部任务完成! 成功处理 {} 个文件", successes));
-        info!(
-            "✅ 批量处理完成: 成功 {} 个，失败 {} 个",
-            successes, failures
-        );
+        overall.suspend(|| {
+            info!(
+                "✅ 批量处理完成: 成功 {} 个，失败 {} 个",
+                successes, failures
+            );
+        });
         Ok(())
     } else {
         overall.set_style(progress_style_docker_failed());
@@ -318,10 +314,12 @@ pub async fn process_batch_paths(cfg: MainProcessorConfig, paths: Vec<PathBuf>) 
             "⚠️  批量处理完成: 成功 {} 个，失败 {} 个",
             successes, failures
         ));
-        info!(
-            "⚠️  批量处理完成: 成功 {} 个，失败 {} 个",
-            successes, failures
-        );
+        overall.suspend(|| {
+            info!(
+                "⚠️  批量处理完成: 成功 {} 个，失败 {} 个",
+                successes, failures
+            );
+        });
         Err(anyhow!("批量处理完成，但有 {} 个任务失败", failures))
     }
 }

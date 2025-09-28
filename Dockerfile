@@ -82,7 +82,6 @@ WORKDIR /opt/c2rust_agent
 # Copy manifest files first for better build caching
 COPY Cargo.toml Cargo.lock ./
 COPY crates ./crates
-COPY src ./src
 COPY config ./config
 COPY .git ./.git
 COPY README.md README-CN.md ./
