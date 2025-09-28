@@ -16,44 +16,155 @@ concurrency:
   cancel-in-progress: false
 
 jobs:
-  prerelease_on_main:
-    if: github.ref == 'refs/heads/main'
+  create_release:
+    # Runs for both main and release branches to create the (pre)release and output tag info
     runs-on: ubuntu-latest
+    outputs:
+      tag: ${{ steps.vars.outputs.TAG }}
+      name: ${{ steps.vars.outputs.NAME }}
+      prerelease: ${{ steps.vars.outputs.PRERELEASE }}
     steps:
       - uses: actions/checkout@v4
-      - name: Compute prerelease tag
+      - name: Compute tag and release type
         id: vars
         run: |
-          short_sha="${GITHUB_SHA::7}"
-          echo "TAG=prerelease-${GITHUB_RUN_NUMBER}-${short_sha}" >> $GITHUB_OUTPUT
-          echo "NAME=Prerelease ${GITHUB_RUN_NUMBER} (${short_sha})" >> $GITHUB_OUTPUT
-      - name: Create GitHub prerelease
+          if [[ "${GITHUB_REF}" == "refs/heads/main" ]]; then
+            short_sha="${GITHUB_SHA::7}"
+            echo "TAG=prerelease-${GITHUB_RUN_NUMBER}-${short_sha}" >> $GITHUB_OUTPUT
+            echo "NAME=Prerelease ${GITHUB_RUN_NUMBER} (${short_sha})" >> $GITHUB_OUTPUT
+            echo "PRERELEASE=true" >> $GITHUB_OUTPUT
+          else
+            date_tag=$(date -u +'%Y%m%d')
+            echo "TAG=release-${date_tag}-${GITHUB_RUN_NUMBER}" >> $GITHUB_OUTPUT
+            echo "NAME=Release ${date_tag} (${GITHUB_RUN_NUMBER})" >> $GITHUB_OUTPUT
+            echo "PRERELEASE=false" >> $GITHUB_OUTPUT
+          fi
+      - name: Create or update GitHub (pre)release
         uses: softprops/action-gh-release@v2
         with:
           tag_name: ${{ steps.vars.outputs.TAG }}
           name: ${{ steps.vars.outputs.NAME }}
-          prerelease: true
+          prerelease: ${{ steps.vars.outputs.PRERELEASE }}
           generate_release_notes: true
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
 
-  release_on_release_branch:
-    if: startsWith(github.ref, 'refs/heads/release')
-    runs-on: ubuntu-latest
+  build_cli_and_upload:
+    name: Build CLI (${{ matrix.os }})
+    needs: create_release
+    runs-on: ${{ matrix.os }}
+    if: github.ref == 'refs/heads/main' || startsWith(github.ref, 'refs/heads/release')
+    strategy:
+      fail-fast: false
+      matrix:
+        os: [ubuntu-latest, macos-latest, windows-latest]
+    env:
+      RELEASE_TAG: ${{ needs.create_release.outputs.tag }}
     steps:
       - uses: actions/checkout@v4
-      - name: Compute release tag
-        id: vars
+      - uses: dtolnay/rust-toolchain@stable
+
+      - name: Build commandline_tool (release)
         run: |
-          date_tag=$(date -u +'%Y%m%d')
-          echo "TAG=release-${date_tag}-${GITHUB_RUN_NUMBER}" >> $GITHUB_OUTPUT
-          echo "NAME=Release ${date_tag} (${GITHUB_RUN_NUMBER})" >> $GITHUB_OUTPUT
-      - name: Create GitHub release
+          cargo build -p commandline_tool --release
+
+      - name: Package (Linux/macOS)
+        if: runner.os != 'Windows'
+        id: pkg_nix
+        run: |
+          OS_NAME=$(echo "$RUNNER_OS" | tr '[:upper:]' '[:lower:]')
+          BIN_PATH=target/release/commandline_tool
+          chmod +x "$BIN_PATH"
+          mkdir -p dist
+          ARCHIVE="dist/commandline_tool-${OS_NAME}-${RELEASE_TAG}.tar.gz"
+          tar -czf "$ARCHIVE" -C target/release commandline_tool
+          echo "archive=$ARCHIVE" >> $GITHUB_OUTPUT
+        shell: bash
+
+      - name: Package (Windows)
+        if: runner.os == 'Windows'
+        id: pkg_win
+        run: |
+          $env:OS_NAME = $env:RUNNER_OS.ToLower()
+          $binPath = "target/release/commandline_tool.exe"
+          New-Item -ItemType Directory -Force -Path dist | Out-Null
+          $archive = "dist/commandline_tool-$($env:OS_NAME)-$($env:RELEASE_TAG).zip"
+          Compress-Archive -Path $binPath -DestinationPath $archive -Force
+          [System.IO.File]::AppendAllText($env:GITHUB_OUTPUT, "archive=$archive`n")
+        shell: pwsh
+
+      - name: Upload asset to release
         uses: softprops/action-gh-release@v2
         with:
-          tag_name: ${{ steps.vars.outputs.TAG }}
-          name: ${{ steps.vars.outputs.NAME }}
-          prerelease: false
-          generate_release_notes: true
+          tag_name: ${{ needs.create_release.outputs.tag }}
+          files: ${{ steps.pkg_nix.outputs.archive || steps.pkg_win.outputs.archive }}
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+
+  build_ui_and_upload:
+    name: Build UI (${{ matrix.os }})
+    needs: create_release
+    runs-on: ${{ matrix.os }}
+    if: startsWith(github.ref, 'refs/heads/release')
+    strategy:
+      fail-fast: false
+      matrix:
+        os: [ubuntu-latest, macos-latest, windows-latest]
+    env:
+      RELEASE_TAG: ${{ needs.create_release.outputs.tag }}
+    steps:
+      - uses: actions/checkout@v4
+      - uses: dtolnay/rust-toolchain@stable
+
+      - name: Install Linux UI system dependencies
+        if: runner.os == 'Linux'
+        run: |
+          sudo apt update
+          sudo apt install -y \
+            libwebkit2gtk-4.1-dev \
+            build-essential \
+            curl \
+            wget \
+            file \
+            libxdo-dev \
+            libssl-dev \
+            libayatana-appindicator3-dev \
+            librsvg2-dev
+        shell: bash
+
+      - name: Build ui_main (release)
+        run: |
+          cargo build -p ui_main --release
+
+      - name: Package (Linux/macOS)
+        if: runner.os != 'Windows'
+        id: pkg_ui_nix
+        run: |
+          OS_NAME=$(echo "$RUNNER_OS" | tr '[:upper:]' '[:lower:]')
+          BIN_PATH=target/release/ui_main
+          chmod +x "$BIN_PATH"
+          mkdir -p dist
+          ARCHIVE="dist/ui_main-${OS_NAME}-${RELEASE_TAG}.tar.gz"
+          tar -czf "$ARCHIVE" -C target/release ui_main
+          echo "archive=$ARCHIVE" >> $GITHUB_OUTPUT
+        shell: bash
+
+      - name: Package (Windows)
+        if: runner.os == 'Windows'
+        id: pkg_ui_win
+        run: |
+          $env:OS_NAME = $env:RUNNER_OS.ToLower()
+          $binPath = "target/release/ui_main.exe"
+          New-Item -ItemType Directory -Force -Path dist | Out-Null
+          $archive = "dist/ui_main-$($env:OS_NAME)-$($env:RELEASE_TAG).zip"
+          Compress-Archive -Path $binPath -DestinationPath $archive -Force
+          [System.IO.File]::AppendAllText($env:GITHUB_OUTPUT, "archive=$archive`n")
+        shell: pwsh
+
+      - name: Upload asset to release
+        uses: softprops/action-gh-release@v2
+        with:
+          tag_name: ${{ needs.create_release.outputs.tag }}
+          files: ${{ steps.pkg_ui_nix.outputs.archive || steps.pkg_ui_win.outputs.archive }}
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
