@@ -6,13 +6,13 @@ use lsp_services::lsp_services::{
 };
 use std::fs;
 use std::path::{Path, PathBuf};
-// use env_checker::disk_inspection;
+
 use anyhow::Result;
 use db_services::DatabaseManager;
 use env_checker::ai_checker::{AIConnectionStatus, ai_service_init};
 use env_checker::dbdata_init;
-use tokio; //添加 tokio 运行时的文件
-// use main_processor::single_process::SingleProcess;
+use tokio;
+
 use log::{debug, error, info, warn};
 use main_processor::process_batch_paths;
 use project_remanager::ProjectReorganizer;

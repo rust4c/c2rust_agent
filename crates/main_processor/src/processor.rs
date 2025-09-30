@@ -73,40 +73,19 @@ pub async fn process_single_path(path: &Path) -> Result<()> {
     }
 }
 
-/// 遍历 src_cache 目录，收集可处理的目标目录
-/// 参考结构:
-/// src_cache/
-///   ├── individual_files/   <- 这里的每个子目录都是一个可处理单元
-///   ├── mapping.json        <- 可选，暂不使用
-///   ├── paired_files/       <- 预留，暂不使用
-///   └── unrelated_files/    <- 忽略
-pub async fn discover_src_cache_projects(root: &Path) -> Result<Vec<PathBuf>> {
+/// 扫描指定目录，收集包含 .c/.h 文件的子目录
+async fn scan_directory_for_projects(dir_path: &Path) -> Result<(Vec<PathBuf>, usize, usize)> {
     use tokio::fs;
-
-    let timestamp = get_timestamp();
-    info!(
-        "🔍 [{}] SCAN 开始扫描 src_cache 目录: {}",
-        timestamp,
-        root.display()
-    );
-
-    if !root.exists() {
-        return Err(anyhow!("❌ 路径不存在: {}", root.display()));
-    }
-
-    let individual = root.join("individual_files");
-    if !individual.exists() {
-        return Err(anyhow!(
-            "❌ src_cache 目录缺少 individual_files: {}",
-            individual.display()
-        ));
-    }
-
-    let mut out = Vec::new();
-    let mut entries = fs::read_dir(&individual).await?;
+    
+    let mut projects = Vec::new();
     let mut scanned_dirs = 0;
     let mut valid_dirs = 0;
 
+    if !dir_path.exists() {
+        return Ok((projects, scanned_dirs, valid_dirs));
+    }
+
+    let mut entries = fs::read_dir(dir_path).await?;
     while let Some(entry) = entries.next_entry().await? {
         let p = entry.path();
         if !p.is_dir() {
@@ -147,9 +126,70 @@ pub async fn discover_src_cache_projects(root: &Path) -> Result<Vec<PathBuf>> {
                 c_files,
                 h_files
             );
-            out.push(p);
+            projects.push(p);
             valid_dirs += 1;
         }
+    }
+
+    Ok((projects, scanned_dirs, valid_dirs))
+}
+
+/// 遍历 src_cache 目录，收集可处理的目标目录
+/// 参考结构:
+/// src_cache/
+///   ├── individual_files/   <- 这里的每个子目录都是一个可处理单元
+///   ├── paired_files/       <- 这里的每个子目录都是一个可处理单元
+///   ├── mapping.json        <- 可选，暂不使用
+///   └── unrelated_files/    <- 忽略
+pub async fn discover_src_cache_projects(root: &Path) -> Result<Vec<PathBuf>> {
+    let timestamp = get_timestamp();
+    info!(
+        "🔍 [{}] SCAN 开始扫描 src_cache 目录: {}",
+        timestamp,
+        root.display()
+    );
+
+    if !root.exists() {
+        return Err(anyhow!("❌ 路径不存在: {}", root.display()));
+    }
+
+    let individual = root.join("individual_files");
+    let paired = root.join("paired_files");
+    
+    // 检查至少存在一个目录
+    if !individual.exists() && !paired.exists() {
+        return Err(anyhow!(
+            "❌ src_cache 目录缺少 individual_files 和 paired_files: {}",
+            root.display()
+        ));
+    }
+
+    let mut out = Vec::new();
+    let mut total_scanned_dirs = 0;
+    let mut total_valid_dirs = 0;
+
+    // 扫描 individual_files 目录
+    if individual.exists() {
+        info!("🔍 扫描 individual_files 目录...");
+        let (mut individual_projects, scanned, valid) = scan_directory_for_projects(&individual).await?;
+        out.append(&mut individual_projects);
+        total_scanned_dirs += scanned;
+        total_valid_dirs += valid;
+        info!("📂 individual_files: 发现 {} 个有效目录 (共扫描 {} 个)", valid, scanned);
+    } else {
+        info!("⚠️  跳过不存在的 individual_files 目录");
+    }
+
+    // 扫描 paired_files 目录
+    if paired.exists() {
+        info!("🔍 扫描 paired_files 目录...");
+        let (mut paired_projects, scanned, valid) = scan_directory_for_projects(&paired).await?;
+        out.append(&mut paired_projects);
+        total_scanned_dirs += scanned;
+        total_valid_dirs += valid;
+        info!("📂 paired_files: 发现 {} 个有效目录 (共扫描 {} 个)", valid, scanned);
+    } else {
+        info!("⚠️  跳过不存在的 paired_files 目录");
     }
 
     // 稳定排序，便于可重复性
@@ -157,8 +197,8 @@ pub async fn discover_src_cache_projects(root: &Path) -> Result<Vec<PathBuf>> {
 
     let timestamp = get_timestamp();
     info!(
-        "✅ [{}] SCAN 扫描完成: 发现 {} 个有效目录 (共扫描 {} 个目录)",
-        timestamp, valid_dirs, scanned_dirs
+        "✅ [{}] SCAN 扫描完成: 总共发现 {} 个有效目录 (共扫描 {} 个目录)",
+        timestamp, total_valid_dirs, total_scanned_dirs
     );
 
     Ok(out)
