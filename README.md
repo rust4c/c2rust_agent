@@ -14,6 +14,7 @@ C2Rust Agent is a sophisticated tool that leverages Large Language Models (LLMs)
 
 ## Key Features
 
+- **🔄 Two-Stage Translation**: Combines C2Rust automated translation with AI optimization for superior results
 - **🧠 LLM-Powered Translation**: Uses advanced language models (OpenAI, Ollama, XAI, DeepSeek) for semantic understanding
 - **🔍 LSP Analysis**: Deep code analysis using Language Server Protocol for understanding dependencies and relationships
 - **🗄️ Database Context**: Persistent storage with SQLite and Qdrant vector database for context-aware translations
@@ -44,6 +45,31 @@ flowchart LR
 ```
 
 Note: If the Mermaid diagram does not render in your viewer, open this file on GitHub or use VS Code's Markdown Preview.
+
+## Two-Stage Translation Process
+
+C2Rust Agent now features an advanced two-stage translation process that combines the reliability of automated tools with the intelligence of AI:
+
+### Stage 1: C2Rust Automated Translation
+- Uses the official [C2Rust](https://c2rust.com/) transpiler for initial conversion
+- Generates functionally equivalent Rust code with safety guarantees
+- Handles complex C constructs like pointer arithmetic and unions
+- Creates a solid foundation for further optimization
+
+### Stage 2: AI Optimization
+- LLM analyzes and optimizes the C2Rust-generated code
+- Removes unnecessary `unsafe` blocks where possible
+- Improves memory management using Rust's ownership system
+- Converts to idiomatic Rust patterns (Vec, String, Option, Result)
+- Adds proper error handling and documentation
+
+**Benefits:**
+- Higher translation quality compared to either approach alone
+- Automatic fallback to pure AI translation if C2Rust fails
+- Side-by-side comparison of both outputs
+- Maintains functional correctness while improving code quality
+
+For detailed setup and usage instructions, see [TWO_STAGE_TRANSLATION.md](TWO_STAGE_TRANSLATION.md).
 
 Core components:
 

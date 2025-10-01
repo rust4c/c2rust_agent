@@ -1,7 +1,7 @@
 use anyhow::{anyhow, Result};
 use indicatif::{MultiProgress, ProgressBar, ProgressStyle};
 use log::{debug, info};
-use single_processor::singlefile_processor;
+use single_processor::two_stage_processor;
 use std::path::{Path, PathBuf};
 use std::sync::Arc;
 use std::time::{Duration, SystemTime, UNIX_EPOCH};
@@ -53,19 +53,19 @@ pub async fn process_single_path(path: &Path) -> Result<()> {
     let file_name = path.file_name().unwrap_or_default().to_string_lossy();
     let timestamp = get_timestamp();
 
-    info!("🚀 [{}] PROC [1/1] 开始处理: {}", timestamp, file_name);
+    info!("🚀 [{}] PROC [1/1] 开始两阶段翻译处理: {}", timestamp, file_name);
     debug!("完整路径: {}", path.display());
 
-    match singlefile_processor(path).await {
+    match two_stage_processor(path).await {
         Ok(_) => {
             let timestamp = get_timestamp();
-            info!("✅ [{}] DONE [1/1] 成功处理: {}", timestamp, file_name);
+            info!("✅ [{}] DONE [1/1] 两阶段翻译成功: {}", timestamp, file_name);
             Ok(())
         }
         Err(err) => {
             let timestamp = get_timestamp();
             info!(
-                "❌ [{}] ERROR [1/1] 处理失败: {} - {}",
+                "❌ [{}] ERROR [1/1] 两阶段翻译失败: {} - {}",
                 timestamp, file_name, err
             );
             Err(err)
@@ -209,7 +209,7 @@ pub async fn process_batch_paths(cfg: MainProcessorConfig, paths: Vec<PathBuf>) 
     // 使用 progress bar 的 suspend 包裹日志，避免打断进度条渲染
     // 参考示例：通过 suspend 在进度条上方输出日志
     // 由于 overall 进度条稍后才创建，这里先直接打印一次启动日志
-    info!("🚀 开始批量处理 C2Rust 转换任务");
+    info!("🚀 开始批量处理两阶段 C2Rust 翻译任务");
 
     let concurrent = if cfg.concurrent_limit == 0 {
         1
@@ -224,14 +224,15 @@ pub async fn process_batch_paths(cfg: MainProcessorConfig, paths: Vec<PathBuf>) 
     let overall = m.add(ProgressBar::new(total_tasks as u64));
     overall.set_style(progress_style_docker_overall());
     overall.set_prefix("BATCH");
-    overall.set_message("正在处理 C2Rust 转换任务");
+    overall.set_message("正在处理两阶段 C2Rust 翻译任务");
 
     // 从这里开始，所有日志尽量通过 suspend 包裹，避免与进度条冲突
     overall.suspend(|| {
         info!(
-            "📦 任务数: {}，并发度: {} (0 表示串行，已规范为至少 1)",
+            "📦 两阶段翻译任务数: {}，并发度: {} (0 表示串行，已规范为至少 1)",
             total_tasks, concurrent
         );
+        info!("🔄 翻译流程: C2Rust 自动翻译 → AI 代码优化");
     });
 
     let sem = Arc::new(Semaphore::new(concurrent));
@@ -276,23 +277,23 @@ pub async fn process_batch_paths(cfg: MainProcessorConfig, paths: Vec<PathBuf>) 
 
                     // 更新进度显示，类似 Docker 的运行状态
                     if attempt == 1 {
-                        _last_detail = Some("开始处理".to_string());
-                        let status = format!("🔄 正在处理: {} (第 {} 次尝试)", file_name, attempt);
+                        _last_detail = Some("两阶段翻译中".to_string());
+                        let status = format!("🔄 两阶段翻译: {} (第 {} 次尝试)", file_name, attempt);
                         set_status(&status, &_last_detail);
                     } else {
                         _last_detail = Some(format!("重试第 {}/{} 次", attempt, max_retries));
                         let status = format!(
-                            "🔄 重新尝试: {} (第 {}/{} 次)",
+                            "🔄 重新尝试翻译: {} (第 {}/{} 次)",
                             file_name, attempt, max_retries
                         );
                         set_status(&status, &_last_detail);
                     }
 
-                    match singlefile_processor(&path_buf).await {
+                    match two_stage_processor(&path_buf).await {
                         Ok(_) => {
                             // 成功完成
                             pb_clone.set_style(progress_style_docker_completed());
-                            pb_clone.finish_with_message(format!("✅ 成功处理: {}", file_name));
+                            pb_clone.finish_with_message(format!("✅ 两阶段翻译成功: {}", file_name));
                             overall_clone.inc(1);
                             break Ok(());
                         }
@@ -309,7 +310,7 @@ pub async fn process_batch_paths(cfg: MainProcessorConfig, paths: Vec<PathBuf>) 
                             // 最终失败
                             pb_clone.set_style(progress_style_docker_failed());
                             pb_clone.finish_with_message(format!(
-                                "❌ 处理失败: {} - {}",
+                                "❌ 翻译失败: {} - {}",
                                 file_name,
                                 err.to_string().chars().take(80).collect::<String>()
                             ));
@@ -338,10 +339,10 @@ pub async fn process_batch_paths(cfg: MainProcessorConfig, paths: Vec<PathBuf>) 
     // 完成总体进度显示
     if failures == 0 {
         overall.set_style(progress_style_docker_completed());
-        overall.finish_with_message(format!("🎉 全部任务完成! 成功处理 {} 个文件", successes));
+        overall.finish_with_message(format!("🎉 全部两阶段翻译任务完成! 成功翻译 {} 个文件", successes));
         overall.suspend(|| {
             info!(
-                "✅ 批量处理完成: 成功 {} 个，失败 {} 个",
+                "✅ 两阶段翻译批量处理完成: 成功 {} 个，失败 {} 个",
                 successes, failures
             );
         });
@@ -349,15 +350,15 @@ pub async fn process_batch_paths(cfg: MainProcessorConfig, paths: Vec<PathBuf>) 
     } else {
         overall.set_style(progress_style_docker_failed());
         overall.finish_with_message(format!(
-            "⚠️  批量处理完成: 成功 {} 个，失败 {} 个",
+            "⚠️  两阶段翻译批量处理完成: 成功 {} 个，失败 {} 个",
             successes, failures
         ));
         overall.suspend(|| {
             info!(
-                "⚠️  批量处理完成: 成功 {} 个，失败 {} 个",
+                "⚠️  两阶段翻译批量处理完成: 成功 {} 个，失败 {} 个",
                 successes, failures
             );
         });
-        Err(anyhow!("批量处理完成，但有 {} 个任务失败", failures))
+        Err(anyhow!("两阶段翻译批量处理完成，但有 {} 个任务失败", failures))
     }
 }

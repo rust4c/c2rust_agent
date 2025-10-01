@@ -47,6 +47,7 @@ RUN apt-get update && \
     cmake \
     glib-2.0-dev \
     python3 \
+    python3-pip \
     clang \
     llvm \
     libclang-dev \
@@ -88,6 +89,10 @@ COPY README.md README-CN.md ./
 
 # Build only the command-line tool as intended (avoids GUI deps)
 RUN cargo build --release --locked -p commandline_tool
+
+# Install compiledb (from PyPI) for generating compile_commands.json
+RUN pip3 install --no-cache-dir --break-system-packages compiledb && \
+    compiledb --version || true
 
 # Install available CLI binaries to PATH (ignore if some are not present)
 RUN set -eux; \

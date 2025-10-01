@@ -27,3 +27,5 @@ prompt_builder = { path = "crates/prompt_builder" }
 ui_main = { path = "crates/ui_main" }
 tokio = { version = "1.0", features = ["full"] }
 tempfile = "3.8"
+
+

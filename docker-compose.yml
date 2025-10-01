@@ -12,12 +12,8 @@ services:
       - qdrant_storage:/qdrant/storage
 
   c2rust_agent:
-    image: c2rust_agent:latest
+    image: pengheng/c2rust:latest
     container_name: c2rust_agent
-    # Build from local Dockerfile so the latest code is used; comment image above if you prefer local build only
-    build:
-      context: .
-      dockerfile: Dockerfile
     depends_on:
       - qdrant
     working_dir: /opt/c2rust_agent
