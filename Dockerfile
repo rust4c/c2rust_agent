@@ -86,6 +86,8 @@ COPY crates ./crates
 COPY config ./config
 COPY .git ./.git
 COPY README.md README-CN.md ./
+COPY test-projects/translate_chibicc ./translate_chibicc
+COPY test-projects/translate_littlefs_fuse ./translate_littlefs_fuse
 
 # Build only the command-line tool as intended (avoids GUI deps)
 RUN cargo build --release --locked -p commandline_tool

@@ -1,26 +1,24 @@
-# 测评使用，需放置在云主机 ～/
-# 软件配置位于 config/config.toml
+[problem.translate_chibicc]
+# 需要进行评测的 docker image id
+docker_image = "debian:latest"
+# docker 镜像里代码生成阶段的工作目录。
+codegen_workdir = "/tmp"
+# docker 镜像里代码生成阶段需要运行的命令（不是Shell命令，不能带有管道等Shell操作符）。
+codegen_command = "ls -l"
+# docker 镜像里代码生成阶段日志输出路径。
+codegen_logfile = "/tmp/run.log"
+# docker 镜像里生成的代码所在的目录。
+codegen_resultdir = "/tmp"
+# docker 镜像里构建生成的代码的命令，并假设工作目录是 codegen_resultdir。
+build_command = "touch translated_chibicc"
+# docker 镜像里生成的二进制可执行文件路径。
+exe = "/tmp/translated_chibicc"
 
-[problem.foobar]
-docker_image = "c2rust_agent:latest"
-
-# Where the codegen happens inside the container.
-codegen_workdir = "/workspace"
-
-# A non-shell command the checker will invoke for code generation.
-# Replace with your actual end-to-end codegen entrypoint and args.
-# For example, use your CLI to translate the test C project into a Cargo workspace under /workspace/out
-codegen_command = "c2rust_agent --input /workspace/input_c_project --output /workspace/out"
-
-# Log file for codegen stage.
-codegen_logfile = "/workspace/run.log"
-
-# The directory where the generated Rust Cargo project resides.
-codegen_resultdir = "/workspace/out"
-
-# Build the generated Cargo project. This is executed with cwd = codegen_resultdir.
-build_command = "cargo build --release --locked"
-
-# The path to the final executable. Point this to your compiled target if the evaluation expects a single exe.
-# Adjust as needed for the specific project under test.
-exe = "/workspace/out/target/release/translated_foobar"
+[problem.translate_littlefs_fuse]
+docker_image = "debian:latest"
+codegen_workdir = "/tmp"
+codegen_command = "ls -al"
+codegen_resultdir = "/tmp"
+codegen_logfile = "/tmp/run.log"
+build_command = "touch translated_littlefs_fuse"
+exe = "/tmp/translated_littlefs_fuse"

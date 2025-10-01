@@ -6,8 +6,8 @@ services:
     container_name: qdrant
     restart: unless-stopped
     ports:
-      - "6333:6333"   # HTTP API
-      - "6334:6334"   # gRPC API
+      - "6333:6333" # HTTP API
+      - "6334:6334" # gRPC API
     volumes:
       - qdrant_storage:/qdrant/storage
 
@@ -22,12 +22,17 @@ services:
       - ./config/docker.config.toml:/opt/c2rust_agent/config/config.toml:ro
       - sqlite_data:/opt/c2rust_agent/data
     ports:
-      - "2222:22"     # SSH access to container
+      - "2222:22" # SSH access to container
     environment:
       - RUST_LOG=info
     restart: unless-stopped
     # Keep the container running by starting sshd in the foreground
-    command: ["bash", "-lc", "mkdir -p /var/run/sshd && ssh-keygen -A && /usr/sbin/sshd -D"]
+    command:
+      [
+        "bash",
+        "-lc",
+        "mkdir -p /var/run/sshd && ssh-keygen -A && /usr/sbin/sshd -D",
+      ]
     # No entrypoint override; default CMD is bash from Dockerfile
     # Expose optional app-specific ports here if needed in the future
 
