@@ -39,6 +39,7 @@ RUN set -eux; \
 # System packages: build tools, VCS, SSL, SQLite, clang/LLVM, FUSE, etc.
 RUN apt-get update && \
     apt-get install -y --no-install-recommends \
+    nano \
     ca-certificates \
     curl \
     git \
@@ -81,13 +82,9 @@ RUN mkdir -p /root/.cargo && \
 WORKDIR /opt/c2rust_agent
 
 # Copy manifest files first for better build caching
-COPY Cargo.toml Cargo.lock ./
-COPY crates ./crates
-COPY config ./config
-COPY .git ./.git
-COPY README.md README-CN.md ./
-COPY test-projects/translate_chibicc ./translate_chibicc
-COPY test-projects/translate_littlefs_fuse ./translate_littlefs_fuse
+RUN git clone https://github.com/rust4c/c2rust_agent.git .
+RUN mv test-projects/translate_chibicc translate_chibicc
+RUN mv test-projects/translate_littlefs_fuse translate_littlefs_fuse
 
 # Build only the command-line tool as intended (avoids GUI deps)
 RUN cargo build --release --locked -p commandline_tool

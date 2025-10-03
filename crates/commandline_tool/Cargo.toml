@@ -12,6 +12,9 @@ walkdir = "2.4"
 tracing = "0.1"
 tracing-subscriber = { version = "0.3", features = ["fmt", "env-filter", "time"] }
 tracing-log = "0.2"
+tracing-appender = "0.2"
+chrono = { version = "0.4", default-features = false, features = ["clock"] }
+rand = { version = "0.8", default-features = false, features = ["std", "std_rng"] }
 
 lsp_services = {path = "../lsp_services"}
 cproject_analy = {path = "../cproject_analy"}
@@ -23,5 +26,4 @@ env_checker = {path = "../env_checker"}
 file_scanner = {path = "../file_scanner"}
 single_processor = {path = "../single_processor"}
 project_remanager = {path = "../project_remanager"}
-c2rust = "0.20.0"
 

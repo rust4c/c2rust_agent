@@ -155,7 +155,7 @@ pub async fn discover_src_cache_projects(root: &Path) -> Result<Vec<PathBuf>> {
 
     let individual = root.join("individual_files");
     let paired = root.join("paired_files");
-    
+
     // 检查至少存在一个目录
     if !individual.exists() && !paired.exists() {
         return Err(anyhow!(

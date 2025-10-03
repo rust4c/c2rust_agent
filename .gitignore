@@ -29,4 +29,7 @@ qdrant_storage/
 *_cache
 *.db
 
+# LOG
+log
+
 # AI prompt

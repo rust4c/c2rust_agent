@@ -1,0 +1,35 @@
+{
+	"version": "2.0.0",
+	"tasks": [
+		{
+			"label": "Build commandline_tool crate",
+			"type": "shell",
+			"command": "cargo build -p commandline_tool",
+			"isBackground": false,
+			"problemMatcher": [
+				"$rustc"
+			],
+			"group": "build"
+		},
+		{
+			"label": "Rebuild CLI after log rotation changes",
+			"type": "shell",
+			"command": "cargo build -p commandline_tool",
+			"isBackground": false,
+			"problemMatcher": [
+				"$rustc"
+			],
+			"group": "build"
+		},
+		{
+			"label": "Build CLI (10-digit log name)",
+			"type": "shell",
+			"command": "cargo build -p commandline_tool",
+			"isBackground": false,
+			"problemMatcher": [
+				"$rustc"
+			],
+			"group": "build"
+		}
+	]
+}

@@ -22,6 +22,10 @@ use tracing_log::LogTracer;
 use tracing_subscriber::filter::LevelFilter as SubLevel;
 use tracing_subscriber::fmt;
 use tracing_subscriber::prelude::*;
+use tracing_appender::rolling;
+use chrono::{Local, Datelike, Timelike};
+use rand::{Rng, rngs::StdRng};
+use rand::SeedableRng;
 
 // // 翻译模块
 // use main_processor::{MainProcessor, ProjectType};
@@ -87,16 +91,71 @@ async fn main() -> Result<()> {
 
     // 初始化日志系统，使用 tracing 统一处理 log 宏与 tracing 事件
     let _ = LogTracer::init();
-    let fmt_layer = fmt::layer()
+
+    // 确保 log 目录存在
+    let log_dir = Path::new("log");
+    if let Err(e) = fs::create_dir_all(log_dir) {
+        eprintln!("创建 log 目录失败: {}", e);
+    }
+
+    // 控制台输出层
+    let stdout_layer = fmt::layer()
         .with_target(false)
         .with_level(true)
         .with_timer(fmt::time::uptime());
+
+    // 将上一次运行的 latest.log 归档为日期命名的文件，当前运行始终写入 latest.log
+    let latest_path = log_dir.join("latest.log");
+    if latest_path.exists() {
+        if let Ok(metadata) = fs::metadata(&latest_path) {
+            if let Ok(modified) = metadata.modified() {
+                // 生成 10 位数字：yyMMddHH + 随机两位数字
+                let datetime: chrono::DateTime<Local> = modified.into();
+                let mut rng = StdRng::from_entropy();
+                let rnd: u8 = rng.gen_range(0..100);
+                let code = format!(
+                    "{:02}{:02}{:02}{:02}{:02}",
+                    (datetime.year() % 100) as i32,
+                    datetime.month(),
+                    datetime.day(),
+                    datetime.hour(),
+                    rnd
+                );
+                let archive_path = log_dir.join(format!("{}.log", code));
+                // 若目标已存在则在名称后追加递增编号
+                let mut final_path = archive_path.clone();
+                let mut idx = 1;
+                while final_path.exists() {
+                    final_path = log_dir.join(format!("{}-{}.log", code, idx));
+                    idx += 1;
+                }
+                let _ = fs::rename(&latest_path, &final_path);
+            }
+        }
+    }
+
+    // 使用"never"滚动，固定写入 latest.log
+    let file_appender = rolling::never(log_dir, "latest.log");
+    let (non_blocking, guard) = tracing_appender::non_blocking(file_appender);
+    // 将 guard 泄漏到静态生命周期，确保程序结束前不被释放导致日志丢失
+    let _guard: &'static _ = Box::leak(Box::new(guard));
+
+    let file_layer = fmt::layer()
+        .with_target(true)
+        .with_level(true)
+        .with_ansi(false)
+        .with_writer(non_blocking);
+
     let level = if cli.debug {
         SubLevel::DEBUG
     } else {
         SubLevel::INFO
     };
-    let subscriber = tracing_subscriber::registry().with(fmt_layer).with(level);
+
+    let subscriber = tracing_subscriber::registry()
+        .with(level)
+        .with(stdout_layer)
+        .with(file_layer);
     let _ = subscriber.try_init();
 
     // 初始化数据库连接
