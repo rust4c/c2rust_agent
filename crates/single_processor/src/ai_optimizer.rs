@@ -6,9 +6,11 @@ use prompt_builder::PromptBuilder;
 use serde_json::Value;
 use std::fs;
 use std::path::Path;
-use tokio::time::{timeout, Duration};
+use tokio::time::{Duration, timeout};
 
-use crate::code_splitter::{append_text_with_limit, make_messages_with_function_chunks, total_len, MAX_TOTAL_PROMPT_CHARS};
+use crate::code_splitter::{
+    MAX_TOTAL_PROMPT_CHARS, append_text_with_limit, make_messages_with_function_chunks, total_len,
+};
 
 /// 当第二次附加编译结果且超过限制时，调用 LLM 进行概括压缩
 async fn summarize_text_if_needed(original: &str, required_len: usize) -> Result<String> {
@@ -63,28 +65,87 @@ fn process_llm_response(llm_response: &str, _output_dir: &Path) -> Result<String
         }
     }
 
-    // 方法3: 尝试直接提取Rust代码块
+    // 方法3: 尝试直接提取Rust代码块（多种变体）
     if rust_code.is_none() {
-        if let Some(start_idx) = llm_response.find("```rust\n") {
-            let code_start = start_idx + 8;
+        // 尝试 ```rust 代码块
+        if let Some(start_idx) = llm_response.find("```rust") {
+            let code_start = if llm_response[start_idx..].starts_with("```rust\n") {
+                start_idx + 8
+            } else {
+                // 处理 ```rust 后面可能有空格的情况
+                start_idx + 7
+            };
+
             if let Some(end_idx) = llm_response[code_start..].find("\n```") {
                 let code_end = code_start + end_idx;
+                info!("成功从```rust代码块中提取代码");
                 rust_code = Some(llm_response[code_start..code_end].to_string());
-                info!("成功从Rust代码块中提取代码");
+            } else if let Some(end_idx) = llm_response[code_start..].find("```") {
+                // 兜底：```后面没有换行符
+                let code_end = code_start + end_idx;
+                warn!("从```rust代码块中提取代码（无结束换行符）");
+                rust_code = Some(llm_response[code_start..code_end].to_string());
             }
-        } else if let Some(start_idx) = llm_response.find("```\n") {
+        }
+        // 尝试通用代码块 ```
+        else if let Some(start_idx) = llm_response.find("```\n") {
             let code_start = start_idx + 4;
             if let Some(end_idx) = llm_response[code_start..].find("\n```") {
                 let code_end = code_start + end_idx;
-                rust_code = Some(llm_response[code_start..code_end].to_string());
                 info!("成功从通用代码块中提取代码");
+                rust_code = Some(llm_response[code_start..code_end].to_string());
             }
         }
     }
 
-    // 方法4: 如果以上方法都失败，尝试将整个响应作为代码
+    // 方法4: 尝试从不完整的JSON中提取rust_code（处理分割失效）
     if rust_code.is_none() {
-        warn!("无法从响应中提取结构化代码，将整个响应作为代码保存");
+        // 使用字符串搜索提取 "rust_code": "..." 的内容
+        if let Some(start_pos) = llm_response.find(r#""rust_code""#) {
+            if let Some(colon_pos) = llm_response[start_pos..].find(':') {
+                let value_start = start_pos + colon_pos + 1;
+                let remaining = &llm_response[value_start..].trim_start();
+
+                // 跳过前导引号
+                if remaining.starts_with('"') {
+                    let content_start =
+                        value_start + (llm_response[value_start..].len() - remaining.len()) + 1;
+                    let bytes = llm_response.as_bytes();
+                    let mut pos = content_start;
+                    let mut escaped = false;
+
+                    // 查找下一个未转义的引号
+                    while pos < bytes.len() {
+                        if escaped {
+                            escaped = false;
+                        } else if bytes[pos] == b'\\' {
+                            escaped = true;
+                        } else if bytes[pos] == b'"' {
+                            // 找到结束引号，处理转义序列
+                            if let Ok(json_str) =
+                                String::from_utf8(bytes[content_start..pos].to_vec())
+                            {
+                                // 手动处理常见的JSON转义序列
+                                let unescaped = json_str
+                                    .replace(r"\n", "\n")
+                                    .replace(r"\t", "\t")
+                                    .replace(r#"\""#, "\"")
+                                    .replace(r"\\", "\\");
+                                info!("从不完整JSON中成功提取并解码rust_code字段");
+                                rust_code = Some(unescaped);
+                                break;
+                            }
+                        }
+                        pos += 1;
+                    }
+                }
+            }
+        }
+    }
+
+    // 方法5: 如果以上方法都失败，尝试将整个响应作为代码（兜底）
+    if rust_code.is_none() {
+        warn!("所有提取方法均失败，将整个响应作为代码保存（兜底处理）");
         rust_code = Some(llm_response.to_string());
     }
 
@@ -92,13 +153,13 @@ fn process_llm_response(llm_response: &str, _output_dir: &Path) -> Result<String
 }
 
 /// AI 第二阶段翻译：优化 C2Rust 生成的代码
-/// 
+///
 /// # 参数
 /// * `rust_code_path` - C2Rust 生成的 Rust 代码路径
 /// * `original_c_path` - 原始 C 代码路径（用于参考）
 /// * `output_dir` - 输出目录
 /// * `compile_errors` - 可选的编译错误信息，用于迭代修复
-/// 
+///
 /// # 返回
 /// 优化后的 Rust 代码
 pub async fn ai_optimize_rust_code(
@@ -183,23 +244,25 @@ pub async fn ai_optimize_rust_code(
                     "检测到编译输出（{} 字符），尝试附加到优化提示中",
                     compile_output.len()
                 );
-                
+
                 let remain = MAX_TOTAL_PROMPT_CHARS.saturating_sub(total_len(&messages));
                 let mut body = compile_output;
-                
+
                 if body.len() + 256 > remain {
                     let target = remain.saturating_sub(256).max(2000);
                     info!("编译输出超限，调用概括以压缩到约 {} 字符", target);
-                    body = summarize_text_if_needed(&body, target).await.unwrap_or_else(|_| {
-                        warn!("概括失败，退化为截断");
-                        if target < body.len() {
-                            body[..target].to_string()
-                        } else {
-                            body.clone()
-                        }
-                    });
+                    body = summarize_text_if_needed(&body, target)
+                        .await
+                        .unwrap_or_else(|_| {
+                            warn!("概括失败，退化为截断");
+                            if target < body.len() {
+                                body[..target].to_string()
+                            } else {
+                                body.clone()
+                            }
+                        });
                 }
-                
+
                 messages = append_text_with_limit(
                     messages,
                     "上一次编译输出/错误",

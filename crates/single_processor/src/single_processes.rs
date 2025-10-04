@@ -22,14 +22,16 @@ fn extract_rust_code_from_response(llm_response: &str) -> Result<String> {
     // 尝试多种方式解析响应
     let mut rust_code = None;
 
-    // 方法1: JSON格式
+    // 方法1: 直接JSON格式
     if let Ok(json_response) = serde_json::from_str::<Value>(llm_response) {
         if let Some(code) = json_response["rust_code"].as_str() {
+            info!("成功从JSON响应中提取rust_code字段");
             rust_code = Some(code.to_string());
         } else if let Some(choices) = json_response["choices"].as_array() {
             if let Some(first_choice) = choices.first() {
                 if let Some(message) = first_choice["message"].as_object() {
                     if let Some(content) = message["content"].as_str() {
+                        info!("成功从OpenAI格式响应中提取内容");
                         rust_code = Some(content.to_string());
                     }
                 }
@@ -37,26 +39,104 @@ fn extract_rust_code_from_response(llm_response: &str) -> Result<String> {
         }
     }
 
-    // 方法2: 代码块
+    // 方法2: 处理被代码块包裹的JSON（可能被markdown包裹）
     if rust_code.is_none() {
-        if let Some(start_idx) = llm_response.find("```rust\n") {
-            let code_start = start_idx + 8;
+        let cleaned_response = llm_response
+            .trim()
+            .trim_start_matches("```json")
+            .trim_start_matches("```")
+            .trim_end_matches("```")
+            .trim();
+
+        if let Ok(json_response) = serde_json::from_str::<Value>(cleaned_response) {
+            if let Some(code) = json_response["rust_code"].as_str() {
+                info!("成功从清理后的JSON响应中提取rust_code字段");
+                rust_code = Some(code.to_string());
+            }
+        }
+    }
+
+    // 方法3: 提取Rust代码块（多种变体）
+    if rust_code.is_none() {
+        // 尝试 ```rust 代码块
+        if let Some(start_idx) = llm_response.find("```rust") {
+            let code_start = if llm_response[start_idx..].starts_with("```rust\n") {
+                start_idx + 8
+            } else {
+                // 处理 ```rust 后面可能有空格的情况
+                start_idx + 7
+            };
+
             if let Some(end_idx) = llm_response[code_start..].find("\n```") {
                 let code_end = code_start + end_idx;
+                info!("成功从```rust代码块中提取代码");
+                rust_code = Some(llm_response[code_start..code_end].to_string());
+            } else if let Some(end_idx) = llm_response[code_start..].find("```") {
+                // 兜底：```后面没有换行符
+                let code_end = code_start + end_idx;
+                warn!("从```rust代码块中提取代码（无结束换行符）");
                 rust_code = Some(llm_response[code_start..code_end].to_string());
             }
-        } else if let Some(start_idx) = llm_response.find("```\n") {
+        }
+        // 尝试通用代码块 ```
+        else if let Some(start_idx) = llm_response.find("```\n") {
             let code_start = start_idx + 4;
             if let Some(end_idx) = llm_response[code_start..].find("\n```") {
                 let code_end = code_start + end_idx;
+                info!("成功从通用代码块中提取代码");
                 rust_code = Some(llm_response[code_start..code_end].to_string());
             }
         }
     }
 
-    // 方法3: 整个响应
+    // 方法4: 尝试从不完整的JSON中提取rust_code（处理分割失效）
     if rust_code.is_none() {
-        warn!("无法从响应中提取结构化代码，将整个响应作为代码保存");
+        // 使用字符串搜索提取 "rust_code": "..." 的内容
+        if let Some(start_pos) = llm_response.find(r#""rust_code""#) {
+            if let Some(colon_pos) = llm_response[start_pos..].find(':') {
+                let value_start = start_pos + colon_pos + 1;
+                let remaining = &llm_response[value_start..].trim_start();
+
+                // 跳过前导引号
+                if remaining.starts_with('"') {
+                    let content_start =
+                        value_start + (llm_response[value_start..].len() - remaining.len()) + 1;
+                    let bytes = llm_response.as_bytes();
+                    let mut pos = content_start;
+                    let mut escaped = false;
+
+                    // 查找下一个未转义的引号
+                    while pos < bytes.len() {
+                        if escaped {
+                            escaped = false;
+                        } else if bytes[pos] == b'\\' {
+                            escaped = true;
+                        } else if bytes[pos] == b'"' {
+                            // 找到结束引号，处理转义序列
+                            if let Ok(json_str) =
+                                String::from_utf8(bytes[content_start..pos].to_vec())
+                            {
+                                // 手动处理常见的JSON转义序列
+                                let unescaped = json_str
+                                    .replace(r"\n", "\n")
+                                    .replace(r"\t", "\t")
+                                    .replace(r#"\""#, "\"")
+                                    .replace(r"\\", "\\");
+                                info!("从不完整JSON中成功提取并解码rust_code字段");
+                                rust_code = Some(unescaped);
+                                break;
+                            }
+                        }
+                        pos += 1;
+                    }
+                }
+            }
+        }
+    }
+
+    // 方法5: 整个响应作为兜底
+    if rust_code.is_none() {
+        warn!("所有提取方法均失败，将整个响应作为代码保存（兜底处理）");
         rust_code = Some(llm_response.to_string());
     }
 
