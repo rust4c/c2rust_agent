@@ -7,6 +7,7 @@ use serde_json::Value;
 use std::fs::{self, File};
 use std::io::Write;
 use std::path::Path;
+use std::sync::Arc;
 use tokio::time::{Duration, timeout};
 
 // 导入各模块
@@ -135,15 +136,31 @@ pub async fn singlefile_processor(file_path: &Path) -> Result<()> {
     Ok(())
 }
 
-/// 两阶段翻译主函数
+/// 阶段状态回调类型
+pub type StageCallback = Arc<dyn Fn(&str) + Send + Sync>;
+
+/// 两阶段翻译主函数（带进度回调）
 ///
 /// 第一阶段：C2Rust 自动翻译
 /// 第二阶段：AI 优化并集成编译验证（最多重试 3 次）
-pub async fn two_stage_processor(file_path: &Path) -> Result<()> {
+pub async fn two_stage_processor_with_callback(
+    file_path: &Path,
+    callback: Option<StageCallback>,
+) -> Result<()> {
+    let notify = |msg: &str| {
+        if let Some(ref cb) = callback {
+            cb(msg);
+        }
+    };
+
     info!("开始两阶段翻译处理: {:?}", file_path);
+    notify("📋 准备处理C文件");
+
+    notify("📋 准备处理C文件");
 
     let processed_c_file = process_c_h_files(file_path)?;
     info!("要翻译的C文件: {:?}", processed_c_file);
+    notify("✓ C文件预处理完成");
 
     let work_dir = file_path.join("two-stage-translation");
     let c2rust_dir = work_dir.join("c2rust-output");
@@ -153,18 +170,22 @@ pub async fn two_stage_processor(file_path: &Path) -> Result<()> {
     fs::create_dir_all(&c2rust_dir)?;
     fs::create_dir_all(&final_dir)?;
 
+    notify("🔄 阶段1/2: C2Rust自动翻译");
     info!("🔄 第一阶段：C2Rust 自动翻译");
     let c2rust_output = match c2rust_translate(&processed_c_file, &c2rust_dir).await {
         Ok(path) => {
             info!("✅ C2Rust 翻译成功: {:?}", path);
+            notify("✓ C2Rust翻译完成");
             path
         }
         Err(e) => {
             warn!("⚠️  C2Rust 翻译失败: {}，将跳过第一阶段直接使用AI翻译", e);
+            notify("⚠️ C2Rust失败，切换纯AI模式");
             return singlefile_processor(file_path).await;
         }
     };
 
+    notify("🔄 阶段2/2: AI优化+编译验证");
     info!("🔄 第二阶段：AI 代码优化 + 编译验证");
     create_rust_project_structure(&final_dir)?;
 
@@ -173,6 +194,7 @@ pub async fn two_stage_processor(file_path: &Path) -> Result<()> {
     let mut compile_errors: Option<String> = None;
 
     for attempt in 1..=max_retries {
+        notify(&format!("🔄 AI优化 (尝试 {}/{})", attempt, max_retries));
         info!("🔄 AI优化尝试 {}/{}", attempt, max_retries);
 
         let optimized_code = ai_optimize_rust_code(
@@ -185,11 +207,14 @@ pub async fn two_stage_processor(file_path: &Path) -> Result<()> {
 
         fs::write(&final_output_path, &optimized_code)?;
         info!("✅ AI优化代码已保存: {:?}", final_output_path);
+        notify("✓ AI优化完成，准备编译");
 
+        notify(&format!("🔍 编译验证 (尝试 {}/{})", attempt, max_retries));
         info!("🔍 开始编译验证（尝试 {}/{}）", attempt, max_retries);
         match verify_compilation(&final_dir) {
             Ok(_) => {
                 info!("🎉 编译验证通过！两阶段翻译成功完成");
+                notify("🎉 编译通过！");
 
                 let c2rust_backup_path = final_dir.join("c2rust_original.rs");
                 if let Ok(c2rust_content) = fs::read_to_string(&c2rust_output) {
@@ -198,11 +223,16 @@ pub async fn two_stage_processor(file_path: &Path) -> Result<()> {
                 }
 
                 info!("✅ 两阶段翻译处理完成，最终结果: {:?}", final_output_path);
+                notify("✅ 全部完成");
                 return Ok(());
             }
             Err(e) => {
                 if attempt < max_retries {
                     warn!("❌ 编译失败（尝试 {}/{}），准备重试", attempt, max_retries);
+                    notify(&format!(
+                        "❌ 编译失败，准备重试 ({}/{})",
+                        attempt, max_retries
+                    ));
 
                     let error_msg = e.to_string();
                     let key_errors = extract_key_errors(&error_msg);
@@ -212,6 +242,7 @@ pub async fn two_stage_processor(file_path: &Path) -> Result<()> {
                 } else {
                     warn!("❌ 编译验证失败，已达最大重试次数 {}", max_retries);
                     warn!("最后的编译错误: {}", e);
+                    notify("❌ 编译失败，已达重试上限");
 
                     let error_log_path = final_dir.join("final_compile_errors.txt");
                     fs::write(&error_log_path, e.to_string())?;
@@ -228,4 +259,9 @@ pub async fn two_stage_processor(file_path: &Path) -> Result<()> {
     }
 
     Err(anyhow::anyhow!("两阶段翻译失败：未知错误"))
+}
+
+/// 两阶段翻译主函数（无回调版本，向后兼容）
+pub async fn two_stage_processor(file_path: &Path) -> Result<()> {
+    two_stage_processor_with_callback(file_path, None).await
 }

@@ -29,6 +29,7 @@ qdrant_storage/
 *_cache
 *.db
 config/config.toml
+src_workspace/
 
 # LOG
 log
