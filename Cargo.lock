@@ -5535,8 +5535,11 @@ dependencies = [
  "llm_requester",
  "log",
  "prompt_builder",
+ "regex",
+ "rust_checker",
  "serde",
  "serde_json",
+ "tempfile",
  "tokio",
  "tracing",
 ]

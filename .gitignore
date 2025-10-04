@@ -28,6 +28,7 @@ test_file
 qdrant_storage/
 *_cache
 *.db
+config/config.toml
 
 # LOG
 log

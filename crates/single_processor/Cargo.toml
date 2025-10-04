@@ -10,7 +10,12 @@ tokio = "1.47.1"
 tracing = "0.1"
 serde = { version = "1.0", features = ["derive"] }
 serde_json = "1.0"
+regex = "1.10"
 
 db_services = { path = "../db_services" }
 llm_requester = { path = "../llm_requester" }
 prompt_builder = { path = "../prompt_builder" }
+rust_checker = { path = "../rust_checker" }
+
+[dev-dependencies]
+tempfile = "3.8"
