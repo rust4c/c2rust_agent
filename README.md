@@ -51,12 +51,14 @@ Note: If the Mermaid diagram does not render in your viewer, open this file on G
 C2Rust Agent now features an advanced two-stage translation process that combines the reliability of automated tools with the intelligence of AI:
 
 ### Stage 1: C2Rust Automated Translation
+
 - Uses the official [C2Rust](https://c2rust.com/) transpiler for initial conversion
 - Generates functionally equivalent Rust code with safety guarantees
 - Handles complex C constructs like pointer arithmetic and unions
 - Creates a solid foundation for further optimization
 
 ### Stage 2: AI Optimization
+
 - LLM analyzes and optimizes the C2Rust-generated code
 - Removes unnecessary `unsafe` blocks where possible
 - Improves memory management using Rust's ownership system
@@ -64,12 +66,20 @@ C2Rust Agent now features an advanced two-stage translation process that combine
 - Adds proper error handling and documentation
 
 **Benefits:**
+
 - Higher translation quality compared to either approach alone
 - Automatic fallback to pure AI translation if C2Rust fails
 - Side-by-side comparison of both outputs
 - Maintains functional correctness while improving code quality
+- Iterative compilation error fixing with AI feedback loops
 
-For detailed setup and usage instructions, see [TWO_STAGE_TRANSLATION.md](TWO_STAGE_TRANSLATION.md).
+**Implementation:**
+The two-stage translation is implemented in the `single_processor` crate with the following key components:
+
+- `c2rust_translator`: Handles C2Rust automated translation
+- `ai_optimizer`: Optimizes and fixes C2Rust-generated code using LLMs
+- `rust_verifier`: Validates generated code with Rust compiler
+- `two_stage_processor`: Orchestrates the complete workflow
 
 Core components:
 
@@ -93,7 +103,7 @@ Core components:
 ### Build from Source
 
 ```bash
-git clone https://github.com/yourusername/c2rust_agent.git
+git clone https://github.com/rust4c/c2rust_agent.git
 cd c2rust_agent
 cargo build --release
 ```
@@ -176,23 +186,23 @@ async fn main() -> anyhow::Result<()> {
     // Step 1: Preprocess C project (required for complex projects)
     let mut preprocessor = PreProcessor::new_default();
     preprocessor.initialize_database().await?;
-  
+
     let stats = preprocessor.preprocess_project(
         &std::path::Path::new("/path/to/c/project"),
         &std::path::Path::new("./cache")
     ).await?;
-  
+
     // Step 2: Main processing (translation)
     let config = pkg_config::get_config()?;
     let processor = MainProcessor::new(config);
-  
+
     // Single file/directory
     processor.process_single("/path/to/c/project").await?;
-  
+
     // Batch processing
     let paths = vec![/* your paths */];
     processor.process_batch(paths).await?;
-  
+
     Ok(())
 }
 ```
@@ -305,11 +315,19 @@ cargo test -p project_remanager
 
 ## Crate Documentation
 
-- `main_processor` - Core translation engine
-- `cproject_analy` - C project preprocessing
+- `main_processor` - Core translation engine for complex projects
+- `single_processor` - Two-stage translation (C2Rust + AI optimization)
+- `cproject_analy` - C project preprocessing and analysis
 - `project_remanager` - Workspace reorganization
-- `lsp_services` - LSP integration
-- `db_services` - Database management
+- `lsp_services` - LSP integration for code analysis
+- `db_services` - Database management (SQLite + Qdrant)
+- `llm_requester` - LLM API abstraction layer
+- `prompt_builder` - Context-aware prompt generation
+- `rust_checker` - Rust compilation validation
+- `file_scanner` - Project structure scanning
+- `env_checker` - Environment validation
+- `commandline_tool` - CLI interface
+- `ui_main` - Web-based GUI interface
 
 ## Limitations
 
