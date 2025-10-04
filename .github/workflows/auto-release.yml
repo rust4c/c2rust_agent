@@ -29,26 +29,17 @@ jobs:
         id: vars
         run: |
           if [[ "${GITHUB_REF}" == "refs/heads/main" ]]; then
+            date_tag=$(date -u +'%Y%m%d')
+            echo "TAG=release-${date_tag}-${GITHUB_RUN_NUMBER}" >> $GITHUB_OUTPUT
+            echo "NAME=Release ${date_tag} (${GITHUB_RUN_NUMBER})" >> $GITHUB_OUTPUT
+            echo "PRERELEASE=false" >> $GITHUB_OUTPUT
+          else
             short_sha="${GITHUB_SHA::7}"
             echo "TAG=prerelease-${GITHUB_RUN_NUMBER}-${short_sha}" >> $GITHUB_OUTPUT
             echo "NAME=Prerelease ${GITHUB_RUN_NUMBER} (${short_sha})" >> $GITHUB_OUTPUT
             echo "PRERELEASE=true" >> $GITHUB_OUTPUT
-          else
-            date_tag=$(date -u +'%Y%m%d')
-            echo "TAG=release-${date_tag}-${GITHUB_RUN_NUMBER}" >> $GITHUB_OUTPUT
-            echo "NAME=Prerelease ${date_tag} (${GITHUB_RUN_NUMBER})" >> $GITHUB_OUTPUT
-            echo "PRERELEASE=true" >> $GITHUB_OUTPUT
           fi
-      - name: Create tag (main only, no release)
-        if: github.ref == 'refs/heads/main'
-        run: |
-          git config user.name "github-actions[bot]"
-          git config user.email "github-actions[bot]@users.noreply.github.com"
-          git tag -a "${{ steps.vars.outputs.TAG }}" -m "${{ steps.vars.outputs.NAME }}"
-          git push origin "refs/tags/${{ steps.vars.outputs.TAG }}"
-        shell: bash
-      - name: Create or update GitHub (pre)release
-        if: github.ref != 'refs/heads/main'
+      - name: Create or update GitHub release
         uses: softprops/action-gh-release@v2
         with:
           tag_name: ${{ steps.vars.outputs.TAG }}
@@ -62,7 +53,7 @@ jobs:
     name: Build CLI (${{ matrix.os }})
     needs: create_release
     runs-on: ${{ matrix.os }}
-    if: startsWith(github.ref, 'refs/heads/release')
+    if: github.ref == 'refs/heads/main' || startsWith(github.ref, 'refs/heads/release')
     strategy:
       fail-fast: false
       matrix:
