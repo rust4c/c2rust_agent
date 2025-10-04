@@ -13,19 +13,19 @@ use env_checker::ai_checker::{AIConnectionStatus, ai_service_init};
 use env_checker::dbdata_init;
 use tokio;
 
+use chrono::{Datelike, Local, Timelike};
 use log::{debug, error, info, warn};
 use main_processor::process_batch_paths;
 use project_remanager::ProjectReorganizer;
+use rand::SeedableRng;
+use rand::{Rng, rngs::StdRng};
 use single_processor::single_processes::singlefile_processor;
 use std::collections::HashSet;
+use tracing_appender::rolling;
 use tracing_log::LogTracer;
 use tracing_subscriber::filter::LevelFilter as SubLevel;
 use tracing_subscriber::fmt;
 use tracing_subscriber::prelude::*;
-use tracing_appender::rolling;
-use chrono::{Local, Datelike, Timelike};
-use rand::{Rng, rngs::StdRng};
-use rand::SeedableRng;
 
 // // 翻译模块
 // use main_processor::{MainProcessor, ProjectType};
@@ -98,7 +98,7 @@ async fn main() -> Result<()> {
         eprintln!("创建 log 目录失败: {}", e);
     }
 
-    // 控制台输出层
+    // 控制台输出层（仅用于日志显示，不包含交互提示）
     let stdout_layer = fmt::layer()
         .with_target(false)
         .with_level(true)
@@ -146,16 +146,22 @@ async fn main() -> Result<()> {
         .with_ansi(false)
         .with_writer(non_blocking);
 
-    let level = if cli.debug {
+    // 日志级别：终端在非 debug 仅显示 WARN/ERROR；debug 时显示所有
+    // 文件日志：非 debug 记录到 INFO；debug 记录到 DEBUG
+    let stdout_filter = if cli.debug {
+        SubLevel::DEBUG
+    } else {
+        SubLevel::WARN
+    };
+    let file_filter = if cli.debug {
         SubLevel::DEBUG
     } else {
         SubLevel::INFO
     };
 
     let subscriber = tracing_subscriber::registry()
-        .with(level)
-        .with(stdout_layer)
-        .with(file_layer);
+        .with(stdout_layer.with_filter(stdout_filter))
+        .with(file_layer.with_filter(file_filter));
     let _ = subscriber.try_init();
 
     // 初始化数据库连接
@@ -164,6 +170,7 @@ async fn main() -> Result<()> {
     // 检查数据库状态
     match dbdata_init(manager).await {
         Ok(status) => {
+            // 后台状态记录到日志，不主动在控制台交互输出
             info!("数据库状态: {:?}", status);
         }
         Err(e) => {
@@ -174,6 +181,7 @@ async fn main() -> Result<()> {
     let ai_checkers = ai_service_init().await;
     match ai_checkers {
         Ok(status) => {
+            // 后台状态记录到日志，不主动在控制台交互输出
             info!("AI 服务状态: {:?}", status);
             match status {
                 AIConnectionStatus::AllConnected => info!("AI 服务已连接"),
@@ -191,12 +199,12 @@ async fn main() -> Result<()> {
     match &cli.command {
         Commands::Analyze { input_dir } => {
             debug!("已选择分析命令");
-            info!("输入目录: {}", input_dir.display());
+            println!("开始分析项目\n输入目录: {}", input_dir.display());
             let input_dir = input_dir.to_str().unwrap_or("未指定");
 
             // 使用带数据库支持的分析功能
             match analyze_project_with_default_database(input_dir, false).await {
-                Ok(_) => info!("✅ 分析完成，结果已保存到数据库"),
+                Ok(_) => println!("✅ 分析完成，结果已保存到数据库"),
                 Err(e) => {
                     error!("⚠️ 数据库分析失败，尝试基础分析: {}", e);
                     let _ = check_function_and_class_name(input_dir, false);
@@ -210,7 +218,7 @@ async fn main() -> Result<()> {
             output_dir,
         } => {
             debug!("已选择预处理命令");
-            info!("输入目录:{}", input_dir.display());
+            println!("开始预处理\n输入目录: {}", input_dir.display());
 
             // 确定输出目录
             let output_dir = output_dir.clone().unwrap_or_else(|| {
@@ -224,7 +232,7 @@ async fn main() -> Result<()> {
                 let cache_dir_name = format!("{}_cache", dir_name);
                 parent.join(cache_dir_name)
             });
-            info!("输出目录: {}", output_dir.display());
+            println!("输出目录: {}", output_dir.display());
 
             // 确保输出目录存在
             if let Err(e) = fs::create_dir_all(&output_dir) {
@@ -232,7 +240,7 @@ async fn main() -> Result<()> {
                 return Ok(());
             }
 
-            info!("正在预处理项目...");
+            println!("正在预处理项目...");
 
             let config = PreprocessConfig::default();
             let mut preprocessor = CProjectPreprocessor::new(Some(config));
@@ -243,12 +251,12 @@ async fn main() -> Result<()> {
             }
 
             // 使用预处理后的目录进行分析
-            info!("预处理完成，缓存目录: {}", output_dir.display());
-            info!("开始分析项目...");
+            println!("预处理完成，缓存目录: {}", output_dir.display());
+            println!("开始分析项目...");
 
             // 使用带数据库支持的分析功能
             match analyze_project_with_default_database(output_dir.to_str().unwrap(), false).await {
-                Ok(_) => info!("✅ 项目分析完成，结果已保存到数据库"),
+                Ok(_) => println!("✅ 项目分析完成，结果已保存到数据库"),
                 Err(e) => {
                     error!("⚠️ 数据库分析失败，尝试基础分析: {}", e);
                     let _ = check_function_and_class_name(output_dir.to_str().unwrap(), false);
@@ -262,18 +270,18 @@ async fn main() -> Result<()> {
             input_dir,
             output_dir, // 若提供则用于最终重组输出
         } => {
-            info!("已选择转换命令");
-            info!("输入目录: {}", input_dir.display());
+            println!("已选择转换命令\n输入目录: {}", input_dir.display());
 
             let cfg = main_processor::pkg_config::get_config()?;
 
             if !input_dir.exists() {
                 error!("错误: 输入目录不存在: {}", input_dir.display());
+                println!("错误: 输入目录不存在: {}", input_dir.display());
                 return Ok(());
             }
 
             // 第一步：预处理 -> 生成 src_cache
-            info!("开始预处理 (preprocess)...");
+            println!("开始预处理 (preprocess)...");
             let cache_dir = {
                 let parent = input_dir.parent().unwrap_or_else(|| Path::new("."));
                 let dir_name = input_dir
@@ -289,35 +297,38 @@ async fn main() -> Result<()> {
                 let mut preprocessor = CProjectPreprocessor::new(Some(config));
                 if let Err(e) = preprocessor.preprocess_project(input_dir, &cache_dir) {
                     error!("预处理失败: {}", e);
+                    println!("预处理失败: {}", e);
                     return Ok(());
                 }
-                info!("预处理完成，缓存目录: {}", cache_dir.display());
+                println!("预处理完成，缓存目录: {}", cache_dir.display());
             } else {
-                info!("检测到已有缓存目录: {}，跳过预处理", cache_dir.display());
+                println!("检测到已有缓存目录: {}，跳过预处理", cache_dir.display());
             }
 
             // 第二步：发现 C 项目（基于 cache 目录）
-            info!("正在发现C项目...");
+            println!("正在发现C项目...");
             let projects = match discover_c_projects(&cache_dir).await {
                 Ok(projects) => projects,
                 Err(e) => {
                     error!("发现C项目失败: {}", e);
+                    println!("发现C项目失败: {}", e);
                     return Ok(());
                 }
             };
 
             if projects.is_empty() {
                 warn!("在目录 {} 中没有找到C项目", input_dir.display());
+                println!("在目录 {} 中没有找到C项目", input_dir.display());
                 return Ok(());
             }
 
-            info!("发现 {} 个C项目:", projects.len());
+            println!("发现 {} 个C项目:", projects.len());
             for (i, project) in projects.iter().enumerate() {
-                info!("  {}. {}", i + 1, project.display());
+                println!("  {}. {}", i + 1, project.display());
             }
 
             // 第三步：批量转换 C -> Rust
-            info!("开始批量转换...");
+            println!("开始批量转换...");
             match process_batch_paths(cfg, projects).await {
                 Ok(()) => {
                     info!("✅ 所有C到Rust转换完成!");
@@ -335,11 +346,12 @@ async fn main() -> Result<()> {
                             .unwrap_or_else(|| "project".to_string());
                         parent.join(format!("{}_workspace", dir_name))
                     });
-                    info!("开始重组项目: {}", workspace_out.display());
+                    println!("开始重组项目: {}", workspace_out.display());
                     let reorganizer =
                         ProjectReorganizer::new(cache_dir.clone(), workspace_out.clone());
                     if let Err(e) = reorganizer.reorganize() {
                         error!("重组项目失败: {}", e);
+                        println!("重组项目失败: {}", e);
                     } else {
                         println!("📦 已生成工作区: {}", workspace_out.display());
                     }
@@ -361,8 +373,10 @@ async fn main() -> Result<()> {
         }
 
         Commands::Test { input_dir } => {
-            info!("已选择测试单文件处理命令");
-            info!("文件路径: {}", input_dir.display());
+            println!(
+                "已选择测试单文件处理命令\n文件路径: {}",
+                input_dir.display()
+            );
             let _ = singlefile_processor(input_dir).await;
             Ok(())
         }

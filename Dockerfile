@@ -36,7 +36,7 @@ RUN set -eux; \
     sed -i 's@//ports.ubuntu.com@//mirrors.ustc.edu.cn@g' /etc/apt/sources.list || true; \
     fi
 
-# System packages: build tools, VCS, SSL, SQLite, clang/LLVM, FUSE, etc.
+# System packages: build tools, VCS, SSL, SQLite, LLVM/Clang v18 (with CMake files), FUSE, etc.
 RUN apt-get update && \
     apt-get install -y --no-install-recommends \
     nano \
@@ -46,12 +46,12 @@ RUN apt-get update && \
     build-essential \
     pkg-config \
     cmake \
-    glib-2.0-dev \
     python3 \
     python3-pip \
-    clang \
-    llvm \
-    libclang-dev \
+    llvm-18 \
+    llvm-18-dev \
+    clang-18 \
+    libclang-18-dev \
     libssl-dev \
     zlib1g-dev \
     libsqlite3-dev \
@@ -61,6 +61,15 @@ RUN apt-get update && \
     openssh-server \
     openssh-client \
     && rm -rf /var/lib/apt/lists/*
+
+# Make LLVM/Clang discoverable by CMake (for c2rust-ast-exporter)
+ENV LLVM_VERSION=18 \
+    CMAKE_PREFIX_PATH=/usr/lib/llvm-18/lib/cmake \
+    LLVM_DIR=/usr/lib/llvm-18/lib/cmake/llvm \
+    Clang_DIR=/usr/lib/llvm-18/lib/cmake/clang
+
+# Sanity check: ensure LLVMConfig.cmake exists
+RUN test -f /usr/lib/llvm-18/lib/cmake/llvm/LLVMConfig.cmake
 
 # Install Rust via rustup (stable) and useful components
 RUN curl -fsSL https://sh.rustup.rs | sh -s -- -y --profile minimal --default-toolchain stable && \
@@ -86,9 +95,9 @@ RUN git clone https://github.com/rust4c/c2rust_agent.git .
 RUN mv test-projects/translate_chibicc translate_chibicc
 RUN mv test-projects/translate_littlefs_fuse translate_littlefs_fuse
 
-# Install LLVM and c2rust
-RUN bash -c "$(wget -O - https://apt.llvm.org/llvm.sh)"
-RUN LLVM_CONFIG_PATH=/usr/bin/llvm-config cargo install --git https://github.com/immunant/c2rust.git c2rust
+# Install c2rust using versioned llvm-config for reliable detection
+ENV LLVM_CONFIG_PATH=/usr/bin/llvm-config-18
+RUN cargo install --git https://github.com/immunant/c2rust.git c2rust
 
 # Build only the command-line tool as intended (avoids GUI deps)
 RUN cargo build --release --locked -p commandline_tool

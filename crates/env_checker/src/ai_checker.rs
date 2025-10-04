@@ -27,12 +27,16 @@ pub enum AIConnectionStatus {
 /// 初始化 AI 服务并检查连接状态
 pub async fn ai_service_init() -> Result<AIConnectionStatus> {
     info!("开始初始化 AI 服务连接...");
+    // 交互信息：在终端提示用户当前正在进行的操作
+    println!("正在检查 AI 服务连接...");
 
     // 获取配置
     let config = match get_config() {
         Ok(config) => config,
         Err(e) => {
             warn!("获取 AI 配置失败: {}", e);
+            // 交互信息
+            println!("获取 AI 配置失败: {}", e);
             return Ok(AIConnectionStatus::Unknown);
         }
     };
@@ -42,6 +46,8 @@ pub async fn ai_service_init() -> Result<AIConnectionStatus> {
         Ok(status) => status,
         Err(e) => {
             warn!("检查 {} 连接失败: {}", config.provider, e);
+            // 交互信息
+            println!("检查 {} 连接失败: {}", config.provider, e);
             false
         }
     };
@@ -55,9 +61,19 @@ pub async fn ai_service_init() -> Result<AIConnectionStatus> {
 
     // 记录连接状态
     match connection_status {
-        AIConnectionStatus::AllConnected => info!("AI 服务连接正常: {} 已连接", config.provider),
-        AIConnectionStatus::AllDisconnected => warn!("AI 服务连接失败: {} 未连接", config.provider),
-        _ => info!("AI 服务连接状态: {:?}", connection_status),
+        AIConnectionStatus::AllConnected => {
+            info!("AI 服务连接正常: {} 已连接", config.provider);
+            // 交互信息
+            println!("AI 服务连接正常: {} 已连接", config.provider);
+        }
+        AIConnectionStatus::AllDisconnected => {
+            warn!("AI 服务连接失败: {} 未连接", config.provider);
+            // 交互信息
+            println!("AI 服务连接失败: {} 未连接", config.provider);
+        }
+        _ => {
+            info!("AI 服务连接状态: {:?}", connection_status);
+        }
     }
 
     Ok(connection_status)

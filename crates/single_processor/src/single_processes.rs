@@ -12,7 +12,7 @@ use std::process::Command;
 use tokio::time::{Duration, timeout};
 
 // 处理文件夹中的.c和.h文件
-fn process_c_h_files(dir_path: &Path) -> Result<PathBuf> {
+pub fn process_c_h_files(dir_path: &Path) -> Result<PathBuf> {
     info!("开始处理C/H文件，路径: {:?}", dir_path);
 
     let mut c_files = Vec::new();
@@ -104,7 +104,7 @@ fn process_c_h_files(dir_path: &Path) -> Result<PathBuf> {
 }
 
 // 创建 Rust 项目结构
-fn create_rust_project_structure(project_path: &Path) -> Result<()> {
+pub fn create_rust_project_structure(project_path: &Path) -> Result<()> {
     info!("创建Rust项目结构，路径: {:?}", project_path);
 
     // 创建项目目录
@@ -302,41 +302,46 @@ pub async fn singlefile_processor(file_path: &Path) -> Result<()> {
 }
 
 // C2Rust 第一阶段翻译：使用 C2Rust 工具自动翻译
-async fn c2rust_translate(c_file_path: &Path, output_dir: &Path) -> Result<PathBuf> {
-    info!("开始 C2Rust 第一阶段翻译: {:?}", c_file_path);
+pub async fn c2rust_translate(dir_path: &Path, output_dir: &Path) -> Result<PathBuf> {
+    info!("开始 C2Rust 第一阶段翻译: {:?}", dir_path);
 
     // 确保输出目录存在
     fs::create_dir_all(output_dir)?;
 
-    // 创建编译数据库 (compile_commands.json)
-    let compile_commands_path = output_dir.join("compile_commands.json");
-    let compile_commands_content = format!(
-        r#"[
-    {{
-        "directory": "{}",
-        "command": "clang -c {}",
-        "file": "{}"
-    }}
-]"#,
-        output_dir.display(),
-        c_file_path.display(),
-        c_file_path.display()
-    );
+    // 收集目录下的 .c 与 .h 源文件（非递归）
+    let mut sources: Vec<PathBuf> = Vec::new();
+    for entry in fs::read_dir(dir_path)? {
+        let entry = entry?;
+        let p = entry.path();
+        if p.is_file() {
+            if let Some(ext) = p.extension() {
+                match ext.to_str() {
+                    Some("c") | Some("h") => sources.push(p),
+                    _ => {}
+                }
+            }
+        }
+    }
 
-    fs::write(&compile_commands_path, compile_commands_content)?;
-    info!("已创建编译数据库: {:?}", compile_commands_path);
+    if sources.is_empty() {
+        return Err(anyhow::anyhow!(
+            "目录中未找到可转换的 .c/.h 源文件: {}",
+            dir_path.display()
+        ));
+    }
 
-    // 运行 C2Rust 转换
-    info!("执行 C2Rust 转换命令...");
-    let output = Command::new("c2rust")
-        .arg("transpile")
-        .arg(&compile_commands_path)
+    info!("将转换 {} 个源文件", sources.len());
+
+    // 运行 C2Rust 转换（简易模式：直接传入源文件列表）
+    info!("执行 C2Rust 转换命令(简易模式)...");
+    let mut cmd = Command::new("c2rust");
+    cmd.arg("transpile")
         .arg("--output-dir")
         .arg(output_dir)
-        .arg("--binary")
-        .arg("converted") // 生成的二进制文件名
-        .current_dir(output_dir)
-        .output();
+        .args(&sources)
+        .current_dir(output_dir);
+
+    let output = cmd.output();
 
     match output {
         Ok(result) => {
@@ -378,7 +383,7 @@ async fn c2rust_translate(c_file_path: &Path, output_dir: &Path) -> Result<PathB
 }
 
 // AI 第二阶段翻译：优化 C2Rust 生成的代码
-async fn ai_optimize_rust_code(
+pub async fn ai_optimize_rust_code(
     rust_code_path: &Path,
     original_c_path: &Path,
     output_dir: &Path,
