@@ -86,6 +86,10 @@ RUN git clone https://github.com/rust4c/c2rust_agent.git .
 RUN mv test-projects/translate_chibicc translate_chibicc
 RUN mv test-projects/translate_littlefs_fuse translate_littlefs_fuse
 
+# Install LLVM and c2rust
+RUN bash -c "$(wget -O - https://apt.llvm.org/llvm.sh)"
+RUN LLVM_CONFIG_PATH=/usr/bin/llvm-config cargo install --git https://github.com/immunant/c2rust.git c2rust
+
 # Build only the command-line tool as intended (avoids GUI deps)
 RUN cargo build --release --locked -p commandline_tool
 
