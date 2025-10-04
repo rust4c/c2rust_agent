@@ -5,22 +5,31 @@ use std::path::Path;
 
 /// 编译验证和修复
 ///
-/// 使用 rust_checker 编译项目，检查是否成功
+/// 使用 rust_checker 编译项目，自动检测是否为 workspace 并选择合适的编译方式
 /// 成功返回 Ok(())，失败返回编译错误信息
-pub fn verify_compilation(project_path: &Path) -> Result<String> {
+pub fn verify_compilation(project_path: &Path) -> Result<()> {
     info!("开始编译验证: {:?}", project_path);
 
     let checker = RustCodeCheck::new(project_path);
-    let result = checker.check_rust_project();
+
+    // 自动检测是否为 workspace
+    let result = if checker.is_workspace() {
+        info!("检测到 workspace 项目，使用 workspace 构建");
+        checker.check_workspace()
+    } else {
+        info!("检测到单项目，使用常规构建");
+        checker.check_rust_project()
+    };
 
     match result {
         Ok(()) => {
             info!("✅ 编译验证通过");
-            Ok(String::new())
+            Ok(())
         }
         Err(e) => {
             let error_msg = format!("编译失败: {}", e);
             warn!("❌ 编译验证失败");
+            error!("错误详情: {}", error_msg);
             Err(anyhow::anyhow!(error_msg))
         }
     }
