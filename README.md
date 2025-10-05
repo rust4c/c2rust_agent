@@ -1,7 +1,5 @@
 # C2Rust Agent
 
-![](images/example.png)
-
 [English](README.md) | [中文](README-CN.md)
 
 An intelligent LLM-powered tool for converting C projects to idiomatic Rust code with database-driven context awareness and LSP analysis.
@@ -9,6 +7,8 @@ An intelligent LLM-powered tool for converting C projects to idiomatic Rust code
 [![Rust](https://img.shields.io/badge/rust-1.70+-orange.svg)](https://www.rust-lang.org)
 [![License: MIT](https://img.shields.io/badge/License-MIT-yellow.svg)](https://opensource.org/licenses/MIT)
 [![Build Status](https://img.shields.io/badge/build-passing-brightgreen.svg)]()
+
+![](images/example.png)
 
 ## Overview
 

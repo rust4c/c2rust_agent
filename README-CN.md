@@ -1,7 +1,5 @@
 # C2Rust Agent
 
-![](images/example.png)
-
 [English](README.md) | [中文](README-CN.md)
 
 基于大语言模型的智能 C 项目到 Rust 项目转换工具，具备数据库驱动的上下文感知和 LSP 分析功能。
@@ -9,6 +7,8 @@
 [![Rust](https://img.shields.io/badge/rust-1.70+-orange.svg)](https://www.rust-lang.org)
 [![License: MIT](https://img.shields.io/badge/License-MIT-yellow.svg)](https://opensource.org/licenses/MIT)
 [![Build Status](https://img.shields.io/badge/build-passing-brightgreen.svg)]()
+
+![](images/example.png)
 
 ## 项目概述
 
