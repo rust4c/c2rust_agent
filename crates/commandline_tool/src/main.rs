@@ -285,7 +285,7 @@ async fn main() -> Result<()> {
         // main.rs 中 Translate 命令的修改部分
         Commands::Translate {
             input_dir,
-            output_dir, // 若提供则用于最终重组输出
+            output_dir, // 若提供则作为预处理缓存目录，工作区将生成在同级目录下 *_workspace
         } => {
             println!("已选择转换命令\n输入目录: {}", input_dir.display());
 
@@ -297,9 +297,11 @@ async fn main() -> Result<()> {
                 return Ok(());
             }
 
-            // 第一步：预处理 -> 生成 src_cache
+            // 第一步：预处理 -> 生成缓存目录（若提供 --output-dir 则使用该目录作为缓存目录）
             println!("开始预处理 (preprocess)...");
-            let cache_dir = {
+            let cache_dir: PathBuf = if let Some(p) = output_dir.as_ref() {
+                p.clone()
+            } else {
                 let parent = input_dir.parent().unwrap_or_else(|| Path::new("."));
                 let dir_name = input_dir
                     .file_name()
@@ -308,8 +310,30 @@ async fn main() -> Result<()> {
                 parent.join(format!("{}_cache", dir_name))
             };
 
-            // 如果 cache 目录不存在才运行预处理，避免重复开销
-            if !cache_dir.exists() {
+            // 如果 cache 目录不存在或其中没有任何 .c/.h 文件，则运行预处理
+            fn cache_has_c_or_h(dir: &Path) -> bool {
+                if !dir.exists() {
+                    return false;
+                }
+                use walkdir::WalkDir;
+                for entry in WalkDir::new(dir)
+                    .max_depth(50)
+                    .into_iter()
+                    .filter_map(|e| e.ok())
+                {
+                    let p = entry.path();
+                    if p.is_file() {
+                        if let Some(ext) = p.extension() {
+                            if ext == "c" || ext == "h" {
+                                return true;
+                            }
+                        }
+                    }
+                }
+                false
+            }
+
+            if !cache_has_c_or_h(&cache_dir) {
                 let config = PreprocessConfig::default();
                 let mut preprocessor = CProjectPreprocessor::new(Some(config));
                 if let Err(e) = preprocessor.preprocess_project(input_dir, &cache_dir) {
@@ -334,8 +358,8 @@ async fn main() -> Result<()> {
             };
 
             if projects.is_empty() {
-                warn!("在目录 {} 中没有找到C项目", input_dir.display());
-                println!("在目录 {} 中没有找到C项目", input_dir.display());
+                warn!("在目录 {} 中没有找到C项目", cache_dir.display());
+                println!("在目录 {} 中没有找到C项目", cache_dir.display());
                 return Ok(());
             }
 
@@ -360,14 +384,23 @@ async fn main() -> Result<()> {
                     );
 
                     // 第四步：重组为一个 Rust 工作区
-                    let workspace_out = output_dir.clone().unwrap_or_else(|| {
+                    // 若提供了 --output-dir（缓存目录），则在其同级目录下创建 <缓存名>_workspace
+                    // 否则按输入目录规则创建 <输入名>_workspace
+                    let workspace_out: PathBuf = if let Some(p) = output_dir.as_ref() {
+                        let parent = p.parent().unwrap_or_else(|| Path::new("."));
+                        let dir_name = p
+                            .file_name()
+                            .map(|n| n.to_string_lossy().into_owned())
+                            .unwrap_or_else(|| "project".to_string());
+                        parent.join(format!("{}_workspace", dir_name))
+                    } else {
                         let parent = input_dir.parent().unwrap_or_else(|| Path::new("."));
                         let dir_name = input_dir
                             .file_name()
                             .map(|n| n.to_string_lossy().into_owned())
                             .unwrap_or_else(|| "project".to_string());
                         parent.join(format!("{}_workspace", dir_name))
-                    });
+                    };
                     println!("开始重组项目: {}", workspace_out.display());
                     let reorganizer =
                         ProjectReorganizer::new(cache_dir.clone(), workspace_out.clone());

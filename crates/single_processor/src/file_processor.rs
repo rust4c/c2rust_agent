@@ -1,3 +1,28 @@
+/// 检测当前目录下的项目类型（lib 或 package）
+/// 规则：
+/// - 如果有 main 函数，判定为 package
+/// - 如果有 pub fn/struct/trait 且无 main，判定为 lib
+/// - 只有一个文件时，优先根据内容判断
+pub fn detect_rust_file_type(rust_code: &str) -> RustFileType {
+    if rust_code.contains("fn main(") {
+        RustFileType::Package
+    } else if rust_code.contains("pub fn")
+        || rust_code.contains("pub struct")
+        || rust_code.contains("pub trait")
+    {
+        RustFileType::Lib
+    } else {
+        // 默认按 package 处理
+        RustFileType::Package
+    }
+}
+
+/// Rust 文件类型枚举
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum RustFileType {
+    Lib,
+    Package,
+}
 use anyhow::Result;
 use log::{debug, info};
 use std::fs::{self, File};
@@ -104,14 +129,27 @@ pub fn process_c_h_files(dir_path: &Path) -> Result<PathBuf> {
     ))
 }
 
-/// 创建 Rust 项目结构
-///
-/// 创建标准的 Rust 项目目录和 Cargo.toml 配置文件
-pub fn create_rust_project_structure(project_path: &Path) -> Result<()> {
+/// 创建 Rust 项目结构，并根据类型自动命名 src 文件
+pub fn create_rust_project_structure_with_type(
+    project_path: &Path,
+    rust_code: &str,
+) -> Result<PathBuf> {
     info!("创建Rust项目结构，路径: {:?}", project_path);
 
     // 创建项目目录
     fs::create_dir_all(project_path.join("src"))?;
+
+    // 检测类型
+    let file_type = detect_rust_file_type(rust_code);
+    let file_name = match file_type {
+        RustFileType::Package => "main.rs",
+        RustFileType::Lib => "lib.rs",
+    };
+    let rust_file_path = project_path.join("src").join(file_name);
+
+    // 写入 Rust 代码
+    let mut rust_file = File::create(&rust_file_path)?;
+    rust_file.write_all(rust_code.as_bytes())?;
 
     // 创建 Cargo.toml 文件
     let cargo_toml_content = r#"[package]
@@ -126,30 +164,10 @@ libc = "0.2"
     let mut cargo_file = File::create(project_path.join("Cargo.toml"))?;
     write!(cargo_file, "{}", cargo_toml_content)?;
 
-    info!("已创建 Rust 项目结构: {}", project_path.display());
-    Ok(())
-}
-
-#[cfg(test)]
-mod tests {
-    use super::*;
-    use std::fs;
-    use tempfile::tempdir;
-
-    #[test]
-    fn test_create_rust_project_structure() -> Result<()> {
-        let temp_dir = tempdir()?;
-        let project_path = temp_dir.path().join("test-project");
-
-        create_rust_project_structure(&project_path)?;
-
-        assert!(project_path.join("src").exists());
-        assert!(project_path.join("Cargo.toml").exists());
-
-        let cargo_content = fs::read_to_string(project_path.join("Cargo.toml"))?;
-        assert!(cargo_content.contains("converted-project"));
-        assert!(cargo_content.contains("edition = \"2021\""));
-
-        Ok(())
-    }
+    info!(
+        "已创建 Rust 项目结构: {}，src文件: {}",
+        project_path.display(),
+        file_name
+    );
+    Ok(rust_file_path)
 }

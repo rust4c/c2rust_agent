@@ -10,6 +10,25 @@ pub fn total_len(msgs: &[String]) -> usize {
     msgs.iter().map(|s| s.len()).sum()
 }
 
+/// 计算在给定总上限下，当前消息列表的剩余预算
+pub fn remaining_budget(current: &[String], max_total: usize) -> usize {
+    max_total.saturating_sub(total_len(current))
+}
+
+/// 在不超过总上限的前提下，依次附加一批消息，超出即停止
+pub fn append_messages_with_budget(dest: &mut Vec<String>, to_add: Vec<String>, max_total: usize) {
+    let mut used = total_len(dest);
+    for m in to_add {
+        let len = m.len();
+        if used + len <= max_total {
+            dest.push(m);
+            used += len;
+        } else {
+            break;
+        }
+    }
+}
+
 /// 简单的 C 函数切分
 ///
 /// 使用正则找到函数起始位置，然后按大括号平衡截取

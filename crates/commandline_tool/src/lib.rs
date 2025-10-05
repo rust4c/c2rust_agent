@@ -99,8 +99,8 @@ pub enum Commands {
         #[arg(long, value_name = "DIR", required = true)]
         input_dir: PathBuf,
 
-        /// Export the Rust project catalog (optional)
-        #[arg(long, value_name = "OIR")]
+        /// Preprocess cache output directory (optional). If provided, the Rust workspace will be created next to it as <cache_name>_workspace
+        #[arg(long, value_name = "DIR")]
         output_dir: Option<PathBuf>,
     },
 
@@ -245,10 +245,34 @@ pub async fn run_translate(input_dir: &Path, output_dir: Option<&Path>) -> Resul
         return Err(anyhow!("输入目录不存在: {}", input_dir.display()));
     }
 
-    // Preprocess (cache dir)
+    // Preprocess (cache dir). If output_dir is provided, use it as cache dir.
     info!("开始预处理 (preprocess)...");
-    let cache_dir = default_cache_dir_for(input_dir);
-    if !cache_dir.exists() {
+    let cache_dir = output_dir
+        .map(|p| p.to_path_buf())
+        .unwrap_or_else(|| default_cache_dir_for(input_dir));
+    // Only skip preprocess when cache dir already contains .c/.h files
+    fn cache_has_c_or_h(dir: &Path) -> bool {
+        if !dir.exists() {
+            return false;
+        }
+        for entry in WalkDir::new(dir)
+            .max_depth(50)
+            .into_iter()
+            .filter_map(|e| e.ok())
+        {
+            let p = entry.path();
+            if p.is_file() {
+                if let Some(ext) = p.extension() {
+                    if ext == "c" || ext == "h" {
+                        return true;
+                    }
+                }
+            }
+        }
+        false
+    }
+
+    if !cache_has_c_or_h(&cache_dir) {
         let config = PreprocessConfig::default();
         let mut preprocessor = CProjectPreprocessor::new(Some(config));
         preprocessor.preprocess_project(input_dir, &cache_dir)?;
@@ -261,7 +285,7 @@ pub async fn run_translate(input_dir: &Path, output_dir: Option<&Path>) -> Resul
     info!("正在发现C项目...");
     let projects = discover_c_projects(&cache_dir).await?;
     if projects.is_empty() {
-        warn!("在目录 {} 中没有找到C项目", input_dir.display());
+        warn!("在目录 {} 中没有找到C项目", cache_dir.display());
         return Ok(());
     }
     info!("发现 {} 个C项目:", projects.len());
@@ -282,9 +306,17 @@ pub async fn run_translate(input_dir: &Path, output_dir: Option<&Path>) -> Resul
             info!("📁 转换结果保存在各项目目录下的 'rust-project' 或 'rust_project' 文件夹中");
 
             // Reorganize workspace
-            let workspace_out = output_dir
-                .map(|p| p.to_path_buf())
-                .unwrap_or_else(|| default_workspace_dir_for(input_dir));
+            // If output_dir (cache) is provided, create workspace next to it with suffix _workspace
+            let workspace_out = if let Some(p) = output_dir {
+                let parent = p.parent().unwrap_or_else(|| Path::new("."));
+                let dir_name = p
+                    .file_name()
+                    .map(|n| n.to_string_lossy().into_owned())
+                    .unwrap_or_else(|| "project".to_string());
+                parent.join(format!("{}_workspace", dir_name))
+            } else {
+                default_workspace_dir_for(input_dir)
+            };
             info!("开始重组项目: {}", workspace_out.display());
             let reorganizer = ProjectReorganizer::new(cache_dir.clone(), workspace_out.clone());
             if let Err(e) = reorganizer.reorganize() {

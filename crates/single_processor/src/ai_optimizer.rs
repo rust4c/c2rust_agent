@@ -4,12 +4,13 @@ use llm_requester::llm_request_with_prompt;
 use log::{error, info, warn};
 use prompt_builder::PromptBuilder;
 use serde_json::Value;
-use std::fs;
 use std::path::Path;
+use std::{fs, path::PathBuf};
 use tokio::time::{Duration, timeout};
 
 use crate::code_splitter::{
-    MAX_TOTAL_PROMPT_CHARS, append_text_with_limit, make_messages_with_function_chunks, total_len,
+    MAX_TOTAL_PROMPT_CHARS, append_messages_with_budget, append_text_with_limit,
+    make_messages_with_function_chunks, remaining_budget, total_len,
 };
 
 /// 当第二次附加编译结果且超过限制时，调用 LLM 进行概括压缩
@@ -163,15 +164,18 @@ fn process_llm_response(llm_response: &str, _output_dir: &Path) -> Result<String
 /// # 返回
 /// 优化后的 Rust 代码
 pub async fn ai_optimize_rust_code(
-    rust_code_path: &Path,
+    rust_code_path: Option<&PathBuf>,
     original_c_path: &Path,
     output_dir: &Path,
     compile_errors: Option<&str>,
 ) -> Result<String> {
-    info!("开始 AI 第二阶段代码优化: {:?}", rust_code_path);
+    info!("开始 AI 第二阶段代码优化");
 
     // 读取 C2Rust 生成的代码
-    let c2rust_code = fs::read_to_string(rust_code_path)?;
+    let c2rust_code = match rust_code_path {
+        Some(file_path) => fs::read_to_string(file_path)?,
+        None => String::new(),
+    };
     info!("C2Rust 生成的代码长度: {} 字符", c2rust_code.len());
 
     // 读取原始 C 代码用于参考
@@ -181,12 +185,17 @@ pub async fn ai_optimize_rust_code(
     let db_manager = DatabaseManager::new_default().await?;
 
     // 创建 PromptBuilder
-    let prompt_builder = PromptBuilder::new(
+    let mut prompt_builder = PromptBuilder::new(
         &db_manager,
         "c_project".to_string(),
         Some(original_c_path.to_path_buf()),
     )
     .await?;
+
+    // 如果有编译错误，将其加入 PromptBuilder 的错误上下文中
+    if let Some(errs) = compile_errors {
+        prompt_builder.add_error_context(errs.to_string());
+    }
 
     // 构建优化提示词
     let base_prompt = prompt_builder
@@ -194,46 +203,73 @@ pub async fn ai_optimize_rust_code(
         .await?;
 
     // 生成按函数分片的消息，避免超限
+    let use_c2rust_only = rust_code_path.is_some();
     let intro = if let Some(errors) = compile_errors {
-        format!(
-            "{base}\n\n--- 两阶段翻译任务（分片传输 + 编译错误修复）---\n上一次编译失败，错误如下：\n```\n{errors}\n```\n\n我将分片发送'原始 C 代码'与'C2Rust 生成的 Rust 代码'，请在接收完所有片段后：\n- 修复上述编译错误\n- 合理移除 unsafe\n- 优化所有权与错误处理\n- 使用惯用数据结构\n- 输出完整、可编译且等价的 Rust 代码\n",
-            base = base_prompt,
-            errors = errors
-        )
+        if use_c2rust_only {
+            format!(
+                "{base}\n\n--- 两阶段翻译任务（分片传输 + 编译错误修复）---\n上一次编译失败，错误如下：\n```\n{errors}\n```\n\n我将分片发送'C2Rust 生成的 Rust 代码'，请在接收完所有片段后：\n- 修复上述编译错误\n- 合理移除 unsafe\n- 优化所有权与错误处理\n- 使用惯用数据结构\n- 输出完整、可编译且等价的 Rust 代码\n",
+                base = base_prompt,
+                errors = errors
+            )
+        } else {
+            format!(
+                "{base}\n\n--- 两阶段翻译任务（分片传输 + 编译错误修复）---\n上一次编译失败，错误如下：\n```\n{errors}\n```\n\n我将分片发送'原始 C 代码'，请在接收完所有片段后：\n- 修复上述编译错误\n- 合理移除 unsafe\n- 优化所有权与错误处理\n- 使用惯用数据结构\n- 输出完整、可编译且等价的 Rust 代码\n",
+                base = base_prompt,
+                errors = errors
+            )
+        }
     } else {
-        format!(
-            "{base}\n\n--- 两阶段翻译任务（分片传输）---\n我将分片发送'原始 C 代码'与'C2Rust 生成的 Rust 代码'，请在接收完所有片段后：\n- 合理移除 unsafe\n- 优化所有权与错误处理\n- 使用惯用数据结构\n- 输出完整、可编译且等价的 Rust 代码\n",
-            base = base_prompt
-        )
+        if use_c2rust_only {
+            format!(
+                "{base}\n\n--- 两阶段翻译任务（分片传输）---\n我将分片发送'C2Rust 生成的 Rust 代码'，请在接收完所有片段后：\n- 合理移除 unsafe\n- 优化所有权与错误处理\n- 使用惯用数据结构\n- 输出完整、可编译且等价的 Rust 代码\n",
+                base = base_prompt
+            )
+        } else {
+            format!(
+                "{base}\n\n--- 两阶段翻译任务（分片传输）---\n我将分片发送'原始 C 代码'，请在接收完所有片段后：\n- 合理移除 unsafe\n- 优化所有权与错误处理\n- 使用惯用数据结构\n- 输出完整、可编译且等价的 Rust 代码\n",
+                base = base_prompt
+            )
+        }
     };
 
     let mut messages: Vec<String> = Vec::new();
-    messages.push(intro);
+    // 确保 intro 不超出总预算
+    if intro.len() <= MAX_TOTAL_PROMPT_CHARS {
+        messages.push(intro);
+    } else {
+        let mut intro_trunc = intro.clone();
+        intro_trunc.truncate(MAX_TOTAL_PROMPT_CHARS.saturating_sub(64));
+        messages.push(intro_trunc);
+    }
 
-    // C 原始代码分片
-    let mut c_msgs = make_messages_with_function_chunks(
-        "",
-        "原始 C 代码",
-        &original_c_code,
-        true,
-        MAX_TOTAL_PROMPT_CHARS,
-    );
-    messages.append(&mut c_msgs);
-
-    // C2Rust 生成的 Rust 分片
-    let mut r_msgs = make_messages_with_function_chunks(
-        "",
-        "C2Rust 生成的 Rust 代码（第一阶段）",
-        &c2rust_code,
-        false,
-        MAX_TOTAL_PROMPT_CHARS,
-    );
-    messages.append(&mut r_msgs);
+    if use_c2rust_only {
+        // 仅发送 C2Rust 生成的 Rust 分片
+        let r_msgs = make_messages_with_function_chunks(
+            "",
+            "C2Rust 生成的 Rust 代码（第一阶段）",
+            &c2rust_code,
+            false,
+            MAX_TOTAL_PROMPT_CHARS,
+        );
+        // 避免超出总预算
+        append_messages_with_budget(&mut messages, r_msgs, MAX_TOTAL_PROMPT_CHARS);
+    } else {
+        // 仅发送 原始 C 代码分片
+        let c_msgs = make_messages_with_function_chunks(
+            "",
+            "原始 C 代码",
+            &original_c_code,
+            true,
+            MAX_TOTAL_PROMPT_CHARS,
+        );
+        append_messages_with_budget(&mut messages, c_msgs, MAX_TOTAL_PROMPT_CHARS);
+    }
 
     // 收尾说明
-    messages.push(
-        "当你已接收完全部片段，请一次性输出优化后的完整 Rust 代码（单个 main.rs 或必要的模块），确保可编译。".to_string()
-    );
+    let tail = "当你已接收完全部片段，请一次性输出优化后的完整 Rust 代码（单个 main.rs 或必要的模块），确保可编译。".to_string();
+    if total_len(&messages) + tail.len() <= MAX_TOTAL_PROMPT_CHARS {
+        messages.push(tail);
+    }
 
     // 如果没有传入编译错误，尝试从文件读取（向后兼容）
     if compile_errors.is_none() {
@@ -245,7 +281,7 @@ pub async fn ai_optimize_rust_code(
                     compile_output.len()
                 );
 
-                let remain = MAX_TOTAL_PROMPT_CHARS.saturating_sub(total_len(&messages));
+                let remain = remaining_budget(&messages, MAX_TOTAL_PROMPT_CHARS);
                 let mut body = compile_output;
 
                 if body.len() + 256 > remain {
@@ -353,30 +389,32 @@ pub async fn ai_analyze_final_failure(
     ));
 
     if !original_c_code.is_empty() {
-        let mut c_chunks = make_messages_with_function_chunks(
+        let c_chunks = make_messages_with_function_chunks(
             "",
             "原始 C 代码",
             &original_c_code,
             true,
             MAX_TOTAL_PROMPT_CHARS,
         );
-        messages.append(&mut c_chunks);
+        append_messages_with_budget(&mut messages, c_chunks, MAX_TOTAL_PROMPT_CHARS);
     }
 
     if !latest_rust_code.is_empty() {
-        let mut rust_chunks = make_messages_with_function_chunks(
+        let rust_chunks = make_messages_with_function_chunks(
             "",
             "当前 Rust 代码",
             &latest_rust_code,
             false,
             MAX_TOTAL_PROMPT_CHARS,
         );
-        messages.append(&mut rust_chunks);
+        append_messages_with_budget(&mut messages, rust_chunks, MAX_TOTAL_PROMPT_CHARS);
     }
 
-    messages.push(
-        "在阅读完所有上下文后，请输出诊断结论与建议，保持结构清晰，便于人工跟进。".to_string(),
-    );
+    let tail2 =
+        "在阅读完所有上下文后，请输出诊断结论与建议，保持结构清晰，便于人工跟进。".to_string();
+    if total_len(&messages) + tail2.len() <= MAX_TOTAL_PROMPT_CHARS {
+        messages.push(tail2);
+    }
 
     let timeout_duration = Duration::from_secs(1200);
     let response = match timeout(

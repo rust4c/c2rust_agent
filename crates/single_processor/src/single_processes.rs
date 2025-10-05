@@ -1,151 +1,19 @@
 use anyhow::Result;
-use db_services::DatabaseManager;
-use llm_requester::llm_request_with_prompt;
 use log::{info, warn};
-use prompt_builder::PromptBuilder;
-use serde_json::Value;
-use std::fs::{self, File};
-use std::io::Write;
+use std::fs;
 use std::path::{Path, PathBuf};
 use std::sync::Arc;
-use tokio::time::{Duration, timeout};
 
 // 导入各模块
 use crate::ai_optimizer::{ai_analyze_final_failure, ai_optimize_rust_code};
 use crate::c2rust_translator::c2rust_translate;
-use crate::code_splitter::{MAX_TOTAL_PROMPT_CHARS, make_messages_with_function_chunks, total_len};
-use crate::file_processor::{create_rust_project_structure, process_c_h_files};
+use crate::file_processor::create_rust_project_structure_with_type;
+use crate::file_processor::process_c_h_files;
 use crate::pkg_config::get_config;
 use crate::rust_verifier::{extract_key_errors, verify_compilation};
 
 /// 阶段状态回调类型
 pub type StageCallback = Arc<dyn Fn(&str) + Send + Sync>;
-
-/// Rust 代码提取器组件
-struct RustCodeExtractor;
-
-impl RustCodeExtractor {
-    /// 提取 LLM 响应中的 Rust 代码
-    fn extract_rust_code_from_response(llm_response: &str) -> Result<String> {
-        let mut rust_code = None;
-
-        // 方法1: 直接JSON格式
-        if let Ok(json_response) = serde_json::from_str::<Value>(llm_response) {
-            if let Some(code) = json_response["rust_code"].as_str() {
-                info!("成功从JSON响应中提取rust_code字段");
-                rust_code = Some(code.to_string());
-            } else if let Some(choices) = json_response["choices"].as_array() {
-                if let Some(first_choice) = choices.first() {
-                    if let Some(message) = first_choice["message"].as_object() {
-                        if let Some(content) = message["content"].as_str() {
-                            info!("成功从OpenAI格式响应中提取内容");
-                            rust_code = Some(content.to_string());
-                        }
-                    }
-                }
-            }
-        }
-
-        // 方法2: 处理被代码块包裹的JSON
-        if rust_code.is_none() {
-            rust_code = Self::extract_from_code_blocks(llm_response);
-        }
-
-        // 方法3: 尝试从不完整的JSON中提取rust_code
-        if rust_code.is_none() {
-            rust_code = Self::extract_from_incomplete_json(llm_response);
-        }
-
-        // 方法4: 整个响应作为兜底
-        rust_code.ok_or_else(|| anyhow::anyhow!("无法从LLM响应中提取Rust代码"))
-    }
-
-    fn extract_from_code_blocks(llm_response: &str) -> Option<String> {
-        let cleaned_response = llm_response
-            .trim()
-            .trim_start_matches("```json")
-            .trim_start_matches("```")
-            .trim_end_matches("```")
-            .trim();
-
-        if let Ok(json_response) = serde_json::from_str::<Value>(cleaned_response) {
-            if let Some(code) = json_response["rust_code"].as_str() {
-                info!("成功从清理后的JSON响应中提取rust_code字段");
-                return Some(code.to_string());
-            }
-        }
-
-        // 尝试 ```rust 代码块
-        if let Some(start_idx) = llm_response.find("```rust") {
-            let code_start = if llm_response[start_idx..].starts_with("```rust\n") {
-                start_idx + 8
-            } else {
-                start_idx + 7
-            };
-
-            if let Some(end_idx) = llm_response[code_start..].find("\n```") {
-                let code_end = code_start + end_idx;
-                info!("成功从```rust代码块中提取代码");
-                return Some(llm_response[code_start..code_end].to_string());
-            } else if let Some(end_idx) = llm_response[code_start..].find("```") {
-                let code_end = code_start + end_idx;
-                warn!("从```rust代码块中提取代码（无结束换行符）");
-                return Some(llm_response[code_start..code_end].to_string());
-            }
-        }
-
-        // 尝试通用代码块 ```
-        if let Some(start_idx) = llm_response.find("```\n") {
-            let code_start = start_idx + 4;
-            if let Some(end_idx) = llm_response[code_start..].find("\n```") {
-                let code_end = code_start + end_idx;
-                info!("成功从通用代码块中提取代码");
-                return Some(llm_response[code_start..code_end].to_string());
-            }
-        }
-
-        None
-    }
-
-    fn extract_from_incomplete_json(llm_response: &str) -> Option<String> {
-        if let Some(start_pos) = llm_response.find(r#""rust_code""#) {
-            if let Some(colon_pos) = llm_response[start_pos..].find(':') {
-                let value_start = start_pos + colon_pos + 1;
-                let remaining = &llm_response[value_start..].trim_start();
-
-                if remaining.starts_with('"') {
-                    let content_start =
-                        value_start + (llm_response[value_start..].len() - remaining.len()) + 1;
-                    let bytes = llm_response.as_bytes();
-                    let mut pos = content_start;
-                    let mut escaped = false;
-
-                    while pos < bytes.len() {
-                        if escaped {
-                            escaped = false;
-                        } else if bytes[pos] == b'\\' {
-                            escaped = true;
-                        } else if bytes[pos] == b'"' {
-                            if let Ok(json_str) =
-                                String::from_utf8(bytes[content_start..pos].to_vec())
-                            {
-                                let unescaped = json_str
-                                    .replace(r"\n", "\n")
-                                    .replace(r"\t", "\t")
-                                    .replace(r#"\""#, "\"")
-                                    .replace(r"\\", "\\");
-                                info!("从不完整JSON中成功提取并解码rust_code字段");
-                                return Some(unescaped);
-                            }
-                        }
-                        pos += 1;
-                    }
-                }
-            }
-        }
-        None
-    }
-}
 
 /// 编译验证器组件
 struct CompilationVerifier {
@@ -279,76 +147,19 @@ impl CompilationVerifier {
     }
 }
 
-/// LLM 请求器组件
-struct LLMRequester;
-
-impl LLMRequester {
-    async fn request_translation(
-        prompt: &str,
-        content: &str,
-        timeout_seconds: u64,
-    ) -> Result<String> {
-        let enhanced_prompt = format!(
-            "{}\n\n请将下面传输的 C 代码片段整体转换为一个可编译的 Rust main.rs（保持功能等价、可编译）。当你收到所有片段后再开始输出最终结果。",
-            prompt
-        );
-
-        let messages = make_messages_with_function_chunks(
-            &enhanced_prompt,
-            "以下是处理后的 C 代码",
-            content,
-            true,
-            MAX_TOTAL_PROMPT_CHARS,
-        );
-
-        info!(
-            "生成的消息条数: {}，总长度: {} 字符",
-            messages.len(),
-            total_len(&messages)
-        );
-
-        let timeout_duration = Duration::from_secs(timeout_seconds);
-        match timeout(
-            timeout_duration,
-            llm_request_with_prompt(
-                messages,
-                "你是一位C到Rust代码转换专家，特别擅长文件系统和FUSE相关的代码转换".to_string(),
-            ),
-        )
-        .await
-        {
-            Ok(Ok(response)) => {
-                info!("LLM响应接收成功，长度: {} 字符", response.len());
-                Ok(response)
-            }
-            Ok(Err(e)) => Err(e),
-            Err(_) => Err(anyhow::anyhow!(
-                "LLM请求超时，未能在{}秒内获取响应",
-                timeout_seconds
-            )),
-        }
-    }
-}
-
 /// 主翻译处理器
 pub struct TranslationProcessor {
     callback: Option<StageCallback>,
-    db_manager: DatabaseManager,
     verifier: CompilationVerifier,
 }
 
 impl TranslationProcessor {
     pub async fn new(callback: Option<StageCallback>) -> Result<Self> {
-        let db_manager = DatabaseManager::new_default().await?;
         let config = get_config()?;
         let max_retries = config.max_retry_attempts;
         let verifier = CompilationVerifier::new(max_retries.try_into().unwrap());
 
-        Ok(Self {
-            callback,
-            db_manager,
-            verifier,
-        })
+        Ok(Self { callback, verifier })
     }
 
     /// 通知回调
@@ -361,51 +172,100 @@ impl TranslationProcessor {
     /// 处理单个文件 - 纯 AI 翻译模式
     pub async fn process_single_file(&self, file_path: &Path) -> Result<()> {
         self.notify("🚀 开始处理单个文件（纯AI翻译模式）");
-        info!("开始处理文件: {:?}", file_path);
+        info!("开始处理路径: {:?}", file_path);
+        self.notify("🔄 【阶段 2/2】AI优化与编译验证");
+        info!("🔄 第二阶段：AI 代码优化 + 编译验证");
 
-        self.notify(&format!("📂 正在分析文件: {}", file_path.display()));
-        let prompt_builder = PromptBuilder::new(
-            &self.db_manager,
-            "c_project".to_string(),
-            Some(file_path.to_path_buf()),
-        )
-        .await?;
+        // 规范化：将输入统一为“项目目录”，并预处理 C/H 文件，获取待处理的 C 文件路径
+        let project_dir = if file_path.is_dir() {
+            file_path.to_path_buf()
+        } else {
+            file_path
+                .parent()
+                .map(|p| p.to_path_buf())
+                .ok_or_else(|| anyhow::anyhow!("无法确定项目目录: {}", file_path.display()))?
+        };
+        self.notify("📝 正在预处理C文件...");
+        let processed_c_file = process_c_h_files(&project_dir)?;
+        info!("要翻译的C文件: {:?}", processed_c_file);
+        self.notify(&format!(
+            "✓ C文件预处理完成: {}",
+            processed_c_file.display()
+        ));
 
-        self.notify("🔍 正在构建上下文提示词...");
-        let prompt = prompt_builder
-            .build_file_context_prompt(file_path, None)
+        self.notify("📁 正在创建最终输出目录...");
+        let final_dir = project_dir.join("final-output");
+
+        let mut compile_errors: Option<String> = None;
+
+        for attempt in 1..=self.verifier.max_retries {
+            self.notify(&format!(
+                "🔄 【迭代 {}/{}】AI优化与编译验证",
+                attempt, self.verifier.max_retries
+            ));
+            info!("🔄 AI优化尝试 {}/{}", attempt, self.verifier.max_retries);
+
+            if let Some(ref errors) = compile_errors {
+                self.notify(&format!(
+                    "📋 上次编译错误: {} 个问题",
+                    errors.lines().count()
+                ));
+            }
+
+            self.notify("🤖 正在请求AI优化代码...");
+            // 使用预处理后的 C 文件作为原始上下文，纯 AI 翻译
+            let optimized_code = ai_optimize_rust_code(
+                None,
+                processed_c_file.as_path(),
+                &final_dir,
+                compile_errors.as_deref(),
+            )
             .await?;
-        self.notify("✓ 上下文提示词构建完成");
 
-        self.notify("📝 正在预处理C/H文件...");
-        let processed_file = process_c_h_files(file_path)?;
-        let content = fs::read_to_string(&processed_file)?;
-        self.notify(&format!(
-            "✓ 文件预处理完成，代码长度: {} 字符",
-            content.len()
-        ));
+            // 自动识别类型并命名
+            let optimized_rust_path =
+                create_rust_project_structure_with_type(&final_dir, &optimized_code)?;
+            self.notify(&format!(
+                "✓ AI优化完成，代码长度: {} 字符",
+                optimized_code.len()
+            ));
+            info!("✅ AI优化代码已保存: {:?}", optimized_rust_path);
+            self.notify(&format!("💾 代码已保存: {}", optimized_rust_path.display()));
 
-        self.notify("🤖 正在请求AI翻译（这可能需要几分钟）...");
-        let llm_response = LLMRequester::request_translation(&prompt, &content, 6000).await?;
-        self.notify("✓ AI响应接收完成");
+            self.notify("🔨 正在编译验证...");
+            // 编译验证
+            match self
+                .verifier
+                .verify_with_retry(
+                    &final_dir,
+                    file_path,
+                    &optimized_rust_path,
+                    self.callback.as_ref(),
+                )
+                .await
+            {
+                Ok(_) => {
+                    self.notify("🎉 编译验证通过！");
+                    self.notify("✓ 备份完成");
+                    self.notify(&format!(
+                        "✅ 第二阶段完成！最终项目: {}",
+                        final_dir.display()
+                    ));
+                    return Ok(());
+                }
+                Err(e) => {
+                    if attempt < self.verifier.max_retries {
+                        compile_errors = Some(e.to_string());
+                        self.notify(&format!("⚠️ 编译失败，将进行第 {} 次重试", attempt + 1));
+                    } else {
+                        self.notify("❌ 已达最大重试次数，编译验证失败");
+                        return Err(e);
+                    }
+                }
+            }
+        }
 
-        self.notify("📦 正在提取Rust代码...");
-        let rust_code = RustCodeExtractor::extract_rust_code_from_response(&llm_response)?;
-        self.notify(&format!(
-            "✓ 成功提取Rust代码，长度: {} 字符",
-            rust_code.len()
-        ));
-
-        self.notify("💾 正在保存Rust项目...");
-        let rust_project_path = file_path.join("rust-project");
-        self.save_rust_project(&rust_project_path, &rust_code)?;
-
-        info!("纯AI翻译完成，结果保存到: {:?}", rust_project_path);
-        self.notify(&format!(
-            "✅ 纯AI翻译完成！项目保存至: {}",
-            rust_project_path.display()
-        ));
-        Ok(())
+        Err(anyhow::anyhow!("两阶段翻译失败：未知错误"))
     }
 
     /// 两阶段翻译主函数
@@ -424,7 +284,16 @@ impl TranslationProcessor {
 
         // 第一阶段：C2Rust 翻译
         self.notify("📍 开始第一阶段：C2Rust自动翻译");
-        let (work_dir, c2rust_output) = self.execute_stage1(&processed_c_file, file_path).await?;
+        let (work_dir, c2rust_output) =
+            match self.execute_stage1(&processed_c_file, file_path).await {
+                Ok(res) => res,
+                Err(_) => {
+                    warn!("C2Rust翻译失败，切换到纯AI翻译模式");
+                    self.notify("⚠️ C2Rust翻译失败，自动切换到纯AI翻译模式");
+                    self.notify("🔄 正在启动纯AI翻译流程...");
+                    return self.process_single_file(file_path).await;
+                }
+            };
 
         // 第二阶段：AI 优化 + 编译验证
         self.notify("📍 开始第二阶段：AI优化与编译验证");
@@ -464,7 +333,6 @@ impl TranslationProcessor {
                 warn!("⚠️ C2Rust 翻译失败: {}，将切换到纯AI模式", e);
                 self.notify("⚠️ C2Rust翻译失败，自动切换到纯AI翻译模式");
                 self.notify("🔄 正在启动纯AI翻译流程...");
-                self.process_single_file(original_path).await?;
                 Err(e)
             }
         }
@@ -481,9 +349,10 @@ impl TranslationProcessor {
 
         self.notify("📁 正在创建最终输出目录...");
         let final_dir = work_dir.join("final-output");
-        let final_output_path = final_dir.join("src").join("main.rs");
 
-        create_rust_project_structure(&final_dir)?;
+        use crate::file_processor::create_rust_project_structure_with_type;
+        let c2rust_code = fs::read_to_string(c2rust_output)?;
+        create_rust_project_structure_with_type(&final_dir, &c2rust_code)?;
         self.notify(&format!("✓ 项目结构创建完成: {}", final_dir.display()));
 
         let mut compile_errors: Option<String> = None;
@@ -504,20 +373,22 @@ impl TranslationProcessor {
 
             self.notify("🤖 正在请求AI优化代码...");
             let optimized_code = ai_optimize_rust_code(
-                c2rust_output,
+                Some(&c2rust_output.to_path_buf()),
                 processed_c_file,
                 &final_dir,
                 compile_errors.as_deref(),
             )
             .await?;
 
+            // 自动识别类型并命名
+            let optimized_rust_path =
+                create_rust_project_structure_with_type(&final_dir, &optimized_code)?;
             self.notify(&format!(
                 "✓ AI优化完成，代码长度: {} 字符",
                 optimized_code.len()
             ));
-            fs::write(&final_output_path, &optimized_code)?;
-            info!("✅ AI优化代码已保存: {:?}", final_output_path);
-            self.notify(&format!("💾 代码已保存: {}", final_output_path.display()));
+            info!("✅ AI优化代码已保存: {:?}", optimized_rust_path);
+            self.notify(&format!("💾 代码已保存: {}", optimized_rust_path.display()));
 
             self.notify("🔨 正在编译验证...");
             // 编译验证
@@ -526,7 +397,7 @@ impl TranslationProcessor {
                 .verify_with_retry(
                     &final_dir,
                     processed_c_file,
-                    &final_output_path,
+                    &optimized_rust_path,
                     self.callback.as_ref(),
                 )
                 .await
@@ -558,16 +429,23 @@ impl TranslationProcessor {
         Err(anyhow::anyhow!("两阶段翻译失败：未知错误"))
     }
 
-    fn save_rust_project(&self, project_path: &Path, rust_code: &str) -> Result<()> {
+    fn _save_rust_project(&self, project_path: &Path, rust_code: &str) -> Result<()> {
+        use crate::file_processor::{
+            RustFileType, create_rust_project_structure_with_type, detect_rust_file_type,
+        };
         self.notify("📁 正在创建Rust项目结构...");
-        create_rust_project_structure(project_path)?;
+        let rust_file_path = create_rust_project_structure_with_type(project_path, rust_code)?;
         self.notify("✓ 项目结构创建完成");
 
-        let output_file_path = project_path.join("src").join("main.rs");
-        self.notify(&format!("💾 正在写入文件: {}", output_file_path.display()));
-        let mut output_file = File::create(&output_file_path)?;
-        write!(output_file, "{}", rust_code)?;
-        info!("转换结果已保存到: {:?}", output_file_path);
+        let file_type = detect_rust_file_type(rust_code);
+        let file_type_str = match file_type {
+            RustFileType::Package => "package (main.rs)",
+            RustFileType::Lib => "lib (lib.rs)",
+        };
+        self.notify(&format!("💾 文件类型自动识别为: {}", file_type_str));
+        self.notify(&format!("💾 正在写入文件: {}", rust_file_path.display()));
+        // 文件已由 create_rust_project_structure_with_type 写入，无需重复写入
+        info!("转换结果已保存到: {:?}", rust_file_path);
         self.notify(&format!("✓ 文件保存成功 ({} 字节)", rust_code.len()));
         Ok(())
     }

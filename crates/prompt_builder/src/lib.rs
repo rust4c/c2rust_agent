@@ -218,22 +218,53 @@ impl<'a> PromptBuilder<'a> {
 
     /// Load file mappings from indices directory
     async fn load_file_mappings(&mut self, indices_dir: &Path) -> Result<()> {
+        // Build a robust candidate list:
+        // - mapping.json in the provided path
+        // - mapping.json in the parent path(s)
+        // - walk up ancestors until root (covers src_cache/mapping.json when indices_dir is src_cache/individual_files/stddef)
+        let start = if indices_dir.is_dir() {
+            indices_dir.to_path_buf()
+        } else {
+            indices_dir.parent().unwrap_or(indices_dir).to_path_buf()
+        };
+
         let mut candidates: Vec<PathBuf> = vec![
-            indices_dir.join("mapping.json"),
-            indices_dir
+            start.join("mapping.json"),
+            start
                 .parent()
-                .unwrap_or(indices_dir)
+                .unwrap_or(start.as_path())
                 .join("mapping.json"),
         ];
-        if let Some(parent) = indices_dir.parent().and_then(|p| p.parent()) {
+
+        // Walk up ancestors and add mapping.json at each level
+        let mut current = start.as_path();
+        let mut safety_guard = 0;
+        while let Some(parent) = current.parent() {
             candidates.push(parent.join("mapping.json"));
+            current = parent;
+            safety_guard += 1;
+            if safety_guard > 10 {
+                // avoid excessive loops in corner cases
+                break;
+            }
         }
 
-        let mapping_path = candidates.iter().find(|p| p.exists());
+        // Deduplicate candidates while preserving order
+        let mut seen = std::collections::HashSet::new();
+        candidates.retain(|p| seen.insert(p.clone()));
+
+        // Try candidates in order
+        let mut mapping_path: Option<PathBuf> = None;
+        for cand in &candidates {
+            if cand.exists() {
+                mapping_path = Some(cand.clone());
+                break;
+            }
+        }
 
         if let Some(path) = mapping_path {
             debug!("Loading mappings from: {:?}", path);
-            let content = fs::read_to_string(path).await?;
+            let content = fs::read_to_string(&path).await?;
             let root: serde_json::Value = serde_json::from_str(&content)?;
 
             if let Some(arr) = root.get("mappings").and_then(|v| v.as_array()) {
@@ -251,7 +282,10 @@ impl<'a> PromptBuilder<'a> {
             }
             info!("Loaded {} file mappings", self.file_mappings.len());
         } else {
-            warn!("No mapping.json found near {:?}", indices_dir);
+            warn!(
+                "mapping.json not found. Searched candidates near {:?}: {:?}",
+                indices_dir, candidates
+            );
         }
 
         Ok(())
