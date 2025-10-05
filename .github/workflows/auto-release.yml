@@ -16,50 +16,67 @@ concurrency:
   cancel-in-progress: false
 
 jobs:
-  create_release:
-    # Runs for both main and release branches to create the (pre)release and output tag info
+  create_tag:
+    # Main branch: only create tag (no release)
     runs-on: ubuntu-latest
+    if: github.ref == 'refs/heads/main'
+    outputs:
+      tag: ${{ steps.vars.outputs.TAG }}
+    steps:
+      - uses: actions/checkout@v4
+      - name: Compute tag
+        id: vars
+        run: |
+          date_tag=$(date -u +'%Y%m%d')
+          echo "TAG=release-${date_tag}-${GITHUB_RUN_NUMBER}" >> $GITHUB_OUTPUT
+      - name: Create tag only
+        run: |
+          git config user.name "github-actions[bot]"
+          git config user.email "github-actions[bot]@users.noreply.github.com"
+          git tag "${{ steps.vars.outputs.TAG }}"
+          git push origin "${{ steps.vars.outputs.TAG }}"
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+
+  create_prerelease:
+    # Release branch: only create prerelease (no tag, no release)
+    runs-on: ubuntu-latest
+    if: startsWith(github.ref, 'refs/heads/release')
     outputs:
       tag: ${{ steps.vars.outputs.TAG }}
       name: ${{ steps.vars.outputs.NAME }}
-      prerelease: ${{ steps.vars.outputs.PRERELEASE }}
     steps:
       - uses: actions/checkout@v4
-      - name: Compute tag and release type
+      - name: Compute prerelease info
         id: vars
         run: |
-          if [[ "${GITHUB_REF}" == "refs/heads/main" ]]; then
-            date_tag=$(date -u +'%Y%m%d')
-            echo "TAG=release-${date_tag}-${GITHUB_RUN_NUMBER}" >> $GITHUB_OUTPUT
-            echo "NAME=Release ${date_tag} (${GITHUB_RUN_NUMBER})" >> $GITHUB_OUTPUT
-            echo "PRERELEASE=false" >> $GITHUB_OUTPUT
-          else
-            short_sha="${GITHUB_SHA::7}"
-            echo "TAG=prerelease-${GITHUB_RUN_NUMBER}-${short_sha}" >> $GITHUB_OUTPUT
-            echo "NAME=Prerelease ${GITHUB_RUN_NUMBER} (${short_sha})" >> $GITHUB_OUTPUT
-            echo "PRERELEASE=true" >> $GITHUB_OUTPUT
-          fi
-      - name: Create or update GitHub release
+          short_sha="${GITHUB_SHA::7}"
+          echo "TAG=prerelease-${GITHUB_RUN_NUMBER}-${short_sha}" >> $GITHUB_OUTPUT
+          echo "NAME=Prerelease ${GITHUB_RUN_NUMBER} (${short_sha})" >> $GITHUB_OUTPUT
+      - name: Create prerelease only
         uses: softprops/action-gh-release@v2
         with:
           tag_name: ${{ steps.vars.outputs.TAG }}
           name: ${{ steps.vars.outputs.NAME }}
-          prerelease: ${{ steps.vars.outputs.PRERELEASE }}
+          prerelease: true
           generate_release_notes: true
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
 
   build_cli_and_upload:
     name: Build CLI (${{ matrix.os }})
-    needs: create_release
+    needs: [create_tag, create_prerelease]
+    if: |
+      always() && 
+      (needs.create_tag.result == 'success' || needs.create_prerelease.result == 'success') &&
+      (github.ref == 'refs/heads/main' || startsWith(github.ref, 'refs/heads/release'))
     runs-on: ${{ matrix.os }}
-    if: github.ref == 'refs/heads/main' || startsWith(github.ref, 'refs/heads/release')
     strategy:
       fail-fast: false
       matrix:
         os: [ubuntu-latest, macos-latest, windows-latest]
     env:
-      RELEASE_TAG: ${{ needs.create_release.outputs.tag }}
+      RELEASE_TAG: ${{ needs.create_tag.outputs.tag || needs.create_prerelease.outputs.tag }}
     steps:
       - uses: actions/checkout@v4
       - uses: dtolnay/rust-toolchain@stable
@@ -93,25 +110,29 @@ jobs:
           [System.IO.File]::AppendAllText($env:GITHUB_OUTPUT, "archive=$archive`n")
         shell: pwsh
 
-      - name: Upload asset to release
+      - name: Upload asset to prerelease (release branch only)
+        if: startsWith(github.ref, 'refs/heads/release')
         uses: softprops/action-gh-release@v2
         with:
-          tag_name: ${{ needs.create_release.outputs.tag }}
+          tag_name: ${{ needs.create_prerelease.outputs.tag }}
           files: ${{ steps.pkg_nix.outputs.archive || steps.pkg_win.outputs.archive }}
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
 
   build_ui_and_upload:
     name: Build UI (${{ matrix.os }})
-    needs: create_release
+    needs: [create_tag, create_prerelease]
+    if: |
+      always() && 
+      (needs.create_prerelease.result == 'success') &&
+      startsWith(github.ref, 'refs/heads/release')
     runs-on: ${{ matrix.os }}
-    if: startsWith(github.ref, 'refs/heads/release')
     strategy:
       fail-fast: false
       matrix:
         os: [ubuntu-latest, macos-latest, windows-latest]
     env:
-      RELEASE_TAG: ${{ needs.create_release.outputs.tag }}
+      RELEASE_TAG: ${{ needs.create_prerelease.outputs.tag }}
     steps:
       - uses: actions/checkout@v4
       - uses: dtolnay/rust-toolchain@stable
@@ -161,10 +182,10 @@ jobs:
           [System.IO.File]::AppendAllText($env:GITHUB_OUTPUT, "archive=$archive`n")
         shell: pwsh
 
-      - name: Upload asset to release
+      - name: Upload asset to prerelease
         uses: softprops/action-gh-release@v2
         with:
-          tag_name: ${{ needs.create_release.outputs.tag }}
+          tag_name: ${{ needs.create_prerelease.outputs.tag }}
           files: ${{ steps.pkg_ui_nix.outputs.archive || steps.pkg_ui_win.outputs.archive }}
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
