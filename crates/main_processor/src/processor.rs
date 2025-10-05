@@ -1,6 +1,6 @@
 use anyhow::{anyhow, Result};
 use indicatif::{MultiProgress, ProgressBar, ProgressStyle};
-use log::error;
+use log::{error, info};
 use single_processor::{two_stage_processor_with_callback, StageCallback};
 use std::path::{Path, PathBuf};
 use std::sync::Arc;
@@ -53,8 +53,10 @@ pub async fn process_single_path(path: &Path) -> Result<()> {
     pb.enable_steady_tick(Duration::from_millis(100));
 
     let pb_clone = pb.clone();
+    let file_name_for_log = file_name.to_string();
     let callback: StageCallback = Arc::new(move |msg: &str| {
         pb_clone.set_message(msg.to_string());
+        info!("{} - {}", file_name_for_log, msg);
     });
 
     match two_stage_processor_with_callback(path, Some(callback)).await {
@@ -217,8 +219,12 @@ pub async fn process_batch_paths(cfg: MainProcessorConfig, paths: Vec<PathBuf>) 
                     let pb_callback = pb_clone.clone();
                     let file_name_clone = file_name.clone();
                     let callback: StageCallback = Arc::new(move |stage_msg: &str| {
-                        pb_callback.set_message(format!("{} - {} (尝试 {}/{})", 
-                            file_name_clone, stage_msg, attempt, max_retries));
+                        let message = format!(
+                            "{} - {} (尝试 {}/{})",
+                            file_name_clone, stage_msg, attempt, max_retries
+                        );
+                        pb_callback.set_message(message.clone());
+                        info!("{}", message);
                     });
 
                     pb_clone.set_message(format!(

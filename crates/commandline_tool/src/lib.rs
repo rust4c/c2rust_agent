@@ -1,18 +1,18 @@
+use anyhow::Result;
 use clap::{Parser, Subcommand, ValueEnum};
+use log::{error, info, warn};
 use std::collections::HashSet;
 use std::path::{Path, PathBuf};
-use anyhow::Result;
-use log::{error, info, warn};
 
 // Internal crates
 use cproject_analy::file_remanager::{CProjectPreprocessor, PreprocessConfig};
 use db_services::DatabaseManager;
-use env_checker::ai_checker::{ai_service_init, AIConnectionStatus};
+use env_checker::ai_checker::{AIConnectionStatus, ai_service_init};
 use env_checker::dbdata_init;
 use lsp_services::lsp_services::{
     analyze_project_with_default_database, check_function_and_class_name,
 };
-use main_processor::{process_batch_paths};
+use main_processor::MainProcessor;
 use project_remanager::ProjectReorganizer;
 use walkdir::WalkDir;
 
@@ -158,7 +158,11 @@ pub async fn init_services(debug: bool) -> Result<()> {
         .with_target(false)
         .with_level(true)
         .with_timer(fmt::time::uptime());
-    let level = if debug { SubLevel::DEBUG } else { SubLevel::INFO };
+    let level = if debug {
+        SubLevel::DEBUG
+    } else {
+        SubLevel::INFO
+    };
     let subscriber = tracing_subscriber::registry().with(fmt_layer).with(level);
     let _ = subscriber.try_init();
 
@@ -267,8 +271,9 @@ pub async fn run_translate(input_dir: &Path, output_dir: Option<&Path>) -> Resul
 
     // Convert batch
     info!("开始批量转换...");
-    let cfg = main_processor::pkg_config::get_config()?;
-    match process_batch_paths(cfg, projects).await {
+    let processor = MainProcessor::new(main_processor::pkg_config::get_config()?);
+    info!("调用 MainProcessor::process_batch 处理 {} 个项目", projects.len());
+    match processor.process_batch(projects).await {
         Ok(()) => {
             info!("✅ 所有C到Rust转换完成!");
             info!("📁 转换结果保存在各项目目录下的 'rust-project' 或 'rust_project' 文件夹中");
@@ -288,7 +293,9 @@ pub async fn run_translate(input_dir: &Path, output_dir: Option<&Path>) -> Resul
         Err(e) => {
             error!("❌ 转换过程中出现错误: {}", e);
             if e.to_string().contains("max_retry_attempts") {
-                warn!("💡 提示: 请创建配置文件 config/config.toml，并包含 max_retry_attempts 与 concurrent_limit 配置");
+                warn!(
+                    "💡 提示: 请创建配置文件 config/config.toml，并包含 max_retry_attempts 与 concurrent_limit 配置"
+                );
             }
         }
     }

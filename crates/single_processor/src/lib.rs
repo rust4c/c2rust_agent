@@ -7,9 +7,7 @@ pub mod rust_verifier;
 pub mod single_processes;
 
 // 主要处理函数
-pub use single_processes::{
-    StageCallback, singlefile_processor, two_stage_processor, two_stage_processor_with_callback,
-};
+pub use single_processes::{StageCallback, two_stage_processor_with_callback};
 
 // 导出各模块的公共函数
 pub use file_processor::{create_rust_project_structure, process_c_h_files};

@@ -15,11 +15,10 @@ use tokio;
 
 use chrono::{Datelike, Local, Timelike};
 use log::{debug, error, info, warn};
-use main_processor::process_batch_paths;
+use main_processor::MainProcessor;
 use project_remanager::ProjectReorganizer;
 use rand::SeedableRng;
 use rand::{Rng, rngs::StdRng};
-use single_processor::single_processes::singlefile_processor;
 use std::collections::HashSet;
 use tracing_appender::rolling;
 use tracing_log::LogTracer;
@@ -272,7 +271,7 @@ async fn main() -> Result<()> {
         } => {
             println!("已选择转换命令\n输入目录: {}", input_dir.display());
 
-            let cfg = main_processor::pkg_config::get_config()?;
+            let processor = MainProcessor::new(main_processor::pkg_config::get_config()?);
 
             if !input_dir.exists() {
                 error!("错误: 输入目录不存在: {}", input_dir.display());
@@ -325,11 +324,16 @@ async fn main() -> Result<()> {
             println!("发现 {} 个C项目:", projects.len());
             for (i, project) in projects.iter().enumerate() {
                 println!("  {}. {}", i + 1, project.display());
+                info!("发现待处理项目: {}", project.display());
             }
 
             // 第三步：批量转换 C -> Rust
             println!("开始批量转换...");
-            match process_batch_paths(cfg, projects).await {
+            info!(
+                "调用 MainProcessor::process_batch 处理 {} 个项目",
+                projects.len()
+            );
+            match processor.process_batch(projects).await {
                 Ok(()) => {
                     info!("✅ 所有C到Rust转换完成!");
                     println!("🎉 转换成功完成!");
@@ -377,7 +381,13 @@ async fn main() -> Result<()> {
                 "已选择测试单文件处理命令\n文件路径: {}",
                 input_dir.display()
             );
-            let _ = singlefile_processor(input_dir).await;
+            let cfg = main_processor::pkg_config::get_config()?;
+            let processor = MainProcessor::new(cfg);
+
+            if let Err(err) = processor.process_single(input_dir).await {
+                error!("❌ 单文件处理失败: {}", err);
+                println!("❌ 单文件处理失败，详情: {}", err);
+            }
             Ok(())
         }
     }

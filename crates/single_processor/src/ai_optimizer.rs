@@ -1,4 +1,4 @@
-use anyhow::Result;
+use anyhow::{Result, anyhow};
 use db_services::DatabaseManager;
 use llm_requester::llm_request_with_prompt;
 use log::{error, info, warn};
@@ -313,6 +313,91 @@ pub async fn ai_optimize_rust_code(
 
     info!("AI 代码优化完成");
     Ok(optimized_code)
+}
+
+/// 在最终验证失败后，请求 AI 分析失败原因并给出修复建议
+pub async fn ai_analyze_final_failure(
+    original_c_path: &Path,
+    latest_rust_path: &Path,
+    compile_errors: &str,
+) -> Result<String> {
+    info!("AI 失败诊断开始: {:?}", latest_rust_path);
+
+    let original_c_code = fs::read_to_string(original_c_path).unwrap_or_else(|e| {
+        warn!("读取原始 C 文件失败: {} - {:?}", e, original_c_path);
+        String::new()
+    });
+
+    let latest_rust_code = fs::read_to_string(latest_rust_path).unwrap_or_else(|e| {
+        warn!("读取最新 Rust 文件失败: {} - {:?}", e, latest_rust_path);
+        String::new()
+    });
+
+    let db_manager = DatabaseManager::new_default().await?;
+    let prompt_builder = PromptBuilder::new(
+        &db_manager,
+        "c_project".to_string(),
+        Some(original_c_path.to_path_buf()),
+    )
+    .await?;
+
+    let base_prompt = prompt_builder
+        .build_file_context_prompt(original_c_path, None)
+        .await?;
+
+    let mut messages = Vec::new();
+    messages.push(format!(
+        "{base}\n\n--- 编译失败诊断任务 ---\n我们尝试将 C 代码转换为 Rust，但经过多次优化仍未通过编译。\n请阅读以下编译错误，结合原始 C 与最新 Rust 代码，输出：\n1. 导致失败的核心原因（按重要性排序）\n2. 建议的修复步骤，必要时包含关键代码片段\n3. 如果仍需更多上下文，请明确说明。\n\n编译错误如下：\n```\n{errors}\n```",
+        base = base_prompt,
+        errors = compile_errors
+    ));
+
+    if !original_c_code.is_empty() {
+        let mut c_chunks = make_messages_with_function_chunks(
+            "",
+            "原始 C 代码",
+            &original_c_code,
+            true,
+            MAX_TOTAL_PROMPT_CHARS,
+        );
+        messages.append(&mut c_chunks);
+    }
+
+    if !latest_rust_code.is_empty() {
+        let mut rust_chunks = make_messages_with_function_chunks(
+            "",
+            "当前 Rust 代码",
+            &latest_rust_code,
+            false,
+            MAX_TOTAL_PROMPT_CHARS,
+        );
+        messages.append(&mut rust_chunks);
+    }
+
+    messages.push(
+        "在阅读完所有上下文后，请输出诊断结论与建议，保持结构清晰，便于人工跟进。".to_string(),
+    );
+
+    let timeout_duration = Duration::from_secs(1200);
+    let response = match timeout(
+        timeout_duration,
+        llm_request_with_prompt(
+            messages,
+            "你是一位资深 Rust 构建优化专家，擅长定位和修复复杂的编译问题".to_string(),
+        ),
+    )
+    .await
+    {
+        Ok(Ok(result)) => result,
+        Ok(Err(e)) => return Err(e),
+        Err(_) => {
+            let error_msg = "AI 失败诊断请求超时";
+            return Err(anyhow!(error_msg));
+        }
+    };
+
+    info!("AI 失败诊断完成");
+    Ok(response)
 }
 
 #[cfg(test)]
