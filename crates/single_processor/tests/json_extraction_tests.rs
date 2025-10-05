@@ -81,7 +81,8 @@ mod tests {
                     let remaining = &llm_response[value_start..].trim_start();
 
                     if remaining.starts_with('"') {
-                        let content_start = value_start + (llm_response[value_start..].len() - remaining.len()) + 1;
+                        let content_start =
+                            value_start + (llm_response[value_start..].len() - remaining.len()) + 1;
                         let mut pos = content_start;
                         let bytes = llm_response.as_bytes();
                         let mut escaped = false;
@@ -92,7 +93,9 @@ mod tests {
                             } else if bytes[pos] == b'\\' {
                                 escaped = true;
                             } else if bytes[pos] == b'"' {
-                                if let Ok(json_str) = String::from_utf8(bytes[content_start..pos].to_vec()) {
+                                if let Ok(json_str) =
+                                    String::from_utf8(bytes[content_start..pos].to_vec())
+                                {
                                     let unescaped = json_str
                                         .replace(r"\n", "\n")
                                         .replace(r"\t", "\t")
@@ -179,7 +182,8 @@ fn main() {
 
     #[test]
     fn test_openai_format() {
-        let response = r#"{"choices": [{"message": {"content": "fn main() {\n    println!(\"test\");\n}"}}]}"#;
+        let response =
+            r#"{"choices": [{"message": {"content": "fn main() {\n    println!(\"test\");\n}"}}]}"#;
         let result = extract_rust_code_from_test_response(response);
         assert!(result.is_ok());
         assert!(result.unwrap().contains("fn main()"));
@@ -207,7 +211,8 @@ fn test() {
 
     #[test]
     fn test_escaped_quotes_in_json() {
-        let response = r#"{"rust_code": "fn test() {\n    let s = \"escaped \\\"quotes\\\"\";\n}"}"#;
+        let response =
+            r#"{"rust_code": "fn test() {\n    let s = \"escaped \\\"quotes\\\"\";\n}"}"#;
         let result = extract_rust_code_from_test_response(response);
         assert!(result.is_ok());
         let code = result.unwrap();

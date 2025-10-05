@@ -4,8 +4,7 @@ use std::path::{Path, PathBuf};
 
 #[derive(Debug, Clone, Deserialize)]
 pub struct ProcessorConfig {
-    pub max_retries: u32,
-    pub concurrency: usize,
+    pub max_retry_attempts: u32,
 }
 
 pub fn get_config() -> Result<ProcessorConfig, config::ConfigError> {
@@ -23,22 +22,25 @@ const CONFIG_SEARCH_PATHS: &[&str] = &[
 
 /// Locate the first existing config file among the supported search locations.
 fn locate_config_file() -> Result<PathBuf, config::ConfigError> {
-    CONFIG_SEARCH_PATHS
-        .iter()
-        .map(Path::new)
-        .find(|candidate| candidate.exists())
-        .map(Path::to_path_buf)
-        .ok_or_else(|| {
-            config::ConfigError::NotFound(
-                "config.toml not found in any expected location".to_string(),
-            )
-        })
+    let mut attempted = Vec::new();
+
+    for raw_path in CONFIG_SEARCH_PATHS {
+        let candidate = Path::new(raw_path);
+        if candidate.exists() {
+            return Ok(candidate.to_path_buf());
+        }
+        attempted.push(candidate.display().to_string());
+    }
+
+    Err(config::ConfigError::NotFound(format!(
+        "config file not found. searched paths: [{}]",
+        attempted.join(", ")
+    )))
 }
 
 /// Build the runtime configuration from a resolved config file path.
 fn build_config(path: &Path) -> Result<Config, config::ConfigError> {
-    let path_str = path.to_string_lossy();
     Config::builder()
-        .add_source(File::with_name(path_str.as_ref()))
+        .add_source(File::from(path.to_path_buf()))
         .build()
 }

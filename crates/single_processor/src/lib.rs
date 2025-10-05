@@ -3,6 +3,7 @@ pub mod ai_optimizer;
 pub mod c2rust_translator;
 pub mod code_splitter;
 pub mod file_processor;
+pub mod pkg_config;
 pub mod rust_verifier;
 pub mod single_processes;
 

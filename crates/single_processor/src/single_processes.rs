@@ -15,6 +15,7 @@ use crate::ai_optimizer::{ai_analyze_final_failure, ai_optimize_rust_code};
 use crate::c2rust_translator::c2rust_translate;
 use crate::code_splitter::{MAX_TOTAL_PROMPT_CHARS, make_messages_with_function_chunks, total_len};
 use crate::file_processor::{create_rust_project_structure, process_c_h_files};
+use crate::pkg_config::get_config;
 use crate::rust_verifier::{extract_key_errors, verify_compilation};
 
 /// 阶段状态回调类型
@@ -232,27 +233,42 @@ impl CompilationVerifier {
 
         warn!("❌ 编译验证失败，已达最大重试次数 {}", self.max_retries);
         warn!("最后的编译错误: {}", error);
-        notify("❌ 编译失败，已达重试上限");
+        notify(&format!(
+            "❌ 编译失败，已达重试上限 ({} 次)",
+            self.max_retries
+        ));
 
+        notify("💾 正在保存错误日志...");
         let error_log_path = project_path.join("final_compile_errors.txt");
         fs::write(&error_log_path, error.to_string())?;
         info!("编译错误已保存到: {:?}", error_log_path);
+        notify(&format!("✓ 错误日志已保存: {}", error_log_path.display()));
 
         let final_key_errors = extract_key_errors(&error.to_string());
+        notify(&format!(
+            "🔍 识别到 {} 个关键错误",
+            final_key_errors.lines().count()
+        ));
 
-        notify("🤖 编译失败，正在请求AI诊断");
+        notify("🤖 正在请求AI诊断分析（这可能需要几分钟）...");
         match ai_analyze_final_failure(processed_c_file, rust_output_path, &final_key_errors).await
         {
             Ok(feedback) => {
                 let feedback_path = project_path.join("ai_failure_feedback.md");
                 fs::write(&feedback_path, &feedback)?;
                 info!("AI诊断建议已保存到: {:?}", feedback_path);
-                notify("💡 已生成AI诊断建议");
+                notify(&format!("💡 AI诊断建议已生成: {}", feedback_path.display()));
+                notify("📖 请查看诊断报告了解失败原因和建议");
             }
             Err(ai_err) => {
                 warn!("AI 诊断失败: {}", ai_err);
+                notify(&format!("⚠️ AI诊断失败: {}", ai_err));
                 let feedback_error_path = project_path.join("ai_failure_feedback_error.txt");
                 fs::write(&feedback_error_path, ai_err.to_string())?;
+                notify(&format!(
+                    "✓ 错误详情已保存: {}",
+                    feedback_error_path.display()
+                ));
             }
         }
 
@@ -324,7 +340,9 @@ pub struct TranslationProcessor {
 impl TranslationProcessor {
     pub async fn new(callback: Option<StageCallback>) -> Result<Self> {
         let db_manager = DatabaseManager::new_default().await?;
-        let verifier = CompilationVerifier::new(3); // 默认3次重试
+        let config = get_config()?;
+        let max_retries = config.max_retry_attempts;
+        let verifier = CompilationVerifier::new(max_retries.try_into().unwrap());
 
         Ok(Self {
             callback,
@@ -342,9 +360,10 @@ impl TranslationProcessor {
 
     /// 处理单个文件 - 纯 AI 翻译模式
     pub async fn process_single_file(&self, file_path: &Path) -> Result<()> {
-        self.notify("开始处理单个文件");
+        self.notify("🚀 开始处理单个文件（纯AI翻译模式）");
         info!("开始处理文件: {:?}", file_path);
 
+        self.notify(&format!("📂 正在分析文件: {}", file_path.display()));
         let prompt_builder = PromptBuilder::new(
             &self.db_manager,
             "c_project".to_string(),
@@ -352,42 +371,71 @@ impl TranslationProcessor {
         )
         .await?;
 
+        self.notify("🔍 正在构建上下文提示词...");
         let prompt = prompt_builder
             .build_file_context_prompt(file_path, None)
             .await?;
+        self.notify("✓ 上下文提示词构建完成");
 
+        self.notify("📝 正在预处理C/H文件...");
         let processed_file = process_c_h_files(file_path)?;
         let content = fs::read_to_string(&processed_file)?;
+        self.notify(&format!(
+            "✓ 文件预处理完成，代码长度: {} 字符",
+            content.len()
+        ));
 
+        self.notify("🤖 正在请求AI翻译（这可能需要几分钟）...");
         let llm_response = LLMRequester::request_translation(&prompt, &content, 6000).await?;
-        let rust_code = RustCodeExtractor::extract_rust_code_from_response(&llm_response)?;
+        self.notify("✓ AI响应接收完成");
 
+        self.notify("📦 正在提取Rust代码...");
+        let rust_code = RustCodeExtractor::extract_rust_code_from_response(&llm_response)?;
+        self.notify(&format!(
+            "✓ 成功提取Rust代码，长度: {} 字符",
+            rust_code.len()
+        ));
+
+        self.notify("💾 正在保存Rust项目...");
         let rust_project_path = file_path.join("rust-project");
         self.save_rust_project(&rust_project_path, &rust_code)?;
 
         info!("纯AI翻译完成，结果保存到: {:?}", rust_project_path);
-        self.notify("✅ 纯AI翻译完成");
+        self.notify(&format!(
+            "✅ 纯AI翻译完成！项目保存至: {}",
+            rust_project_path.display()
+        ));
         Ok(())
     }
 
     /// 两阶段翻译主函数
     pub async fn process_two_stage(&self, file_path: &Path) -> Result<()> {
-        self.notify("开始两阶段翻译处理");
+        self.notify("🚀 开始两阶段翻译处理（C2Rust + AI优化模式）");
         info!("开始两阶段翻译处理: {:?}", file_path);
 
+        self.notify(&format!("📂 目标文件: {}", file_path.display()));
+        self.notify("📝 正在预处理C文件...");
         let processed_c_file = process_c_h_files(file_path)?;
         info!("要翻译的C文件: {:?}", processed_c_file);
-        self.notify("✓ C文件预处理完成");
+        self.notify(&format!(
+            "✓ C文件预处理完成: {}",
+            processed_c_file.display()
+        ));
 
         // 第一阶段：C2Rust 翻译
+        self.notify("📍 开始第一阶段：C2Rust自动翻译");
         let (work_dir, c2rust_output) = self.execute_stage1(&processed_c_file, file_path).await?;
 
         // 第二阶段：AI 优化 + 编译验证
+        self.notify("📍 开始第二阶段：AI优化与编译验证");
         self.execute_stage2(&work_dir, &c2rust_output, &processed_c_file)
             .await?;
 
         info!("✅ 两阶段翻译处理完成");
-        self.notify("✅ 全部完成");
+        self.notify(&format!(
+            "🎉 两阶段翻译全部完成！工作目录: {}",
+            work_dir.display()
+        ));
         Ok(())
     }
 
@@ -396,22 +444,26 @@ impl TranslationProcessor {
         processed_c_file: &Path,
         original_path: &Path,
     ) -> Result<(PathBuf, PathBuf)> {
-        self.notify("🔄 阶段1/2: C2Rust自动翻译");
+        self.notify("🔄 【阶段 1/2】C2Rust自动翻译");
         info!("🔄 第一阶段：C2Rust 自动翻译");
 
+        self.notify("📁 正在创建工作目录...");
         let work_dir = original_path.join("two-stage-translation");
         let c2rust_dir = work_dir.join("c2rust-output");
         fs::create_dir_all(&c2rust_dir)?;
+        self.notify(&format!("✓ 工作目录创建完成: {}", work_dir.display()));
 
+        self.notify("⚙️ 正在执行C2Rust翻译工具...");
         match c2rust_translate(processed_c_file, &c2rust_dir).await {
             Ok(path) => {
                 info!("✅ C2Rust 翻译成功: {:?}", path);
-                self.notify("✓ C2Rust翻译完成");
+                self.notify(&format!("✅ C2Rust翻译成功！输出: {}", path.display()));
                 Ok((work_dir, path))
             }
             Err(e) => {
                 warn!("⚠️ C2Rust 翻译失败: {}，将切换到纯AI模式", e);
-                self.notify("⚠️ C2Rust失败，切换纯AI模式");
+                self.notify("⚠️ C2Rust翻译失败，自动切换到纯AI翻译模式");
+                self.notify("🔄 正在启动纯AI翻译流程...");
                 self.process_single_file(original_path).await?;
                 Err(e)
             }
@@ -424,23 +476,33 @@ impl TranslationProcessor {
         c2rust_output: &Path,
         processed_c_file: &Path,
     ) -> Result<()> {
-        self.notify("🔄 阶段2/2: AI优化+编译验证");
+        self.notify("🔄 【阶段 2/2】AI优化与编译验证");
         info!("🔄 第二阶段：AI 代码优化 + 编译验证");
 
+        self.notify("📁 正在创建最终输出目录...");
         let final_dir = work_dir.join("final-output");
         let final_output_path = final_dir.join("src").join("main.rs");
 
         create_rust_project_structure(&final_dir)?;
+        self.notify(&format!("✓ 项目结构创建完成: {}", final_dir.display()));
 
         let mut compile_errors: Option<String> = None;
 
         for attempt in 1..=self.verifier.max_retries {
             self.notify(&format!(
-                "🔄 AI优化 (尝试 {}/{})",
+                "🔄 【迭代 {}/{}】AI优化与编译验证",
                 attempt, self.verifier.max_retries
             ));
             info!("🔄 AI优化尝试 {}/{}", attempt, self.verifier.max_retries);
 
+            if let Some(ref errors) = compile_errors {
+                self.notify(&format!(
+                    "📋 上次编译错误: {} 个问题",
+                    errors.lines().count()
+                ));
+            }
+
+            self.notify("🤖 正在请求AI优化代码...");
             let optimized_code = ai_optimize_rust_code(
                 c2rust_output,
                 processed_c_file,
@@ -449,10 +511,15 @@ impl TranslationProcessor {
             )
             .await?;
 
+            self.notify(&format!(
+                "✓ AI优化完成，代码长度: {} 字符",
+                optimized_code.len()
+            ));
             fs::write(&final_output_path, &optimized_code)?;
             info!("✅ AI优化代码已保存: {:?}", final_output_path);
-            self.notify("✓ AI优化完成，准备编译");
+            self.notify(&format!("💾 代码已保存: {}", final_output_path.display()));
 
+            self.notify("🔨 正在编译验证...");
             // 编译验证
             match self
                 .verifier
@@ -465,14 +532,23 @@ impl TranslationProcessor {
                 .await
             {
                 Ok(_) => {
+                    self.notify("🎉 编译验证通过！");
                     // 备份原始C2Rust输出
+                    self.notify("💾 正在备份C2Rust原始输出...");
                     self.backup_c2rust_output(c2rust_output, &final_dir)?;
+                    self.notify("✓ 备份完成");
+                    self.notify(&format!(
+                        "✅ 第二阶段完成！最终项目: {}",
+                        final_dir.display()
+                    ));
                     return Ok(());
                 }
                 Err(e) => {
                     if attempt < self.verifier.max_retries {
                         compile_errors = Some(e.to_string());
+                        self.notify(&format!("⚠️ 编译失败，将进行第 {} 次重试", attempt + 1));
                     } else {
+                        self.notify("❌ 已达最大重试次数，编译验证失败");
                         return Err(e);
                     }
                 }
@@ -483,11 +559,16 @@ impl TranslationProcessor {
     }
 
     fn save_rust_project(&self, project_path: &Path, rust_code: &str) -> Result<()> {
+        self.notify("📁 正在创建Rust项目结构...");
         create_rust_project_structure(project_path)?;
+        self.notify("✓ 项目结构创建完成");
+
         let output_file_path = project_path.join("src").join("main.rs");
+        self.notify(&format!("💾 正在写入文件: {}", output_file_path.display()));
         let mut output_file = File::create(&output_file_path)?;
         write!(output_file, "{}", rust_code)?;
         info!("转换结果已保存到: {:?}", output_file_path);
+        self.notify(&format!("✓ 文件保存成功 ({} 字节)", rust_code.len()));
         Ok(())
     }
 
@@ -496,6 +577,10 @@ impl TranslationProcessor {
         if let Ok(c2rust_content) = fs::read_to_string(c2rust_output) {
             fs::write(&c2rust_backup_path, &c2rust_content)?;
             info!("📄 C2Rust 原始输出已备份到: {:?}", c2rust_backup_path);
+            self.notify(&format!(
+                "📄 C2Rust原始输出已备份: {}",
+                c2rust_backup_path.display()
+            ));
         }
         Ok(())
     }

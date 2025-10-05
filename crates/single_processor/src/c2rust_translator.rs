@@ -5,13 +5,13 @@ use std::path::{Path, PathBuf};
 use std::process::Command;
 
 /// C2Rust 第一阶段翻译
-/// 
+///
 /// 使用 C2Rust 工具自动翻译 C 代码到 Rust
-/// 
+///
 /// # 参数
 /// * `dir_path` - 包含 C 源文件的目录
 /// * `output_dir` - 输出目录，生成的 Rust 代码将放在这里
-/// 
+///
 /// # 返回
 /// 生成的 Rust 主文件路径
 pub async fn c2rust_translate(dir_path: &Path, output_dir: &Path) -> Result<PathBuf> {
@@ -104,10 +104,10 @@ mod tests {
         use tempfile::tempdir;
         let temp_dir = tempdir().unwrap();
         let output_dir = temp_dir.path().join("output");
-        
+
         let rt = tokio::runtime::Runtime::new().unwrap();
         let result = rt.block_on(c2rust_translate(temp_dir.path(), &output_dir));
-        
+
         assert!(result.is_err());
         assert!(result.unwrap_err().to_string().contains("未找到可转换的"));
     }

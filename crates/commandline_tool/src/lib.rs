@@ -272,7 +272,10 @@ pub async fn run_translate(input_dir: &Path, output_dir: Option<&Path>) -> Resul
     // Convert batch
     info!("开始批量转换...");
     let processor = MainProcessor::new(main_processor::pkg_config::get_config()?);
-    info!("调用 MainProcessor::process_batch 处理 {} 个项目", projects.len());
+    info!(
+        "调用 MainProcessor::process_batch 处理 {} 个项目",
+        projects.len()
+    );
     match processor.process_batch(projects).await {
         Ok(()) => {
             info!("✅ 所有C到Rust转换完成!");

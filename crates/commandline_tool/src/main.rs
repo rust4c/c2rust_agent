@@ -7,11 +7,8 @@ use lsp_services::lsp_services::{
 use std::fs;
 use std::path::{Path, PathBuf};
 
-use anyhow::Result;
-use db_services::DatabaseManager;
-use env_checker::ai_checker::{AIConnectionStatus, ai_service_init};
-use env_checker::dbdata_init;
-use tokio;
+use anyhow::{Result, anyhow};
+use env_checker::{AIConnectionStatus, IssueLevel, check_all};
 
 use chrono::{Datelike, Local, Timelike};
 use log::{debug, error, info, warn};
@@ -28,14 +25,6 @@ use tracing_subscriber::prelude::*;
 
 // // 翻译模块
 // use main_processor::{MainProcessor, ProjectType};
-
-// 初始化数据库管理器
-async fn _dbdata_create() -> DatabaseManager {
-    let manager = DatabaseManager::new_default()
-        .await
-        .expect("Failed to create DatabaseManager");
-    manager
-}
 
 /// 发现C项目 - 简化版本
 async fn discover_c_projects(dir: &PathBuf) -> Result<Vec<PathBuf>> {
@@ -163,24 +152,52 @@ async fn main() -> Result<()> {
         .with(file_layer.with_filter(file_filter));
     let _ = subscriber.try_init();
 
-    // 初始化数据库连接
-    let manager: DatabaseManager = _dbdata_create().await;
+    let summary = check_all().await;
 
-    // 检查数据库状态
-    match dbdata_init(manager).await {
-        Ok(status) => {
-            // 后台状态记录到日志，不主动在控制台交互输出
-            info!("数据库状态: {:?}", status);
+    if let Some(err) = &summary.config.error {
+        error!("加载配置文件失败: {}", err);
+        println!("加载配置文件失败: {}", err);
+        return Err(anyhow!(err.clone()));
+    }
+
+    if let Some(report) = &summary.config.report {
+        if !report.issues.is_empty() {
+            println!("配置检查结果 ({}):", report.path.display());
         }
-        Err(e) => {
-            error!("查询数据库状态失败: {}", e);
+
+        let mut has_error = false;
+        for issue in &report.issues {
+            match issue.level {
+                IssueLevel::Error => {
+                    has_error = true;
+                    error!("配置错误 [{}]: {}", issue.field, issue.message);
+                    println!("  ❌ {} -> {}", issue.field, issue.message);
+                }
+                IssueLevel::Warning => {
+                    warn!("配置警告 [{}]: {}", issue.field, issue.message);
+                    println!("  ⚠️ {} -> {}", issue.field, issue.message);
+                }
+            }
+        }
+
+        if has_error {
+            println!("配置存在致命错误，请修复后重试。");
+            return Err(anyhow!("configuration validation failed"));
         }
     }
 
-    let ai_checkers = ai_service_init().await;
-    match ai_checkers {
-        Ok(status) => {
-            // 后台状态记录到日志，不主动在控制台交互输出
+    if let Some(err) = &summary.database.error {
+        error!("查询数据库状态失败: {}", err);
+        println!("查询数据库状态失败: {}", err);
+        return Err(anyhow!("数据库检查失败: {}", err));
+    }
+
+    if let Some(status) = &summary.database.status {
+        info!("数据库状态: {:?}", status);
+    }
+
+    match (&summary.ai.status, &summary.ai.error) {
+        (Some(status), _) => {
             info!("AI 服务状态: {:?}", status);
             match status {
                 AIConnectionStatus::AllConnected => info!("AI 服务已连接"),
@@ -188,9 +205,10 @@ async fn main() -> Result<()> {
                 _ => warn!("部分 AI 服务连接状态不明"),
             }
         }
-        Err(e) => {
-            error!("查询 AI 服务状态失败: {}", e);
+        (None, Some(err)) => {
+            error!("查询 AI 服务状态失败: {}", err);
         }
+        _ => {}
     }
 
     // cli 已解析

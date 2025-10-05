@@ -5,21 +5,21 @@ use std::path::Path;
 async fn main() -> Result<(), Box<dyn std::error::Error>> {
     // 初始化日志
     env_logger::init();
-    
+
     // 测试路径 - 修改为实际的测试项目路径
     let test_path = Path::new("./test-projects/translate_chibicc/src");
-    
+
     if !test_path.exists() {
         eprintln!("❌ 测试路径不存在: {}", test_path.display());
         eprintln!("请修改 test_path 为实际的包含 C 文件的目录");
         return Ok(());
     }
-    
+
     println!("🚀 开始测试两阶段翻译功能");
     println!("📁 测试路径: {}", test_path.display());
     println!("🔄 流程: C2Rust 自动翻译 → AI 代码优化");
     println!("⏱️  这可能需要几分钟时间...");
-    
+
     match process_single_path(test_path).await {
         Ok(()) => {
             println!("✅ 两阶段翻译测试成功完成!");
@@ -36,6 +36,6 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
             eprintln!("  3. LLM API 配置是否正确");
         }
     }
-    
+
     Ok(())
 }
