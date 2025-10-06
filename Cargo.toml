@@ -13,7 +13,7 @@ members = [
     "crates/relation_analy",
     "crates/rust_checker",
     "crates/single_processor",
-    "crates/ui_main",
+    "crates/ui_main", "crates/web_searcher",
 ]
 resolver = "3"
 default-members = ["crates/commandline_tool"]
@@ -30,6 +30,7 @@ lsp_services = { path = "crates/lsp_services" }
 prompt_builder = { path = "crates/prompt_builder" }
 relation_analy = { path = "crates/relation_analy" }
 rust_checker = { path = "crates/rust_checker" }
+simple_agent = { path = "crates/simple_agent" }
 single_processor = { path = "crates/single_processor" }
 ui_main = { path = "crates/ui_main" }
 tokio = { version = "1.0", features = ["full"] }
