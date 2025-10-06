@@ -218,6 +218,10 @@ async fn main() -> Result<()> {
             debug!("已选择分析命令");
             println!("开始分析项目\n输入目录: {}", input_dir.display());
             let input_dir = input_dir.to_str().unwrap_or("未指定");
+            if cli.force {
+                println!("--force 已启用：将强制重新执行分析步骤");
+                info!("--force enabled: rerun analyze");
+            }
 
             // 使用带数据库支持的分析功能
             match analyze_project_with_default_database(input_dir, false).await {
@@ -257,7 +261,12 @@ async fn main() -> Result<()> {
                 return Ok(());
             }
 
-            println!("正在预处理项目...");
+            if cli.force {
+                println!("--force 已启用：将强制重新预处理，即使输出目录存在");
+                info!("--force enabled: force preprocess in Preprocess command");
+            } else {
+                println!("正在预处理项目...");
+            }
 
             let config = PreprocessConfig::default();
             let mut preprocessor = CProjectPreprocessor::new(Some(config));
@@ -333,7 +342,11 @@ async fn main() -> Result<()> {
                 false
             }
 
-            if !cache_has_c_or_h(&cache_dir) {
+            if cli.force || !cache_has_c_or_h(&cache_dir) {
+                if cli.force {
+                    println!("--force 已启用：即使存在缓存也将重新预处理");
+                    info!("--force enabled: re-run preprocess even if cache exists");
+                }
                 let config = PreprocessConfig::default();
                 let mut preprocessor = CProjectPreprocessor::new(Some(config));
                 if let Err(e) = preprocessor.preprocess_project(input_dir, &cache_dir) {

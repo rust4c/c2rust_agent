@@ -36,6 +36,7 @@
 {
   "original": "原始C代码",
   "rust_code": "转换后的Rust代码",
+  "cargo": "需要添加的crates,使用逗号分隔开,之间不需要添加空格",
   "key_changes": ["关键变更点列表"],
   "warnings": ["潜在问题警告"]
 }

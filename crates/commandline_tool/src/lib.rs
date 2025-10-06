@@ -25,6 +25,14 @@ pub struct Cli {
     /// 显示调试日志 (默认关闭)
     #[arg(long, short = 'd', global = true, help = "show debug log")]
     pub debug: bool,
+    /// 强制重复执行（例如：即使存在缓存也重新预处理）
+    #[arg(
+        long,
+        short = 'f',
+        global = true,
+        help = "force re-run even if cached/output exists"
+    )]
+    pub force: bool,
     #[command(subcommand)]
     pub command: Commands,
 }

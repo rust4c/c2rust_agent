@@ -13,6 +13,17 @@ use crate::code_splitter::{
     make_messages_with_function_chunks, remaining_budget, total_len,
 };
 
+/// 优化结果（结构化），便于后续处理 Cargo 依赖与提示
+#[derive(Debug, Clone)]
+pub struct OptimizedResult {
+    pub rust_code: String,
+    pub cargo_crates: Vec<String>,
+    pub key_changes: Vec<String>,
+    pub warnings: Vec<String>,
+}
+
+impl OptimizedResult {}
+
 /// 当第二次附加编译结果且超过限制时，调用 LLM 进行概括压缩
 async fn summarize_text_if_needed(original: &str, required_len: usize) -> Result<String> {
     let prompt = format!(
@@ -25,12 +36,15 @@ async fn summarize_text_if_needed(original: &str, required_len: usize) -> Result
     Ok(summary)
 }
 
-/// 处理LLM响应并提取Rust代码
-fn process_llm_response(llm_response: &str, _output_dir: &Path) -> Result<String> {
+/// 处理LLM响应并提取Rust代码及依赖信息
+fn process_llm_response(llm_response: &str, _output_dir: &Path) -> Result<OptimizedResult> {
     info!("处理LLM响应");
 
     // 尝试多种方式解析响应
-    let mut rust_code = None;
+    let mut rust_code: Option<String> = None;
+    let mut cargo_crates: Vec<String> = vec![];
+    let mut key_changes: Vec<String> = vec![];
+    let mut warnings_list: Vec<String> = vec![];
 
     // 方法1: 尝试直接解析为JSON
     if let Ok(json_response) = serde_json::from_str::<Value>(llm_response) {
@@ -47,6 +61,31 @@ fn process_llm_response(llm_response: &str, _output_dir: &Path) -> Result<String
                 }
             }
         }
+
+        // cargo 依赖，形如 "cargo": "xx,yy"
+        if let Some(cargo_str) = json_response["cargo"].as_str() {
+            cargo_crates = cargo_str
+                .split(',')
+                .map(|s| s.trim().to_string())
+                .filter(|s| !s.is_empty())
+                .collect();
+        }
+
+        // key_changes 数组
+        if let Some(arr) = json_response["key_changes"].as_array() {
+            key_changes = arr
+                .iter()
+                .filter_map(|v| v.as_str().map(|s| s.to_string()))
+                .collect();
+        }
+
+        // warnings 数组
+        if let Some(arr) = json_response["warnings"].as_array() {
+            warnings_list = arr
+                .iter()
+                .filter_map(|v| v.as_str().map(|s| s.to_string()))
+                .collect();
+        }
     }
 
     // 方法2: 尝试处理被代码块包裹的JSON
@@ -62,6 +101,27 @@ fn process_llm_response(llm_response: &str, _output_dir: &Path) -> Result<String
             if let Some(code) = json_response["rust_code"].as_str() {
                 rust_code = Some(code.to_string());
                 info!("成功从清理后的JSON响应中提取Rust代码");
+            }
+
+            // 同时提取 cargo、key_changes、warnings
+            if let Some(cargo_str) = json_response["cargo"].as_str() {
+                cargo_crates = cargo_str
+                    .split(',')
+                    .map(|s| s.trim().to_string())
+                    .filter(|s| !s.is_empty())
+                    .collect();
+            }
+            if let Some(arr) = json_response["key_changes"].as_array() {
+                key_changes = arr
+                    .iter()
+                    .filter_map(|v| v.as_str().map(|s| s.to_string()))
+                    .collect();
+            }
+            if let Some(arr) = json_response["warnings"].as_array() {
+                warnings_list = arr
+                    .iter()
+                    .filter_map(|v| v.as_str().map(|s| s.to_string()))
+                    .collect();
             }
         }
     }
@@ -150,7 +210,15 @@ fn process_llm_response(llm_response: &str, _output_dir: &Path) -> Result<String
         rust_code = Some(llm_response.to_string());
     }
 
-    rust_code.ok_or_else(|| anyhow::anyhow!("无法从LLM响应中提取Rust代码"))
+    match rust_code {
+        Some(code) => Ok(OptimizedResult {
+            rust_code: code,
+            cargo_crates,
+            key_changes,
+            warnings: warnings_list,
+        }),
+        None => Err(anyhow::anyhow!("无法从LLM响应中提取Rust代码")),
+    }
 }
 
 /// AI 第二阶段翻译：优化 C2Rust 生成的代码
@@ -168,7 +236,7 @@ pub async fn ai_optimize_rust_code(
     original_c_path: &Path,
     output_dir: &Path,
     compile_errors: Option<&str>,
-) -> Result<String> {
+) -> Result<OptimizedResult> {
     info!("开始 AI 第二阶段代码优化");
 
     // 读取 C2Rust 生成的代码
@@ -345,10 +413,10 @@ pub async fn ai_optimize_rust_code(
     };
 
     // 处理 AI 响应并提取优化后的代码
-    let optimized_code = process_llm_response(&llm_response, output_dir)?;
+    let optimized = process_llm_response(&llm_response, output_dir)?;
 
     info!("AI 代码优化完成");
-    Ok(optimized_code)
+    Ok(optimized)
 }
 
 /// 在最终验证失败后，请求 AI 分析失败原因并给出修复建议
@@ -457,8 +525,9 @@ This is better.
 "#;
         let result = process_llm_response(response, Path::new("/tmp"));
         assert!(result.is_ok());
-        let code = result.unwrap();
-        assert!(code.contains("println!"));
-        assert!(!code.contains("```"));
+        let out = result.unwrap();
+        assert!(out.rust_code.contains("println!"));
+        assert!(!out.rust_code.contains("```"));
+        assert!(out.cargo_crates.is_empty());
     }
 }

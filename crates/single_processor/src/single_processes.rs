@@ -162,6 +162,45 @@ impl TranslationProcessor {
         Ok(Self { callback, verifier })
     }
 
+    /// 在指定项目目录执行 `cargo add` 添加依赖，并在进度回调中展示
+    fn add_cargo_deps_with_progress(&self, project_dir: &Path, crates: &[String]) -> Result<()> {
+        if crates.is_empty() {
+            return Ok(());
+        }
+        self.notify("📦 检测到需要添加的依赖，开始执行 cargo add …");
+        for (idx, krate) in crates.iter().enumerate() {
+            self.notify(&format!(
+                "📦 ({}/{}) cargo add {}",
+                idx + 1,
+                crates.len(),
+                krate
+            ));
+            // 在项目目录运行 cargo add <crate>
+            let output = std::process::Command::new("cargo")
+                .arg("add")
+                .arg(krate)
+                .current_dir(project_dir)
+                .output();
+            match output {
+                Ok(out) => {
+                    if out.status.success() {
+                        self.notify(&format!("✅ 已添加: {}", krate));
+                    } else {
+                        let stderr = String::from_utf8_lossy(&out.stderr);
+                        let stdout = String::from_utf8_lossy(&out.stdout);
+                        warn!("cargo add {} 失败: {}\n{}", krate, stderr, stdout);
+                        self.notify(&format!("⚠️ 添加依赖失败: {} (已跳过)", krate));
+                    }
+                }
+                Err(e) => {
+                    warn!("执行 cargo add {} 出错: {}", krate, e);
+                    self.notify(&format!("⚠️ 执行 cargo add 出错: {} (已跳过)", krate));
+                }
+            }
+        }
+        Ok(())
+    }
+
     /// 通知回调
     fn notify(&self, msg: &str) {
         if let Some(ref cb) = self.callback {
@@ -214,7 +253,7 @@ impl TranslationProcessor {
 
             self.notify("🤖 正在请求AI优化代码...");
             // 使用预处理后的 C 文件作为原始上下文，纯 AI 翻译
-            let optimized_code = ai_optimize_rust_code(
+            let optimized = ai_optimize_rust_code(
                 None,
                 processed_c_file.as_path(),
                 &final_dir,
@@ -224,10 +263,12 @@ impl TranslationProcessor {
 
             // 自动识别类型并命名
             let optimized_rust_path =
-                create_rust_project_structure_with_type(&final_dir, &optimized_code)?;
+                create_rust_project_structure_with_type(&final_dir, &optimized.rust_code)?;
+            // 处理 cargo 依赖添加
+            self.add_cargo_deps_with_progress(&final_dir, &optimized.cargo_crates)?;
             self.notify(&format!(
                 "✓ AI优化完成，代码长度: {} 字符",
-                optimized_code.len()
+                optimized.rust_code.len()
             ));
             info!("✅ AI优化代码已保存: {:?}", optimized_rust_path);
             self.notify(&format!("💾 代码已保存: {}", optimized_rust_path.display()));
@@ -372,7 +413,7 @@ impl TranslationProcessor {
             }
 
             self.notify("🤖 正在请求AI优化代码...");
-            let optimized_code = ai_optimize_rust_code(
+            let optimized = ai_optimize_rust_code(
                 Some(&c2rust_output.to_path_buf()),
                 processed_c_file,
                 &final_dir,
@@ -382,10 +423,12 @@ impl TranslationProcessor {
 
             // 自动识别类型并命名
             let optimized_rust_path =
-                create_rust_project_structure_with_type(&final_dir, &optimized_code)?;
+                create_rust_project_structure_with_type(&final_dir, &optimized.rust_code)?;
+            // 处理 cargo 依赖添加
+            self.add_cargo_deps_with_progress(&final_dir, &optimized.cargo_crates)?;
             self.notify(&format!(
                 "✓ AI优化完成，代码长度: {} 字符",
-                optimized_code.len()
+                optimized.rust_code.len()
             ));
             info!("✅ AI优化代码已保存: {:?}", optimized_rust_path);
             self.notify(&format!("💾 代码已保存: {}", optimized_rust_path.display()));
