@@ -7,8 +7,10 @@ use std::sync::Arc;
 // 导入各模块
 use crate::ai_optimizer::{ai_analyze_final_failure, ai_optimize_rust_code};
 use crate::c2rust_translator::c2rust_translate;
-use crate::file_processor::create_rust_project_structure_with_type;
 use crate::file_processor::process_c_h_files;
+use crate::file_processor::{
+    create_cargo_project_with_code_from_c, detect_project_type_from_c, write_rust_code_to_project,
+};
 use crate::pkg_config::get_config;
 use crate::rust_verifier::{extract_key_errors, verify_compilation};
 
@@ -261,9 +263,20 @@ impl TranslationProcessor {
             )
             .await?;
 
-            // 自动识别类型并命名
-            let optimized_rust_path =
-                create_rust_project_structure_with_type(&final_dir, &optimized.rust_code)?;
+            // 第一次迭代：使用 cargo new 进行项目初始化（根据 C 文件是否包含 main 判断 bin/lib）
+            // 后续迭代：仅覆盖对应 src 文件
+            let proj_type = detect_project_type_from_c(&processed_c_file);
+            let optimized_rust_path = if !final_dir.exists() || final_dir.read_dir().is_err() {
+                // 初始化并写入
+                create_cargo_project_with_code_from_c(
+                    &final_dir,
+                    &optimized.rust_code,
+                    &processed_c_file,
+                )?
+            } else {
+                // 已存在项目，直接覆盖源码文件
+                write_rust_code_to_project(&final_dir, &optimized.rust_code, proj_type)?
+            };
             // 处理 cargo 依赖添加
             self.add_cargo_deps_with_progress(&final_dir, &optimized.cargo_crates)?;
             self.notify(&format!(
@@ -391,9 +404,10 @@ impl TranslationProcessor {
         self.notify("📁 正在创建最终输出目录...");
         let final_dir = work_dir.join("final-output");
 
-        use crate::file_processor::create_rust_project_structure_with_type;
+        // 使用 cargo new 初始化后，后续覆盖 src 文件
         let c2rust_code = fs::read_to_string(c2rust_output)?;
-        create_rust_project_structure_with_type(&final_dir, &c2rust_code)?;
+        // 使用 cargo new 初始化（基于 C 文件判断 bin/lib）；若目录存在则重建
+        create_cargo_project_with_code_from_c(&final_dir, &c2rust_code, processed_c_file)?;
         self.notify(&format!("✓ 项目结构创建完成: {}", final_dir.display()));
 
         let mut compile_errors: Option<String> = None;
@@ -421,9 +435,10 @@ impl TranslationProcessor {
             )
             .await?;
 
-            // 自动识别类型并命名
+            // 仅覆盖对应 src 文件
+            let proj_type = detect_project_type_from_c(processed_c_file);
             let optimized_rust_path =
-                create_rust_project_structure_with_type(&final_dir, &optimized.rust_code)?;
+                write_rust_code_to_project(&final_dir, &optimized.rust_code, proj_type)?;
             // 处理 cargo 依赖添加
             self.add_cargo_deps_with_progress(&final_dir, &optimized.cargo_crates)?;
             self.notify(&format!(
