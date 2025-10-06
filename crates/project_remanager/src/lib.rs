@@ -7,12 +7,11 @@
 //! and generate the right config files. If it works, ship it.
 
 use anyhow::{Context, Result};
+use log::debug;
 use serde::Deserialize;
 use std::collections::HashMap;
 use std::fs;
 use std::path::{Path, PathBuf};
-
-use relation_analy::generate_c_dependency_graph;
 
 #[derive(Debug, Deserialize)]
 pub struct FileMapping {
@@ -78,33 +77,6 @@ impl ProjectReorganizer {
 
         // Step 5: Copy all the code
         self.copy_project_contents(&main_projects, &lib_projects)?;
-
-        // Step 6: Generate C dependency graph
-        match generate_c_dependency_graph(&self.output_path) {
-            Ok(rel) => {
-                println!(
-                    "✅ Relation graph generated at: {}",
-                    rel.workspace.join("relation_graph.json").display()
-                );
-                println!("Files: {}", rel.files.len());
-                let include_edges: usize = rel
-                    .files
-                    .values()
-                    .map(|n| n.local_includes.len() + n.system_includes.len())
-                    .sum();
-                println!("Include edges: {}", include_edges);
-                println!(
-                    "Include dirs: {} | Link libs: {} | Link dirs: {}",
-                    rel.build.include_dirs.len(),
-                    rel.build.link_libs.len(),
-                    rel.build.link_dirs.len()
-                );
-            }
-            Err(e) => {
-                eprintln!("❌ Failed to generate relation graph: {e}");
-                std::process::exit(1);
-            }
-        }
 
         // Step 6: Generate workspace configuration
         self.generate_workspace_config(&main_projects, &lib_projects)?;
@@ -261,6 +233,11 @@ impl ProjectReorganizer {
         main_projects: &[RustProject],
         lib_projects: &[RustProject],
     ) -> Result<()> {
+        debug!(
+            "Copying project contents from {} to {}",
+            self.src_cache_path.display(),
+            self.output_path.display()
+        );
         // Copy main programs to src/bin/
         for main_project in main_projects {
             self.copy_main_project(main_project)?;

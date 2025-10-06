@@ -1,7 +1,9 @@
 use anyhow::{Context, Result};
 use glob::Pattern;
 use indicatif::{MultiProgress, ProgressBar, ProgressIterator, ProgressStyle};
+use log::{error, info};
 use rayon::prelude::*;
+use relation_analy::generate_c_dependency_graph;
 use serde::{Deserialize, Serialize};
 use serde_json;
 use std::{
@@ -171,6 +173,10 @@ impl CProjectPreprocessor {
         main_pb.set_message("📦 处理分类文件...");
         self.process_categorized_files(&categorized_files, output_dir, &m)?;
 
+        // 关系分析
+        main_pb.set_message("🔗 进行关系分析...");
+        self.relation_analysis(output_dir)?;
+
         // 生成报告
         main_pb.set_message("📊 生成处理报告...");
         self.generate_report(output_dir)?;
@@ -180,6 +186,30 @@ impl CProjectPreprocessor {
         main_pb.finish_with_message("✅ 预处理完成!");
 
         Ok(std::mem::take(&mut self.stats))
+    }
+
+    fn relation_analysis(&self, source_dir: &Path) -> Result<()> {
+        match generate_c_dependency_graph(source_dir) {
+            Ok(rel) => {
+                info!("Relation graph: {:#?}", rel);
+                let _include_edges: usize = rel
+                    .files
+                    .values()
+                    .map(|n| n.local_includes.len() + n.system_includes.len())
+                    .sum();
+                info!(
+                    "Include dirs: {} | Link libs: {} | Link dirs: {}",
+                    rel.build.include_dirs.len(),
+                    rel.build.link_libs.len(),
+                    rel.build.link_dirs.len()
+                );
+            }
+            Err(e) => {
+                eprintln!("❌ Failed to generate relation graph: {e}");
+                error!("Failed to generate relation graph: {e}");
+            }
+        }
+        Ok(())
     }
 
     /// 创建输出目录结构
@@ -645,6 +675,75 @@ impl CProjectPreprocessor {
             "总大小: {}\n\n",
             format_size(self.stats.total_size)
         ));
+
+        // 终端输出处理报告
+        println!("\n🎯 C项目文件预处理报告");
+        println!("═══════════════════════════════════════");
+        println!("📊 处理统计:");
+        println!("   • 总文件数量: {}", self.stats.total_files);
+        println!(
+            "   • 配对文件数: {} ({}个配对)",
+            self.stats.paired_files,
+            self.stats.paired_files / 2
+        );
+        println!("   • 单独文件数: {}", self.stats.individual_files);
+        println!("   • 不相关文件: {}", self.stats.unrelated_files);
+        println!("   • 跳过文件数: {}", self.stats.skipped_files);
+        println!("   • 文件映射数: {}", self.stats.mapping_count);
+
+        println!("\n🔗 关系分析:");
+        match generate_c_dependency_graph(output_dir) {
+            Ok(rel) => {
+                let include_edges: usize = rel
+                    .files
+                    .values()
+                    .map(|n| n.local_includes.len() + n.system_includes.len())
+                    .sum();
+                println!("   • 文件节点数: {}", rel.files.len());
+                println!("   • 包含关系数: {}", include_edges);
+                println!("   • 包含目录数: {}", rel.build.include_dirs.len());
+                println!("   • 链接库数量: {}", rel.build.link_libs.len());
+                println!("   • 链接目录数: {}", rel.build.link_dirs.len());
+                println!("   • 依赖图生成: ✅ 成功");
+            }
+            Err(_) => {
+                println!("   • 依赖图生成: ❌ 失败");
+            }
+        }
+
+        println!("\n⏱️  性能指标:");
+        println!("   • 处理时间: {:.2} 秒", self.stats.processing_time);
+        println!("   • 总数据量: {}", format_size(self.stats.total_size));
+        println!(
+            "   • 平均速度: {}/秒",
+            format_size((self.stats.total_size as f64 / self.stats.processing_time) as u64)
+        );
+        println!("\n⚙️  配置参数:");
+        println!("   • 工作线程数: {}", self.config.worker_count);
+        println!(
+            "   • 大文件阈值: {}",
+            format_size(self.config.large_file_threshold)
+        );
+        println!(
+            "   • 块处理大小: {}",
+            format_size(self.config.chunk_size as u64)
+        );
+
+        if !self.stats.errors.is_empty() {
+            println!("\n❌ 错误信息 ({} 项):", self.stats.errors.len());
+            for (i, error) in self.stats.errors.iter().enumerate().take(5) {
+                println!("   {}. {}", i + 1, error);
+            }
+            if self.stats.errors.len() > 5 {
+                println!(
+                    "   ... 还有 {} 个错误 (详见日志文件)",
+                    self.stats.errors.len() - 5
+                );
+            }
+        } else {
+            println!("\n✅ 处理完成，无错误发生");
+        }
+        println!("═══════════════════════════════════════\n");
 
         if !self.stats.errors.is_empty() {
             text_report.push_str("错误信息:\n");

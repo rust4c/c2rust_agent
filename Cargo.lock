@@ -1141,6 +1141,7 @@ dependencies = [
  "prompt_builder",
  "rayon",
  "regex",
+ "relation_analy",
  "serde",
  "serde_json",
  "sysinfo",
@@ -4493,6 +4494,7 @@ name = "project_remanager"
 version = "0.1.0"
 dependencies = [
  "anyhow",
+ "log",
  "relation_analy",
  "serde",
  "tempfile",

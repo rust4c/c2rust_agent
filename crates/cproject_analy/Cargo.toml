@@ -8,6 +8,7 @@ db_services = { path = "../db_services" }
 llm_requester = { path = "../llm_requester" }
 lsp_services = { path = "../lsp_services" }
 prompt_builder = { path = "../prompt_builder" }
+relation_analy = { path = "../relation_analy" }
 
 anyhow = "1.0.99"
 chrono = "0.4.41"
