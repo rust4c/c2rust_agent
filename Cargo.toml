@@ -2,17 +2,21 @@
 members = [
     "crates/commandline_tool",
     "crates/cproject_analy",
-    "crates/db_services", "crates/env_checker",
+    "crates/db_services",
+    "crates/env_checker",
     "crates/file_scanner",
     "crates/llm_requester",
-    "crates/lsp_services", "crates/main_processor", "crates/project_remanager",
-    "crates/prompt_builder", "crates/relation_analy", "crates/rust_checker", "crates/single_processor",
+    "crates/lsp_services",
+    "crates/main_processor",
+    "crates/project_remanager",
+    "crates/prompt_builder",
+    "crates/relation_analy",
+    "crates/rust_checker",
+    "crates/single_processor",
     "crates/ui_main",
 ]
 resolver = "3"
-default-members = [
-    "crates/commandline_tool"
-]
+default-members = ["crates/commandline_tool"]
 
 [workspace.dependencies]
 anyhow = "1.0.99"
@@ -24,8 +28,9 @@ llm_requester = { path = "crates/llm_requester" }
 log = "0.4.27"
 lsp_services = { path = "crates/lsp_services" }
 prompt_builder = { path = "crates/prompt_builder" }
+relation_analy = { path = "crates/relation_analy" }
+rust_checker = { path = "crates/rust_checker" }
+single_processor = { path = "crates/single_processor" }
 ui_main = { path = "crates/ui_main" }
 tokio = { version = "1.0", features = ["full"] }
 tempfile = "3.8"
-
-

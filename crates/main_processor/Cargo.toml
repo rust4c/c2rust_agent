@@ -10,6 +10,7 @@ rust_checker = { path = "../rust_checker" }
 db_services = { path = "../db_services" }
 env_checker = { path = "../env_checker" }
 single_processor = { path = "../single_processor" }
+relation_analy = { path = "../relation_analy" }
 
 anyhow = "1.0"
 indicatif = { version = "0.18.0", features = ["in_memory"] }

@@ -382,58 +382,95 @@ async fn main() -> Result<()> {
                 info!("发现待处理项目: {}", project.display());
             }
 
-            // 第三步：批量转换 C -> Rust
+            // 第三步：如果存在依赖关系图，使用依赖感知调度；否则按原有批量
             println!("开始批量转换...");
-            info!(
-                "调用 MainProcessor::process_batch 处理 {} 个项目",
-                projects.len()
-            );
-            match processor.process_batch(projects).await {
-                Ok(()) => {
-                    info!("✅ 所有C到Rust转换完成!");
-                    println!("🎉 转换成功完成!");
-                    println!(
-                        "📁 转换结果保存在各项目目录下的 'rust-project' 或 'rust_project' 文件夹中"
-                    );
-
-                    // 第四步：重组为一个 Rust 工作区
-                    // 若提供了 --output-dir（缓存目录），则在其同级目录下创建 <缓存名>_workspace
-                    // 否则按输入目录规则创建 <输入名>_workspace
-                    let workspace_out: PathBuf = if let Some(p) = output_dir.as_ref() {
-                        let parent = p.parent().unwrap_or_else(|| Path::new("."));
-                        let dir_name = p
-                            .file_name()
-                            .map(|n| n.to_string_lossy().into_owned())
-                            .unwrap_or_else(|| "project".to_string());
-                        parent.join(format!("{}_workspace", dir_name))
-                    } else {
-                        let parent = input_dir.parent().unwrap_or_else(|| Path::new("."));
-                        let dir_name = input_dir
-                            .file_name()
-                            .map(|n| n.to_string_lossy().into_owned())
-                            .unwrap_or_else(|| "project".to_string());
-                        parent.join(format!("{}_workspace", dir_name))
-                    };
-                    println!("开始重组项目: {}", workspace_out.display());
-                    let reorganizer =
-                        ProjectReorganizer::new(cache_dir.clone(), workspace_out.clone());
-                    if let Err(e) = reorganizer.reorganize() {
-                        error!("重组项目失败: {}", e);
-                        println!("重组项目失败: {}", e);
-                    } else {
-                        println!("📦 已生成工作区: {}", workspace_out.display());
+            // 优先使用用户要求的固定路径
+            let user_graph =
+                PathBuf::from("/Users/peng/Documents/Tmp/chibicc_cache/relation_graph.json");
+            let graph_in_cache = cache_dir.join("relation_graph.json");
+            if user_graph.exists() {
+                info!("使用依赖感知调度 (用户路径): {}", user_graph.display());
+                match processor
+                    .process_with_graph(&user_graph, Some(&cache_dir))
+                    .await
+                {
+                    Ok(()) => {
+                        info!("✅ 依赖感知处理完成");
+                    }
+                    Err(e) => {
+                        error!("依赖感知处理失败: {}，回退到普通批处理", e);
+                        let _ = processor.process_batch(projects.clone()).await;
                     }
                 }
-                Err(e) => {
-                    error!("❌ 转换过程中出现错误: {}", e);
-                    println!("⚠️  转换失败，错误详情: {}", e);
+            } else if graph_in_cache.exists() {
+                info!(
+                    "使用依赖感知调度 (cache中的relation_graph.json): {}",
+                    graph_in_cache.display()
+                );
+                match processor
+                    .process_with_graph(&graph_in_cache, Some(&cache_dir))
+                    .await
+                {
+                    Ok(()) => {
+                        info!("✅ 依赖感知处理完成");
+                    }
+                    Err(e) => {
+                        error!("依赖感知处理失败: {}，回退到普通批处理", e);
+                        let _ = processor.process_batch(projects.clone()).await;
+                    }
+                }
+            } else {
+                info!(
+                    "未发现 relation_graph.json，调用 MainProcessor::process_batch 处理 {} 个项目",
+                    projects.len()
+                );
+                match processor.process_batch(projects).await {
+                    Ok(()) => {
+                        info!("✅ 所有C到Rust转换完成!");
+                        println!("🎉 转换成功完成!");
+                        println!(
+                            "📁 转换结果保存在各项目目录下的 'rust-project' 或 'rust_project' 文件夹中"
+                        );
 
-                    // 提供更具体的错误信息
-                    if e.to_string().contains("max_retry_attempts") {
-                        println!("💡 提示: 请创建配置文件 config/config.toml");
-                        println!("     内容示例:");
-                        println!("     max_retry_attempts = 3");
-                        println!("     concurrent_limit = 5");
+                        // 第四步：重组为一个 Rust 工作区
+                        // 若提供了 --output-dir（缓存目录），则在其同级目录下创建 <缓存名>_workspace
+                        // 否则按输入目录规则创建 <输入名>_workspace
+                        let workspace_out: PathBuf = if let Some(p) = output_dir.as_ref() {
+                            let parent = p.parent().unwrap_or_else(|| Path::new("."));
+                            let dir_name = p
+                                .file_name()
+                                .map(|n| n.to_string_lossy().into_owned())
+                                .unwrap_or_else(|| "project".to_string());
+                            parent.join(format!("{}_workspace", dir_name))
+                        } else {
+                            let parent = input_dir.parent().unwrap_or_else(|| Path::new("."));
+                            let dir_name = input_dir
+                                .file_name()
+                                .map(|n| n.to_string_lossy().into_owned())
+                                .unwrap_or_else(|| "project".to_string());
+                            parent.join(format!("{}_workspace", dir_name))
+                        };
+                        println!("开始重组项目: {}", workspace_out.display());
+                        let reorganizer =
+                            ProjectReorganizer::new(cache_dir.clone(), workspace_out.clone());
+                        if let Err(e) = reorganizer.reorganize() {
+                            error!("重组项目失败: {}", e);
+                            println!("重组项目失败: {}", e);
+                        } else {
+                            println!("📦 已生成工作区: {}", workspace_out.display());
+                        }
+                    }
+                    Err(e) => {
+                        error!("❌ 转换过程中出现错误: {}", e);
+                        println!("⚠️  转换失败，错误详情: {}", e);
+
+                        // 提供更具体的错误信息
+                        if e.to_string().contains("max_retry_attempts") {
+                            println!("💡 提示: 请创建配置文件 config/config.toml");
+                            println!("     内容示例:");
+                            println!("     max_retry_attempts = 3");
+                            println!("     concurrent_limit = 5");
+                        }
                     }
                 }
             }

@@ -227,6 +227,7 @@ impl<'a> PromptBuilder<'a> {
         } else {
             indices_dir.parent().unwrap_or(indices_dir).to_path_buf()
         };
+        info!("Loading file mappings starting from: {:?}", start);
 
         let mut candidates: Vec<PathBuf> = vec![
             start.join("mapping.json"),
@@ -261,6 +262,7 @@ impl<'a> PromptBuilder<'a> {
                 break;
             }
         }
+        debug!("Mapping file candidates: {:?}", candidates);
 
         if let Some(path) = mapping_path {
             debug!("Loading mappings from: {:?}", path);
@@ -317,7 +319,7 @@ impl<'a> PromptBuilder<'a> {
             return file_path.to_path_buf();
         }
 
-        // Filename-based matching
+        // 1) Filename-based exact match as a quick fallback
         let input_name = file_path.file_name().and_then(|n| n.to_str()).unwrap_or("");
         for (cached, orig) in &self.file_mappings {
             let cached_name = cached.file_name().and_then(|n| n.to_str()).unwrap_or("");
@@ -327,10 +329,66 @@ impl<'a> PromptBuilder<'a> {
             }
         }
 
+        // 2) Stem-based robust matching to bridge individual_files/paired_files and .c/.h variants
+        let input_stem = file_path.file_stem().and_then(|n| n.to_str()).unwrap_or("");
+        let input_ext = file_path
+            .extension()
+            .and_then(|e| e.to_str())
+            .unwrap_or("")
+            .to_ascii_lowercase();
+
+        // Collect candidates whose cached path stem equals the input stem, ignoring the intermediate folder
+        let mut stem_matches: Vec<(&PathBuf, &PathBuf)> = Vec::new();
+        for (cached, orig) in &self.file_mappings {
+            if let Some(stem) = cached.file_stem().and_then(|n| n.to_str()) {
+                if stem == input_stem {
+                    stem_matches.push((cached, orig));
+                }
+            }
+        }
+
+        // Prefer same-extension match if available
+        if !stem_matches.is_empty() {
+            if !input_ext.is_empty() {
+                if let Some((_, orig)) = stem_matches.iter().find(|(cached, _)| {
+                    cached
+                        .extension()
+                        .and_then(|e| e.to_str())
+                        .map(|e| e.eq_ignore_ascii_case(&input_ext))
+                        .unwrap_or(false)
+                }) {
+                    return (*orig).clone();
+                }
+            }
+            // Otherwise return the first stem match
+            let (_, orig) = stem_matches[0];
+            return orig.clone();
+        }
+
+        // 3) If still unresolved, try swapping extension on any name-equal original
+        //    e.g., input is foo.h but only foo.c exists in mapping -> return original with swapped ext
+        if !input_stem.is_empty() && !input_ext.is_empty() {
+            for (_cached, orig) in &self.file_mappings {
+                let orig_stem = orig.file_stem().and_then(|n| n.to_str()).unwrap_or("");
+                if orig_stem == input_stem {
+                    let mut candidate = orig.clone();
+                    // Set to desired extension if different
+                    if let Some(_) = candidate.extension() {
+                        candidate.set_extension(&input_ext);
+                    }
+                    return candidate;
+                }
+            }
+        }
+
         warn!(
             "Could not resolve path mapping for: {}",
             file_path.display()
         );
+        // Fall back to using the input file name only; DB queries use LIKE on filename so this still helps
+        if !input_name.is_empty() {
+            return PathBuf::from(input_name);
+        }
         file_path.to_path_buf()
     }
 }
