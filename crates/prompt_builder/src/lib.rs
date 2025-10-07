@@ -103,8 +103,24 @@ impl<'a> PromptBuilder<'a> {
         )
         .await
         {
-            if !relationships.is_empty() {
-                sections.push(formatter::format_call_relationships(&relationships));
+            // Filter out system/library functions from call relationships
+            let filtered: HashMap<String, Vec<CallRelationship>> = relationships
+                .into_iter()
+                .map(|(k, v)| {
+                    let v2: Vec<CallRelationship> = v
+                        .into_iter()
+                        .filter(|r| {
+                            !Self::is_system_function_name(&r.caller)
+                                && !Self::is_system_function_name(&r.called)
+                        })
+                        .collect();
+                    (k, v2)
+                })
+                .filter(|(_, v)| !v.is_empty())
+                .collect();
+
+            if !filtered.is_empty() {
+                sections.push(formatter::format_call_relationships(&filtered));
             }
         }
 
@@ -175,6 +191,13 @@ impl<'a> PromptBuilder<'a> {
         // 2. Callers
         if include_callers {
             if let Ok(callers) = query::get_function_callers(self.db_manager, function_name).await {
+                let callers: Vec<CallRelationship> = callers
+                    .into_iter()
+                    .filter(|c| {
+                        !Self::is_system_function_name(&c.caller)
+                            && !Self::is_system_function_name(&c.called)
+                    })
+                    .collect();
                 if !callers.is_empty() {
                     sections.push(formatter::format_function_callers(&callers));
                 }
@@ -184,6 +207,13 @@ impl<'a> PromptBuilder<'a> {
         // 3. Callees
         if include_callees {
             if let Ok(callees) = query::get_function_callees(self.db_manager, function_name).await {
+                let callees: Vec<CallRelationship> = callees
+                    .into_iter()
+                    .filter(|c| {
+                        !Self::is_system_function_name(&c.caller)
+                            && !Self::is_system_function_name(&c.called)
+                    })
+                    .collect();
                 if !callees.is_empty() {
                     sections.push(formatter::format_function_callees(&callees));
                 }
@@ -390,5 +420,104 @@ impl<'a> PromptBuilder<'a> {
             return PathBuf::from(input_name);
         }
         file_path.to_path_buf()
+    }
+
+    /// Heuristic filter for system/library functions to avoid noise in prompts
+    fn is_system_function_name(name: &str) -> bool {
+        if name.is_empty() {
+            return true;
+        }
+        // Take the simple identifier part if names come in qualified form
+        let id = name.rsplit("::").next().unwrap_or(name).trim();
+        let lower = id.to_ascii_lowercase();
+
+        if lower.starts_with("__")
+            || lower.starts_with("__builtin_")
+            || lower.starts_with("llvm.")
+            || lower.starts_with("pthread_")
+        {
+            return true;
+        }
+
+        matches!(
+            lower.as_str(),
+            // memory
+            "malloc"
+                | "free"
+                | "calloc"
+                | "realloc"
+                | "memcpy"
+                | "memmove"
+                | "memset"
+                | "memcmp"
+                // string
+                | "strcpy"
+                | "strncpy"
+                | "strcat"
+                | "strncat"
+                | "strcmp"
+                | "strncmp"
+                | "strlen"
+                | "strchr"
+                | "strrchr"
+                | "strstr"
+                // stdio
+                | "printf"
+                | "fprintf"
+                | "sprintf"
+                | "snprintf"
+                | "scanf"
+                | "fscanf"
+                | "sscanf"
+                | "puts"
+                | "putchar"
+                | "fputs"
+                | "fputc"
+                | "gets"
+                | "getchar"
+                | "fgets"
+                // io / fs
+                | "open"
+                | "read"
+                | "write"
+                | "close"
+                | "lseek"
+                | "stat"
+                | "fopen"
+                | "fread"
+                | "fwrite"
+                | "fclose"
+                | "fseek"
+                | "ftell"
+                | "rewind"
+                | "perror"
+                // process / time
+                | "exit"
+                | "abort"
+                | "qsort"
+                | "bsearch"
+                | "time"
+                | "localtime"
+                | "gmtime"
+                | "mktime"
+                | "ctime"
+                | "sleep"
+                | "usleep"
+                | "nanosleep"
+                | "clock_gettime"
+                | "gettimeofday"
+                // conv / env
+                | "rand"
+                | "srand"
+                | "atoi"
+                | "atol"
+                | "atof"
+                | "strtol"
+                | "strtoul"
+                | "strtod"
+                | "getenv"
+                | "setenv"
+                | "unsetenv"
+        )
     }
 }
