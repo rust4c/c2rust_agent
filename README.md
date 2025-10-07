@@ -18,10 +18,15 @@ C2Rust Agent is a sophisticated tool that leverages Large Language Models (LLMs)
 
 - **🔄 Two-Stage Translation**: Combines C2Rust automated translation with AI optimization for superior results
 - **🧠 LLM-Powered Translation**: Uses advanced language models (OpenAI, Ollama, XAI, DeepSeek) for semantic understanding
+- **🤖 Intelligent Agent System**: New unified agent system for autonomous C-to-Rust translation with active information gathering
 - **🔍 LSP Analysis**: Deep code analysis using Language Server Protocol for understanding dependencies and relationships
 - **🗄️ Database Context**: Persistent storage with SQLite and Qdrant vector database for context-aware translations
 - **📁 Project Reorganization**: Automatically reorganizes scattered translations into proper Rust workspace structure
 - **⚡ Concurrent Processing**: Parallel processing with progress tracking and retry mechanisms
+- **🔧 Advanced File Management**: Precise file editing with line-by-line modifications and project structure management
+- **🌐 Web-Based Error Resolution**: Automatic web search for compilation error solutions and fixes
+- **📊 Dependency Analysis**: C project relationship analysis with visual dependency graphs
+- **🧩 Automatic Chunking**: Intelligent handling of large contexts that exceed LLM token limits
 - **🎯 Multiple Project Types**: Supports single files, paired files (header/source), and complex multi-module projects
 - **✅ Validation**: Automatic Rust compiler validation with error feedback loops
 
@@ -79,19 +84,23 @@ C2Rust Agent now features an advanced two-stage translation process that combine
 The two-stage translation is implemented in the `single_processor` crate with the following key components:
 
 - `c2rust_translator`: Handles C2Rust automated translation
-- `ai_optimizer`: Optimizes and fixes C2Rust-generated code using LLMs
+- `ai_optimizer`: Optimizes and fixes C2Rust-generated code using LLMs (now enhanced with agent system)
 - `rust_verifier`: Validates generated code with Rust compiler
-- `two_stage_processor`: Orchestrates the complete workflow
+- `two_stage_processor`: Orchestrates the complete workflow with automatic chunking support
 
 Core components:
 
-- LSP Services: Analyzes code structure and relationships
-- Database Services: Stores analysis and embeddings (SQLite + Qdrant)
-- Preprocessor: Caches files and splits compilation units
-- Main Processor: Orchestrates translation with retry logic
-- Prompt Builder: Context assembly for high-quality prompts
-- LLM Requester: Provider-agnostic LLM API layer
-- Rust Checker: Compiles and feeds back errors for refinement
+- **Agent System**: Unified intelligent agents for autonomous translation with active information gathering
+- **LSP Services**: Analyzes code structure and relationships
+- **Database Services**: Stores analysis and embeddings (SQLite + Qdrant)
+- **Preprocessor**: Caches files and splits compilation units
+- **Main Processor**: Orchestrates translation with retry logic and agent integration
+- **Prompt Builder**: Context assembly for high-quality prompts with Markdown template support
+- **LLM Requester**: Provider-agnostic LLM API layer with automatic chunking for large contexts
+- **File Editor**: Advanced file management and precise editing capabilities
+- **Web Searcher**: Automatic error solution discovery and compilation issue resolution
+- **Relation Analyzer**: C project dependency graph generation and analysis
+- **Rust Checker**: Compiles and feeds back errors for refinement
 
 ## Installation
 
@@ -175,6 +184,9 @@ cargo run --bin commandline_tool -- analyze /path/to/c/project
 
 # Query relationships
 cargo run --bin commandline_tool -- relation-query "function_name"
+
+# Using the new agent system
+cargo run --example agent_demo
 ```
 
 ### Programmatic API
@@ -319,15 +331,18 @@ cargo test -p project_remanager
 
 - `main_processor` - Core translation engine for complex projects
 - `single_processor` - Two-stage translation (C2Rust + AI optimization)
+- `agent` - **NEW**: Unified intelligent agent system for autonomous translation
 - `cproject_analy` - C project preprocessing and analysis
 - `project_remanager` - Workspace reorganization
 - `lsp_services` - LSP integration for code analysis
 - `db_services` - Database management (SQLite + Qdrant)
-- `llm_requester` - LLM API abstraction layer
-- `prompt_builder` - Context-aware prompt generation
+- `llm_requester` - LLM API abstraction layer with automatic chunking
+- `prompt_builder` - Context-aware prompt generation with Markdown template support
 - `rust_checker` - Rust compilation validation
-- `file_scanner` - Project structure scanning
-- `env_checker` - Environment validation
+- `file_editor` - **NEW**: Advanced file management and editing utilities
+- `web_searcher` - **NEW**: Web-based error solution search and resolution
+- `relation_analy` - **NEW**: C project dependency analysis and graph generation
+- `env_checker` - Environment validation with improved configuration checking
 - `commandline_tool` - CLI interface
 - `ui_main` - Web-based GUI interface
 
@@ -336,19 +351,40 @@ cargo test -p project_remanager
 - Requires manual review of generated unsafe code
 - Complex macro expansions may need refinement
 - Platform-specific code requires attention
-- Large projects may need iterative processing
-- LLM API costs for extensive translations
+- Large projects may need iterative processing (now improved with agent system)
+- LLM API costs for extensive translations (mitigated by intelligent chunking)
+- Web search functionality requires internet connectivity
+- Agent system may require additional memory for concurrent processing
 
 ## Performance
 
 - **Concurrent Processing**: Configurable parallelism via `MainProcessorConfig`
+- **Agent-Based Processing**: Multi-agent coordination for large projects
+- **Automatic Chunking**: Intelligent handling of large contexts exceeding token limits
 - **Caching**: Intelligent caching reduces redundant API calls
 - **Database Indexing**: Vector similarity search for context retrieval
 - **Progress Tracking**: Real-time progress bars and statistics
+- **File Management**: Optimized file operations with precise editing capabilities
 
 ## License
 
 This project is licensed under the MIT License - see the LICENSE file for details.
+
+## Recent Updates (Latest 3 Days)
+
+### New Features:
+- **🤖 Agent System**: Unified intelligent agent architecture for autonomous translation
+- **🔧 File Editor**: Advanced file management with line-by-line editing capabilities  
+- **🌐 Web Searcher**: Automatic compilation error solution discovery
+- **📊 Relation Analyzer**: C project dependency graph generation
+- **🧩 Auto Chunking**: Smart handling of large contexts exceeding LLM token limits
+- **📝 Enhanced Prompts**: Markdown-based prompt template system
+
+### Improvements:
+- **⚡ Enhanced Two-Stage Translation**: Better C2Rust + AI optimization workflow
+- **🔄 Improved Error Handling**: Advanced retry mechanisms with agent feedback
+- **📋 Configuration Upgrades**: Better environment validation and setup
+- **🏗️ Project Reorganization**: Enhanced Rust workspace structure generation
 
 ## Acknowledgments
 
