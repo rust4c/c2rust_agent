@@ -3,7 +3,7 @@ members = [
     "crates/commandline_tool",
     "crates/cproject_analy",
     "crates/db_services",
-    "crates/env_checker",
+    "crates/env_checker", "crates/file_editor",
     "crates/file_scanner",
     "crates/llm_requester",
     "crates/lsp_services",
@@ -30,6 +30,7 @@ lsp_services = { path = "crates/lsp_services" }
 prompt_builder = { path = "crates/prompt_builder" }
 relation_analy = { path = "crates/relation_analy" }
 rust_checker = { path = "crates/rust_checker" }
+file_editor = { path = "crates/file_editor" }
 simple_agent = { path = "crates/simple_agent" }
 single_processor = { path = "crates/single_processor" }
 ui_main = { path = "crates/ui_main" }

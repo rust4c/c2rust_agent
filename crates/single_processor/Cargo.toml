@@ -17,6 +17,7 @@ db_services = { path = "../db_services" }
 llm_requester = { path = "../llm_requester" }
 prompt_builder = { path = "../prompt_builder" }
 rust_checker = { path = "../rust_checker" }
+file_editor = { path = "../file_editor" }
 
 [dev-dependencies]
 tempfile = "3.8"
