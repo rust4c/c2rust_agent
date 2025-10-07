@@ -1,5 +1,6 @@
 [workspace]
 members = [
+    "crates/agent",
     "crates/commandline_tool",
     "crates/cproject_analy",
     "crates/db_services",
@@ -19,6 +20,7 @@ resolver = "3"
 default-members = ["crates/commandline_tool"]
 
 [workspace.dependencies]
+agent = { path = "crates/agent" }
 anyhow = "1.0.99"
 commandline_tool = { path = "crates/commandline_tool" }
 cproject_analy = { path = "crates/cproject_analy" }
@@ -34,5 +36,6 @@ file_editor = { path = "crates/file_editor" }
 simple_agent = { path = "crates/simple_agent" }
 single_processor = { path = "crates/single_processor" }
 ui_main = { path = "crates/ui_main" }
+web_searcher = { path = "crates/web_searcher" }
 tokio = { version = "1.0", features = ["full"] }
 tempfile = "3.8"
