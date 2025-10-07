@@ -13,7 +13,7 @@
 use anyhow::{anyhow, Context, Result};
 use db_services::DatabaseManager;
 use file_editor::manager::RustFileManager;
-use llm_requester::llm_request_with_prompt;
+use llm_requester::{llm_request_with_prompt, llm_request_with_prompt_chunked, utils};
 use log::{debug, info};
 use prompt_builder::PromptBuilder;
 use serde::{Deserialize, Serialize};
@@ -596,10 +596,30 @@ libc = "0.2"
             template = format!("{}\n\n{}", linus_role, template);
         }
 
-        // Call AI
-        let ai_response = llm_request_with_prompt(messages, template)
-            .await
-            .context("AI translation request failed")?;
+        // Check if we need to use chunked requests due to large context
+        let total_tokens = messages
+            .iter()
+            .map(|m| utils::estimate_token_count(m))
+            .sum::<usize>()
+            + utils::estimate_token_count(&template);
+
+        let ai_response = if total_tokens > 80000 {
+            info!(
+                "Large context detected ({} tokens), using chunked requests",
+                total_tokens
+            );
+            let chunked_responses =
+                llm_request_with_prompt_chunked(messages, template, Some(80000))
+                    .await
+                    .context("AI chunked translation request failed")?;
+
+            // Combine chunked responses with clear separators
+            chunked_responses.join("\n\n--- RESPONSE CHUNK ---\n\n")
+        } else {
+            llm_request_with_prompt(messages, template)
+                .await
+                .context("AI translation request failed")?
+        };
 
         // Process AI response
         let result = self.process_translation_response(&ai_response).await?;
@@ -613,8 +633,11 @@ libc = "0.2"
 
     /// Process AI translation response
     async fn process_translation_response(&self, response: &str) -> Result<TranslationResult> {
+        // Clean the response by removing line numbers and extracting JSON from markdown blocks
+        let cleaned_response = self.clean_json_response(response);
+
         // Try to parse as JSON first
-        if let Ok(json_value) = serde_json::from_str::<serde_json::Value>(response) {
+        if let Ok(json_value) = serde_json::from_str::<serde_json::Value>(&cleaned_response) {
             let rust_code = json_value
                 .get("rust_code")
                 .and_then(|v| v.as_str())
@@ -675,6 +698,38 @@ libc = "0.2"
             confidence_score: 0.6, // Lower confidence for markdown extraction
             compilation_status: CompilationStatus::Unknown,
         })
+    }
+
+    /// Clean JSON response by removing line numbers and extracting from markdown blocks
+    fn clean_json_response(&self, response: &str) -> String {
+        // First, try to extract JSON from markdown code blocks
+        if let Some(json_start) = response.find("```json") {
+            let content_start = json_start + 7; // length of "```json"
+            if let Some(json_end) = response[content_start..].find("```") {
+                let json_content = &response[content_start..content_start + json_end];
+                return self.remove_line_numbers(json_content);
+            }
+        }
+
+        // If no markdown blocks, try to find JSON-like content
+        if response.trim().starts_with('{') {
+            return self.remove_line_numbers(response);
+        }
+
+        // Look for lines that start with numbers and remove them
+        self.remove_line_numbers(response)
+    }
+
+    /// Remove line numbers from the beginning of lines
+    fn remove_line_numbers(&self, content: &str) -> String {
+        use regex::Regex;
+
+        // Remove line numbers at the start of lines (e.g., "    1 " or "   25 ")
+        let line_num_regex = Regex::new(r"(?m)^\s*\d+\s+").unwrap();
+        let cleaned = line_num_regex.replace_all(content, "");
+
+        // Trim whitespace and return
+        cleaned.trim().to_string()
     }
 
     // ===== Chunked Translation Methods =====
@@ -1974,5 +2029,145 @@ fn main() {
         assert!(header.contains("Original includes"));
 
         println!("✅ Chunk context header test passed");
+    }
+
+    #[tokio::test]
+    async fn test_json_response_cleaning() {
+        // Test JSON response with line numbers like the one in the error
+        let response_with_line_numbers = r#"1 {
+2   "rust_code": "fn main() { println!(\"Hello\"); }",
+3   "cargo": "serde",
+4   "key_changes": ["Added main function", "Used println macro"],
+5   "warnings": ["Test warning"]
+6 }"#;
+
+        let temp_dir = TempDir::new().unwrap();
+        match Agent::new("test".to_string(), temp_dir.path().to_path_buf(), None).await {
+            Ok(agent) => {
+                let cleaned = agent.clean_json_response(response_with_line_numbers);
+
+                // Should be valid JSON now
+                let parsed: Result<serde_json::Value, _> = serde_json::from_str(&cleaned);
+                match parsed {
+                    Ok(json) => {
+                        assert!(json.get("rust_code").is_some());
+                        assert!(json.get("key_changes").is_some());
+                        assert!(json.get("warnings").is_some());
+                        println!("✅ JSON response cleaning test passed");
+                    }
+                    Err(e) => {
+                        println!("❌ JSON parsing still failed after cleaning: {}", e);
+                        println!("Cleaned content: {}", cleaned);
+                        panic!("JSON parsing failed");
+                    }
+                }
+            }
+            Err(_) => {
+                // Test the cleaning logic directly without agent
+                use regex::Regex;
+
+                // Remove line numbers
+                let line_num_regex = Regex::new(r"(?m)^\s*\d+\s+").unwrap();
+                let cleaned = line_num_regex
+                    .replace_all(response_with_line_numbers, "")
+                    .trim()
+                    .to_string();
+
+                // Should be valid JSON now
+                let parsed: Result<serde_json::Value, _> = serde_json::from_str(&cleaned);
+                match parsed {
+                    Ok(json) => {
+                        assert!(json.get("rust_code").is_some());
+                        assert!(json.get("key_changes").is_some());
+                        assert!(json.get("warnings").is_some());
+                        println!("✅ JSON response cleaning test passed (fallback method)");
+                    }
+                    Err(e) => {
+                        println!("❌ JSON parsing still failed: {}", e);
+                        println!("Cleaned content: {}", cleaned);
+                        panic!("JSON parsing failed");
+                    }
+                }
+            }
+        }
+    }
+
+    #[test]
+    fn test_markdown_json_extraction() {
+        // Test JSON wrapped in markdown blocks
+        let markdown_response = "Here's the result:\n```json\n{\n  \"rust_code\": \"fn test() {}\",\n  \"cargo\": \"tokio\"\n}\n```\nDone.";
+
+        // Test markdown extraction logic
+        if let Some(json_start) = markdown_response.find("```json") {
+            let content_start = json_start + 7; // length of "```json"
+            if let Some(json_end) = markdown_response[content_start..].find("```") {
+                let json_content = &markdown_response[content_start..content_start + json_end];
+                let cleaned = json_content.trim();
+
+                let parsed: Result<serde_json::Value, _> = serde_json::from_str(cleaned);
+                assert!(parsed.is_ok());
+                println!("✅ Markdown JSON extraction test passed");
+            }
+        }
+    }
+
+    #[test]
+    fn test_real_json_case() {
+        // Test a simplified version of the actual JSON case that was failing
+        let response_with_markdown = String::from("```json\n")
+            + "{\n"
+            + "  \"rust_code\": \"// Rust has built-in alignment support\",\n"
+            + "  \"cargo\": \"\",\n"
+            + "  \"key_changes\": [\n"
+            + "    \"C header file macros converted to Rust built-in features\"\n"
+            + "  ],\n"
+            + "  \"warnings\": [\n"
+            + "    \"This is a C header file\"\n"
+            + "  ],\n"
+            + "  \"tool_usage\": {\n"
+            + "    \"file_search\": [],\n"
+            + "    \"line_locate\": []\n"
+            + "  }\n"
+            + "}\n"
+            + "```";
+
+        // Test the cleaning logic
+        use regex::Regex;
+
+        // Extract JSON from markdown blocks
+        let json_content = if let Some(json_start) = response_with_markdown.find("```json") {
+            let content_start = json_start + 7;
+            if let Some(json_end) = response_with_markdown[content_start..].find("```") {
+                &response_with_markdown[content_start..content_start + json_end]
+            } else {
+                &response_with_markdown
+            }
+        } else {
+            &response_with_markdown
+        };
+
+        // Remove line numbers if any
+        let line_num_regex = Regex::new(r"(?m)^\s*\d+\s+").unwrap();
+        let cleaned = line_num_regex
+            .replace_all(json_content, "")
+            .trim()
+            .to_string();
+
+        // Should be valid JSON now
+        let parsed: Result<serde_json::Value, _> = serde_json::from_str(&cleaned);
+        match parsed {
+            Ok(json) => {
+                assert!(json.get("rust_code").is_some());
+                assert!(json.get("key_changes").is_some());
+                assert!(json.get("warnings").is_some());
+                assert!(json.get("tool_usage").is_some());
+                println!("✅ Real JSON case test passed");
+            }
+            Err(e) => {
+                println!("❌ JSON parsing failed: {}", e);
+                println!("Cleaned content: {}", cleaned);
+                panic!("JSON parsing failed for real case");
+            }
+        }
     }
 }

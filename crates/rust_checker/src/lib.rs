@@ -54,7 +54,7 @@ impl RustCodeCheck {
 
         let output = Command::new("cargo")
             .arg("build")
-            .arg("--color=always")
+            .arg("--color=never")
             .current_dir(&self.project_dir)
             .output()
             .map_err(|e| {

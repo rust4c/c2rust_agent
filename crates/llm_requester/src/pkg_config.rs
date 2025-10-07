@@ -37,9 +37,27 @@ pub struct LLMProviders {
 }
 
 #[derive(Debug, Clone, Deserialize)]
+pub struct ChunkingConfig {
+    pub enabled: Option<bool>,
+    pub max_tokens: Option<usize>,
+    pub chunk_overlap: Option<usize>,
+}
+
+impl Default for ChunkingConfig {
+    fn default() -> Self {
+        Self {
+            enabled: Some(true),
+            max_tokens: Some(120000),
+            chunk_overlap: Some(100),
+        }
+    }
+}
+
+#[derive(Debug, Clone, Deserialize)]
 pub struct LLMConfig {
     pub provider: String,
     pub llm: LLMProviders,
+    pub chunking: Option<ChunkingConfig>,
 }
 
 pub fn get_config() -> Result<LLMConfig, config::ConfigError> {
