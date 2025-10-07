@@ -23,7 +23,5 @@ llm_requester = {path = "../llm_requester"}
 main_processor = {path = "../main_processor"}
 prompt_builder = {path = "../prompt_builder"}
 env_checker = {path = "../env_checker"}
-file_scanner = {path = "../file_scanner"}
 single_processor = {path = "../single_processor"}
 project_remanager = {path = "../project_remanager"}
-

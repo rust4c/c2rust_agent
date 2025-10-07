@@ -11,5 +11,4 @@ pub mod single_processes;
 pub use single_processes::{StageCallback, two_stage_processor_with_callback};
 
 // 导出各模块的公共函数
-pub use file_processor::process_c_h_files;
 pub use rust_verifier::{extract_key_errors, verify_and_fix, verify_compilation};

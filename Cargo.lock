@@ -916,7 +916,6 @@ dependencies = [
  "cproject_analy",
  "db_services",
  "env_checker",
- "file_scanner",
  "llm_requester",
  "log",
  "lsp_services",
@@ -1961,10 +1960,6 @@ dependencies = [
  "thiserror 1.0.69",
  "toml 0.8.23",
 ]
-
-[[package]]
-name = "file_scanner"
-version = "0.1.0"
 
 [[package]]
 name = "filetime"

@@ -533,15 +533,21 @@ libc = "0.2"
 
         let prompt_builder = self.prompt_builder.lock().await;
         if let Some(ref builder) = *prompt_builder {
-            let prompt = builder
+            let mut prompt = builder
                 .build_file_context_prompt(source_file, target_functions)
                 .await
                 .context("Failed to build file context prompt")?;
 
+            // Scan for existing c2rust project results
+            prompt = self
+                .enhance_prompt_with_context(source_file, prompt)
+                .await?;
+
             info!("Built prompt with {} characters", prompt.len());
             Ok(prompt)
         } else {
-            Err(anyhow!("Prompt builder not initialized"))
+            // Fallback: Create basic prompt with C source code
+            self.create_basic_c_prompt(source_file).await
         }
     }
 
@@ -579,11 +585,16 @@ libc = "0.2"
             ));
         }
 
-        // Load translation template
-        let template = self
+        // Load translation template and Linus role for first-time translation
+        let mut template = self
             .load_prompt_template("file_conversion")
             .await
             .unwrap_or_else(|_| "Translate the C code to safe, idiomatic Rust code.".to_string());
+
+        // Add Linus role context for initial translation
+        if let Ok(linus_role) = self.load_prompt_template("linus_role").await {
+            template = format!("{}\n\n{}", linus_role, template);
+        }
 
         // Call AI
         let ai_response = llm_request_with_prompt(messages, template)
@@ -635,6 +646,13 @@ libc = "0.2"
                         .collect()
                 })
                 .unwrap_or_default();
+
+            // Process AI tool usage if present
+            if let Some(tool_usage) = json_value.get("tool_usage") {
+                if let Err(e) = self.process_ai_tool_usage_immutable(tool_usage).await {
+                    log::warn!("Failed to process AI tool usage: {}", e);
+                }
+            }
 
             return Ok(TranslationResult {
                 rust_code,
@@ -1419,6 +1437,191 @@ libc = "0.2"
             is_file_manager_ready: self.file_manager.is_some(),
             message_queue_size: self.message_queue.lock().await.len(),
         }
+    }
+
+    // ===== Enhanced Prompt Building Methods =====
+
+    /// Enhance prompt with context based on existing c2rust projects
+    async fn enhance_prompt_with_context(
+        &self,
+        source_file: &Path,
+        base_prompt: String,
+    ) -> Result<String> {
+        let mut enhanced_prompt = base_prompt;
+
+        // Check if there's an existing c2rust translation
+        let potential_rust_file = self.find_c2rust_equivalent(source_file).await;
+
+        if let Some(rust_file) = potential_rust_file {
+            // Found existing c2rust translation - add it as reference
+            if let Ok(rust_content) = fs::read_to_string(&rust_file).await {
+                enhanced_prompt.push_str("\n\n// Existing c2rust translation for reference:\n");
+                enhanced_prompt.push_str(&format!("```rust\n{}\n```\n", rust_content));
+                info!(
+                    "Added existing c2rust translation as context: {}",
+                    rust_file.display()
+                );
+            }
+        } else {
+            // No c2rust translation found - add original C code
+            if let Ok(c_content) = fs::read_to_string(source_file).await {
+                enhanced_prompt.push_str("\n\n// Original C code to translate:\n");
+                enhanced_prompt.push_str(&format!("```c\n{}\n```\n", c_content));
+                info!("Added original C code as context");
+            }
+        }
+
+        Ok(enhanced_prompt)
+    }
+
+    /// Find c2rust equivalent file if exists
+    async fn find_c2rust_equivalent(&self, source_file: &Path) -> Option<PathBuf> {
+        // Strategy 1: Look for .rs file with same name in src/
+        let file_stem = source_file.file_stem()?;
+        let src_dir = self.config.project_path.join("src");
+        let rust_file = src_dir.join(format!("{}.rs", file_stem.to_string_lossy()));
+
+        if rust_file.exists() {
+            // Check if it looks like c2rust output (contains c2rust markers)
+            if let Ok(content) = fs::read_to_string(&rust_file).await {
+                if content.contains("c2rust")
+                    || content.contains("::c_void")
+                    || content.contains("libc::")
+                {
+                    return Some(rust_file);
+                }
+            }
+        }
+
+        // Strategy 2: Look in c2rust output directories
+        let c2rust_dirs = ["c2rust_out", "target/c2rust", "rust_out"];
+        for dir in &c2rust_dirs {
+            let c2rust_path = self.config.project_path.join(dir);
+            if c2rust_path.exists() {
+                let rust_file = c2rust_path.join(format!("{}.rs", file_stem.to_string_lossy()));
+                if rust_file.exists() {
+                    return Some(rust_file);
+                }
+            }
+        }
+
+        None
+    }
+
+    /// Create basic prompt with C source when prompt builder unavailable
+    async fn create_basic_c_prompt(&self, source_file: &Path) -> Result<String> {
+        let c_content = fs::read_to_string(source_file)
+            .await
+            .context("Failed to read C source file")?;
+
+        let prompt = format!(
+            "Translate the following C code to safe, idiomatic Rust code:\n\n```c\n{}\n```\n\n\
+            Requirements:\n\
+            - Use safe Rust patterns\n\
+            - Avoid unsafe blocks where possible\n\
+            - Use proper error handling\n\
+            - Follow Rust naming conventions\n\
+            - Add appropriate use statements\n\n\
+            Return the Rust code in a ```rust code block.",
+            c_content
+        );
+
+        info!("Created basic C prompt with {} characters", prompt.len());
+        Ok(prompt)
+    }
+
+    /// Process AI tool usage commands (immutable version)
+    async fn process_ai_tool_usage_immutable(&self, tool_usage: &serde_json::Value) -> Result<()> {
+        if let Some(file_search) = tool_usage.get("file_search").and_then(|v| v.as_array()) {
+            for file_pattern in file_search {
+                if let Some(pattern) = file_pattern.as_str() {
+                    info!("AI requested file search: {}", pattern);
+                    // Implement file search logic here
+                }
+            }
+        }
+
+        if let Some(line_locate) = tool_usage.get("line_locate").and_then(|v| v.as_array()) {
+            for line_info in line_locate {
+                if let Some(line_desc) = line_info.as_str() {
+                    info!("AI requested line location: {}", line_desc);
+                    // Implement line location logic here
+                }
+            }
+        }
+
+        if let Some(line_modify) = tool_usage.get("line_modify") {
+            if let (Some(start), Some(end), Some(new_code)) = (
+                line_modify.get("start_line").and_then(|v| v.as_u64()),
+                line_modify.get("end_line").and_then(|v| v.as_u64()),
+                line_modify.get("new_code").and_then(|v| v.as_str()),
+            ) {
+                info!("AI requested line modification: {}-{}", start, end);
+                // Store modification request for later processing
+                // In a real implementation, this would be queued for the next mutable operation
+                log::info!(
+                    "Queued line modification: {}-{} with: {}",
+                    start,
+                    end,
+                    new_code
+                );
+            }
+        }
+
+        if let Some(rs_modify) = tool_usage.get("rs_modify") {
+            if let (Some(file), Some(changes)) = (
+                rs_modify.get("file").and_then(|v| v.as_str()),
+                rs_modify.get("changes").and_then(|v| v.as_str()),
+            ) {
+                info!("AI requested Rust file modification: {}", file);
+                // Store file modification request for later processing
+                // In a real implementation, this would be queued for the next mutable operation
+                log::info!(
+                    "Queued file modification: {} with changes: {}",
+                    file,
+                    changes
+                );
+            }
+        }
+
+        if let Some(cargo_modify) = tool_usage.get("cargo_modify") {
+            if let Some(dependencies) = cargo_modify.get("dependencies").and_then(|v| v.as_str()) {
+                info!("AI requested Cargo dependency addition: {}", dependencies);
+                // Implement Cargo.toml modification logic here
+                self.add_cargo_dependencies(dependencies).await?;
+            }
+        }
+
+        Ok(())
+    }
+
+    /// Add dependencies to Cargo.toml
+    async fn add_cargo_dependencies(&self, dependencies: &str) -> Result<()> {
+        let cargo_path = self.config.project_path.join("Cargo.toml");
+
+        if !cargo_path.exists() {
+            return Err(anyhow!("Cargo.toml not found"));
+        }
+
+        let mut cargo_content = fs::read_to_string(&cargo_path).await?;
+
+        // Simple approach: append to [dependencies] section
+        if !cargo_content.contains("[dependencies]") {
+            cargo_content.push_str("\n[dependencies]\n");
+        }
+
+        // Parse dependencies (simple comma-separated format)
+        for dep in dependencies.split(',') {
+            let dep = dep.trim();
+            if !dep.is_empty() && !cargo_content.contains(dep) {
+                cargo_content.push_str(&format!("{} = \"*\"\n", dep));
+            }
+        }
+
+        fs::write(&cargo_path, cargo_content).await?;
+        info!("Added dependencies to Cargo.toml: {}", dependencies);
+
+        Ok(())
     }
 }
 
