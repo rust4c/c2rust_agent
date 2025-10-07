@@ -6081,6 +6081,7 @@ dependencies = [
 name = "single_processor"
 version = "0.1.0"
 dependencies = [
+ "agent",
  "anyhow",
  "config 0.15.18",
  "db_services",

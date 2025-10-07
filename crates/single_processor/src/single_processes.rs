@@ -4,8 +4,18 @@ use std::fs;
 use std::path::{Path, PathBuf};
 use std::sync::Arc;
 
+#[allow(unused_imports)]
+use agent::Agent;
 // 导入各模块
-use crate::ai_optimizer::{ai_analyze_final_failure, ai_optimize_rust_code};
+
+// 本地定义，替代 ai_optimizer::OptimizedResult
+#[derive(Debug, Clone)]
+struct OptimizedResult {
+    rust_code: String,
+    cargo_crates: Vec<String>,
+    key_changes: Vec<String>,
+    warnings: Vec<String>,
+}
 use crate::c2rust_translator::c2rust_translate;
 use crate::file_processor::process_c_h_files;
 use crate::file_processor::{
@@ -121,11 +131,56 @@ impl CompilationVerifier {
         ));
 
         notify("🤖 正在请求AI诊断分析（这可能需要几分钟）...");
-        match ai_analyze_final_failure(processed_c_file, rust_output_path, &final_key_errors).await
+        // 使用 Agent 搜索错误解决方案并生成诊断报告
+        let project_name = project_path
+            .file_name()
+            .and_then(|s| s.to_str())
+            .unwrap_or("single_project")
+            .to_string();
+
+        let mut agent = match Agent::new(
+            project_name,
+            project_path.to_path_buf(),
+            Some(project_path.to_path_buf()),
+        )
+        .await
         {
-            Ok(feedback) => {
+            Ok(a) => a,
+            Err(e) => {
+                warn!("初始化 Agent 失败: {}", e);
+                notify(&format!("⚠️ AI诊断初始化失败: {}", e));
+                let feedback_error_path = project_path.join("ai_failure_feedback_error.txt");
+                fs::write(&feedback_error_path, format!("Agent init failed: {}", e))?;
+                notify(&format!(
+                    "✓ 错误详情已保存: {}",
+                    feedback_error_path.display()
+                ));
+                return Err(anyhow::anyhow!("编译失败，且AI诊断初始化失败"));
+            }
+        };
+
+        // 初始化非必需组件（尽力而为）
+        let _ = agent.initialize_file_manager().await;
+
+        match agent.search_error_solution(&final_key_errors).await {
+            Ok(solution) => {
+                let mut md = String::new();
+                md.push_str("# AI 失败诊断报告\n\n");
+                md.push_str("## 编译关键错误\n\n```\n");
+                md.push_str(&final_key_errors);
+                md.push_str("\n```\n\n");
+                md.push_str("## 搜索解法概览\n\n");
+                md.push_str(&format!(
+                    "- 错误类别: {}\n- 方案数量: {}\n- 置信度: {:?}\n",
+                    solution.error_info.error_category,
+                    solution.solutions.len(),
+                    solution.metadata.confidence_level
+                ));
+                if let Some(first) = solution.solutions.first() {
+                    md.push_str(&format!("- Top 方案: {}\n", first.title));
+                }
                 let feedback_path = project_path.join("ai_failure_feedback.md");
-                fs::write(&feedback_path, &feedback)?;
+                fs::write(&feedback_path, &md)?;
                 info!("AI诊断建议已保存到: {:?}", feedback_path);
                 notify(&format!("💡 AI诊断建议已生成: {}", feedback_path.display()));
                 notify("📖 请查看诊断报告了解失败原因和建议");
@@ -210,6 +265,40 @@ impl TranslationProcessor {
         }
     }
 
+    async fn try_agent_optimize(
+        &self,
+        project_dir: &Path,
+        source_c_file: &Path,
+        compile_errors: Option<&str>,
+    ) -> Result<OptimizedResult> {
+        // 优先使用统一的 Agent 流程进行 AI 翻译
+        let project_name = source_c_file
+            .file_stem()
+            .and_then(|s| s.to_str())
+            .unwrap_or("single_project")
+            .to_string();
+
+        let mut agent = Agent::new(
+            project_name,
+            project_dir.to_path_buf(),
+            Some(project_dir.to_path_buf()),
+        )
+        .await?;
+
+        // 尽力初始化，不作为硬失败条件
+        let _ = agent.initialize_file_manager().await;
+        let _ = agent.initialize_prompt_builder().await;
+
+        let result = agent.translate_code(source_c_file, compile_errors).await?;
+
+        Ok(OptimizedResult {
+            rust_code: result.rust_code,
+            cargo_crates: result.cargo_dependencies,
+            key_changes: result.key_changes,
+            warnings: result.warnings,
+        })
+    }
+
     /// 处理单个文件 - 纯 AI 翻译模式
     pub async fn process_single_file(&self, file_path: &Path) -> Result<()> {
         self.notify("🚀 开始处理单个文件（纯AI翻译模式）");
@@ -255,13 +344,20 @@ impl TranslationProcessor {
 
             self.notify("🤖 正在请求AI优化代码...");
             // 使用预处理后的 C 文件作为原始上下文，纯 AI 翻译
-            let optimized = ai_optimize_rust_code(
-                None,
-                processed_c_file.as_path(),
-                &final_dir,
-                compile_errors.as_deref(),
-            )
-            .await?;
+            let optimized = match self
+                .try_agent_optimize(
+                    &final_dir,
+                    processed_c_file.as_path(),
+                    compile_errors.as_deref(),
+                )
+                .await
+            {
+                Ok(res) => res,
+                Err(err) => {
+                    warn!("Agent 优化失败: {}", err);
+                    return Err(err.into());
+                }
+            };
 
             // 第一次迭代：使用 cargo new 进行项目初始化（根据 C 文件是否包含 main 判断 bin/lib）
             // 后续迭代：仅覆盖对应 src 文件
@@ -427,13 +523,16 @@ impl TranslationProcessor {
             }
 
             self.notify("🤖 正在请求AI优化代码...");
-            let optimized = ai_optimize_rust_code(
-                Some(&c2rust_output.to_path_buf()),
-                processed_c_file,
-                &final_dir,
-                compile_errors.as_deref(),
-            )
-            .await?;
+            let optimized = match self
+                .try_agent_optimize(&final_dir, processed_c_file, compile_errors.as_deref())
+                .await
+            {
+                Ok(res) => res,
+                Err(err) => {
+                    warn!("Agent 优化失败: {}", err);
+                    return Err(err.into());
+                }
+            };
 
             // 仅覆盖对应 src 文件
             let proj_type = detect_project_type_from_c(processed_c_file);
