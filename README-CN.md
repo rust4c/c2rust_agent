@@ -7,6 +7,7 @@
 [![Rust](https://img.shields.io/badge/rust-1.70+-orange.svg)](https://www.rust-lang.org)
 [![License: MIT](https://img.shields.io/badge/License-MIT-yellow.svg)](https://opensource.org/licenses/MIT)
 [![Build Status](https://img.shields.io/badge/build-passing-brightgreen.svg)]()
+[![Rust Report Card](https://rust-reportcard.xuri.me/badge/github.com/rust4c/c2rust_agent)](https://rust-reportcard.xuri.me/report/github.com/rust4c/c2rust_agent)
 
 ![](images/example.png)
 
