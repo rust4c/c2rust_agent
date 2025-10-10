@@ -19,7 +19,6 @@ services:
     working_dir: /opt/c2rust_agent
     # Mount the repo and persist DB; override config to point at qdrant service
     volumes:
-      - ./config/docker.config.toml:/opt/c2rust_agent/config/config.toml:ro
       - sqlite_data:/opt/c2rust_agent/data
     ports:
       - "2222:22" # SSH access to container
