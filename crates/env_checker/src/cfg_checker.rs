@@ -2,14 +2,18 @@ use anyhow::{Context, Result, anyhow};
 use config::{Config, File};
 use serde::Deserialize;
 use std::fmt;
+use std::fs;
 use std::path::{Path, PathBuf};
 
 const DEFAULT_CONFIG_PATHS: &[&str] = &[
     "config/config.toml",
-    "config/config.default.toml",
     "../config/config.toml",
-    "../config/config.default.toml",
     "../../config/config.toml",
+];
+
+const DEFAULT_TEMPLATE_PATHS: &[&str] = &[
+    "config/config.default.toml",
+    "../config/config.default.toml",
     "../../config/config.default.toml",
 ];
 
@@ -214,7 +218,9 @@ where
 {
     let mut attempted = Vec::new();
     let mut found_path: Option<PathBuf> = None;
-    for path in paths.into_iter() {
+    let paths_vec: Vec<_> = paths.into_iter().collect();
+
+    for path in &paths_vec {
         let candidate = path.as_ref().to_path_buf();
         attempted.push(candidate.clone());
         if candidate.exists() {
@@ -223,14 +229,32 @@ where
         }
     }
 
-    let config_path = found_path.ok_or_else(|| {
-        let searched = attempted
-            .iter()
-            .map(|p| p.display().to_string())
-            .collect::<Vec<_>>()
-            .join(", ");
-        anyhow!("config file not found. searched paths: [{}]", searched)
-    })?;
+    let config_path = match found_path {
+        Some(path) => path,
+        None => {
+            // Try to create config.toml from config.default.toml
+            match try_create_config_from_template(&paths_vec) {
+                Ok(created_path) => {
+                    log::info!(
+                        "Created config file from template: {}",
+                        created_path.display()
+                    );
+                    created_path
+                }
+                Err(_) => {
+                    let searched = attempted
+                        .iter()
+                        .map(|p| p.display().to_string())
+                        .collect::<Vec<_>>()
+                        .join(", ");
+                    return Err(anyhow!(
+                        "config file not found and could not create from template. searched paths: [{}]",
+                        searched
+                    ));
+                }
+            }
+        }
+    };
 
     let mut builder = Config::builder();
     builder = builder.add_source(File::from(config_path.clone()));
@@ -261,6 +285,66 @@ where
         config_path,
         project_root.to_path_buf(),
     ))
+}
+
+fn try_create_config_from_template<P>(config_paths: &[P]) -> Result<PathBuf>
+where
+    P: AsRef<Path>,
+{
+    // Find template file - first try in the same directories as config paths
+    let mut template_path: Option<PathBuf> = None;
+
+    // Check directories of the config paths first
+    for config_path in config_paths {
+        let config_path = config_path.as_ref();
+        if let Some(dir) = config_path.parent() {
+            let template_candidate = dir.join("config.default.toml");
+            if template_candidate.exists() {
+                template_path = Some(template_candidate);
+                break;
+            }
+        }
+    }
+
+    // If not found, try default paths
+    if template_path.is_none() {
+        for template_candidate in DEFAULT_TEMPLATE_PATHS {
+            let path = PathBuf::from(template_candidate);
+            if path.exists() {
+                template_path = Some(path);
+                break;
+            }
+        }
+    }
+
+    let template = template_path.ok_or_else(|| {
+        anyhow!("config.default.toml template file not found in expected locations")
+    })?;
+
+    // Try to create config.toml in the same directory as the template
+    let target_dir = template
+        .parent()
+        .ok_or_else(|| anyhow!("could not determine template directory"))?;
+    let target_path = target_dir.join("config.toml");
+
+    // Only create if target doesn't exist
+    if target_path.exists() {
+        return Err(anyhow!(
+            "target config file already exists: {}",
+            target_path.display()
+        ));
+    }
+
+    // Copy template to target
+    fs::copy(&template, &target_path).with_context(|| {
+        format!(
+            "failed to copy {} to {}",
+            template.display(),
+            target_path.display()
+        )
+    })?;
+
+    Ok(target_path)
 }
 
 fn analyze_config(raw: RawConfig, path: PathBuf, project_root: PathBuf) -> ConfigCheckReport {
@@ -679,5 +763,77 @@ mod tests {
                 .any(|issue| issue.level == IssueLevel::Error && issue.field == "provider")
         );
         assert!(report.validated.is_none());
+    }
+
+    #[test]
+    fn test_auto_create_config_from_template() {
+        use tempfile::TempDir;
+
+        let temp = TempDir::new().unwrap();
+        let config_dir = temp.path().join("config");
+        fs::create_dir_all(&config_dir).unwrap();
+
+        // Create a template file
+        let template_content = r#"
+provider = "deepseek"
+max_retry_attempts = 3
+concurrent_limit = 5
+
+[llm.deepseek]
+model = "deepseek-chat"
+api_key = "test_key"
+
+[qdrant]
+host = "localhost"
+port = 6334
+collection_name = "test"
+vector_size = 1536
+
+[sqlite]
+path = "test.db"
+"#;
+
+        let template_path = config_dir.join("config.default.toml");
+        fs::write(&template_path, template_content).unwrap();
+
+        // Verify config.toml doesn't exist yet
+        let config_path = config_dir.join("config.toml");
+        assert!(!config_path.exists());
+
+        // Try to check config - should auto-create from template
+        let search_paths = [config_path.as_path()];
+        let report = check_config_with_paths(search_paths).unwrap();
+
+        // Verify config.toml was created
+        assert!(config_path.exists());
+
+        // Verify the created config is valid
+        assert!(!report.has_errors());
+        assert!(report.validated.is_some());
+
+        // Verify the content was copied correctly
+        let created_content = fs::read_to_string(&config_path).unwrap();
+        assert!(created_content.contains("provider = \"deepseek\""));
+        assert!(created_content.contains("api_key = \"test_key\""));
+    }
+
+    #[test]
+    fn test_auto_create_fails_without_template() {
+        use tempfile::TempDir;
+
+        let temp = TempDir::new().unwrap();
+        let config_dir = temp.path().join("config");
+        fs::create_dir_all(&config_dir).unwrap();
+
+        let config_path = config_dir.join("config.toml");
+        // No template file created
+
+        let search_paths = [config_path.as_path()];
+        let result = check_config_with_paths(search_paths);
+
+        assert!(result.is_err());
+        let error_msg = result.unwrap_err().to_string();
+        assert!(error_msg.contains("config file not found"));
+        assert!(error_msg.contains("could not create from template"));
     }
 }

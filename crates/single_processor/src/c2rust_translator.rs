@@ -16,6 +16,7 @@ use std::process::Command;
 /// 生成的 Rust 主文件路径
 pub async fn c2rust_translate(dir_path: &Path, output_dir: &Path) -> Result<PathBuf> {
     info!("开始 C2Rust 第一阶段翻译: {:?}", dir_path);
+    debug!("dir_path: {:?}, output_dir: {:?}", dir_path, output_dir);
 
     // 确保输出目录存在
     fs::create_dir_all(output_dir)?;
@@ -48,6 +49,7 @@ pub async fn c2rust_translate(dir_path: &Path, output_dir: &Path) -> Result<Path
     info!("执行 C2Rust 转换命令(简易模式)...");
     let mut cmd = Command::new("c2rust");
     cmd.arg("transpile")
+        .arg("*.c")
         .arg("--output-dir")
         .arg(output_dir)
         .args(&sources)
