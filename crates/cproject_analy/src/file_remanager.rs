@@ -1,10 +1,11 @@
+use crate::pkg_config::PreprocessConfig;
 use anyhow::{Context, Result};
 use glob::Pattern;
 use indicatif::{MultiProgress, ProgressBar, ProgressIterator, ProgressStyle};
 use log::{error, info};
 use rayon::prelude::*;
 use relation_analy::generate_c_dependency_graph;
-use serde::{Deserialize, Serialize};
+use serde::Serialize;
 use serde_json;
 use std::{
     collections::HashSet,
@@ -35,66 +36,7 @@ pub struct FileMapping {
     pub category: String,
 }
 
-/// 预处理配置
-#[derive(Debug, Clone, Serialize, Deserialize)]
-pub struct PreprocessConfig {
-    /// 并行工作者数量 (0=自动检测)
-    pub worker_count: usize,
-    /// 文件配对规则 (源文件模式, 头文件模式)
-    pub pairing_rules: Vec<(String, String)>,
-    /// 排除文件模式
-    pub exclude_patterns: Vec<String>,
-    /// 头文件扩展名
-    pub header_extensions: Vec<String>,
-    /// 源文件扩展名
-    pub source_extensions: Vec<String>,
-    /// 大文件阈值 (字节)
-    pub large_file_threshold: u64,
-    /// 块大小 (字节)
-    pub chunk_size: usize,
-}
-
-impl Default for PreprocessConfig {
-    fn default() -> Self {
-        PreprocessConfig {
-            worker_count: 0,
-            pairing_rules: vec![
-                (r"(.+)\.c".to_string(), r"\1.h".to_string()),
-                (r"(.+)\.cpp".to_string(), r"\1.h".to_string()),
-                (r"(.+)\.cc".to_string(), r"\1.hpp".to_string()),
-                (r"src/(.+)\.c".to_string(), r"include/\1.h".to_string()),
-            ],
-            exclude_patterns: vec![
-                "*.bak".to_string(),
-                "*.tmp".to_string(),
-                "__pycache__/*".to_string(),
-                "*.pyc".to_string(),
-                ".git/*".to_string(),
-                ".svn/*".to_string(),
-                "*.o".to_string(),
-                "*.obj".to_string(),
-                "*.exe".to_string(),
-                "*.dll".to_string(),
-                "*.so".to_string(),
-            ],
-            header_extensions: vec![
-                ".h".to_string(),
-                ".hpp".to_string(),
-                ".hh".to_string(),
-                ".hxx".to_string(),
-            ],
-            source_extensions: vec![
-                ".c".to_string(),
-                ".cc".to_string(),
-                ".cpp".to_string(),
-                ".cxx".to_string(),
-                ".c++".to_string(),
-            ],
-            large_file_threshold: 50 * 1024 * 1024, // 50MB
-            chunk_size: 8 * 1024 * 1024,            // 8MB
-        }
-    }
-}
+/// 使用 pkg_config::PreprocessConfig
 
 /// 处理统计信息
 #[derive(Debug, Default, Serialize)]
@@ -120,10 +62,10 @@ pub struct CProjectPreprocessor {
 impl CProjectPreprocessor {
     /// 创建新的预处理器
     pub fn new(config: Option<PreprocessConfig>) -> Self {
-        let mut config = config.unwrap_or_default();
-        if config.worker_count == 0 {
-            config.worker_count = num_cpus::get().max(1);
-        }
+        let config = match config {
+            Some(config) => config,
+            None => PreprocessConfig::default(),
+        };
         CProjectPreprocessor {
             config,
             stats: ProcessingStats::default(),
@@ -536,8 +478,12 @@ impl CProjectPreprocessor {
     /// 判断是否为源文件
     fn is_source_file(&self, file: &Path) -> bool {
         if let Some(ext) = file.extension() {
-            let ext_str = format!(".{}", ext.to_string_lossy());
-            self.config.source_extensions.contains(&ext_str)
+            let ext_l = ext.to_string_lossy().to_string().to_ascii_lowercase();
+            let with_dot = format!(".{}", ext_l);
+            self.config.source_extensions.iter().any(|e| {
+                let el = e.to_ascii_lowercase();
+                el == with_dot || el == ext_l
+            })
         } else {
             false
         }
@@ -546,8 +492,12 @@ impl CProjectPreprocessor {
     /// 判断是否为头文件
     fn is_header_file(&self, file: &Path) -> bool {
         if let Some(ext) = file.extension() {
-            let ext_str = format!(".{}", ext.to_string_lossy());
-            self.config.header_extensions.contains(&ext_str)
+            let ext_l = ext.to_string_lossy().to_string().to_ascii_lowercase();
+            let with_dot = format!(".{}", ext_l);
+            self.config.header_extensions.iter().any(|e| {
+                let el = e.to_ascii_lowercase();
+                el == with_dot || el == ext_l
+            })
         } else {
             false
         }
@@ -714,10 +664,12 @@ impl CProjectPreprocessor {
         println!("\n⏱️  性能指标:");
         println!("   • 处理时间: {:.2} 秒", self.stats.processing_time);
         println!("   • 总数据量: {}", format_size(self.stats.total_size));
-        println!(
-            "   • 平均速度: {}/秒",
-            format_size((self.stats.total_size as f64 / self.stats.processing_time) as u64)
-        );
+        let avg_speed_bytes_per_sec = if self.stats.processing_time > 0.0 {
+            (self.stats.total_size as f64 / self.stats.processing_time) as u64
+        } else {
+            0
+        };
+        println!("   • 平均速度: {}/秒", format_size(avg_speed_bytes_per_sec));
         println!("\n⚙️  配置参数:");
         println!("   • 工作线程数: {}", self.config.worker_count);
         println!(

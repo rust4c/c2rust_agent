@@ -89,14 +89,14 @@ chunk_overlap = 100
 # Qdrant 向量数据库配置
 # ----------------------------------------------------------------------------
 [qdrant]
-# Qdrant 服务器主机地址
+# Qdrant 服务器主机地址, 如果环境为 docker-compose 需要更改为 “qdrant”
 host = "localhost"
 # Qdrant 服务器端口 (可选，默认6334)
 port = 6334
 # 向量集合名称
 collection_name = "c2rust_vectors"
-# 向量维度大小 (需要与嵌入模型匹配)
-vector_size = 1536
+# 向量维度大小 (需要与嵌入模型匹配；FastEmbed 默认 AllMiniLML6V2 = 384，如使用其它模型请相应调整)
+vector_size = 384
 
 # ----------------------------------------------------------------------------
 # SQLite 数据库配置
@@ -105,6 +105,49 @@ vector_size = 1536
 # SQLite 数据库文件路径 (相对于项目根目录)
 # 支持绝对路径和相对路径
 path = "data.db"
+
+# ============================================================================
+# C 项目预处理配置 (cproject_analy/file_remanager)
+# ============================================================================
+[cproject.preprocess]
+# 0 表示自动选择（保留为 0 给运行时处理）
+worker_count = 0
+
+# 排除文件/目录模式
+exclude_patterns = [
+  "*.bak",
+  "*.tmp",
+  "__pycache__/*",
+  "*.pyc",
+  ".git/*",
+  ".svn/*",
+  "*.o",
+  "*.obj",
+  "*.exe",
+  "*.dll",
+  "*.so",
+]
+
+# 头文件与源文件扩展名
+header_extensions = [".h", ".hpp", ".hh", ".hxx"]
+source_extensions = [".c", ".cc", ".cpp", ".cxx", ".c++"]
+
+# 大文件阈值 (字节) 与块大小 (字节)
+large_file_threshold = 52428800   # 50MB
+chunk_size = 8388608              # 8MB
+
+# 文件配对规则（多段）
+[[cproject.preprocess.pairing_rules]]
+source = "(.+)\\.c"
+header = "\\1.h"
+
+[[cproject.preprocess.pairing_rules]]
+source = "(.+)\\.cpp"
+header = "\\1.h"
+
+[[cproject.preprocess.pairing_rules]]
+source = "src/(.+)\\.c"
+header = "include/\\1.h"
 
 # ============================================================================
 # 单个处理器配置 (single_processor模块)

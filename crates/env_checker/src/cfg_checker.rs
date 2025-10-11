@@ -78,6 +78,7 @@ pub struct ValidatedConfig {
     pub retry: RetryConfig,
     pub providers: ProviderConfigs,
     pub database: DatabaseConfig,
+    pub cproject: CProjectSettings,
 }
 
 #[derive(Debug, Clone)]
@@ -132,6 +133,62 @@ pub struct DatabaseConfig {
 }
 
 #[derive(Debug, Clone)]
+pub struct CProjectSettings {
+    pub preprocess: PreprocessValidated,
+}
+
+#[derive(Debug, Clone)]
+pub struct PreprocessValidated {
+    pub worker_count: usize,
+    pub pairing_rules: Vec<(String, String)>,
+    pub exclude_patterns: Vec<String>,
+    pub header_extensions: Vec<String>,
+    pub source_extensions: Vec<String>,
+    pub large_file_threshold: u64,
+    pub chunk_size: usize,
+}
+
+fn default_preprocess() -> PreprocessValidated {
+    PreprocessValidated {
+        worker_count: 0,
+        pairing_rules: vec![
+            ("(.+)\\.c".to_string(), "\\1.h".to_string()),
+            ("(.+)\\.cpp".to_string(), "\\1.h".to_string()),
+            ("(.+)\\.cc".to_string(), "\\1.hpp".to_string()),
+            ("src/(.+)\\.c".to_string(), "include/\\1.h".to_string()),
+        ],
+        exclude_patterns: vec![
+            "*.bak".to_string(),
+            "*.tmp".to_string(),
+            "__pycache__/*".to_string(),
+            "*.pyc".to_string(),
+            ".git/*".to_string(),
+            ".svn/*".to_string(),
+            "*.o".to_string(),
+            "*.obj".to_string(),
+            "*.exe".to_string(),
+            "*.dll".to_string(),
+            "*.so".to_string(),
+        ],
+        header_extensions: vec![
+            ".h".to_string(),
+            ".hpp".to_string(),
+            ".hh".to_string(),
+            ".hxx".to_string(),
+        ],
+        source_extensions: vec![
+            ".c".to_string(),
+            ".cc".to_string(),
+            ".cpp".to_string(),
+            ".cxx".to_string(),
+            ".c++".to_string(),
+        ],
+        large_file_threshold: 50 * 1024 * 1024, // 50MB
+        chunk_size: 8 * 1024 * 1024,            // 8MB
+    }
+}
+
+#[derive(Debug, Clone)]
 pub struct QdrantSettings {
     pub host: String,
     pub port: u16,
@@ -168,6 +225,8 @@ struct RawConfig {
     qdrant: Option<QdrantRaw>,
     #[serde(default)]
     sqlite: Option<SqliteRaw>,
+    #[serde(default)]
+    cproject: Option<CProjectRaw>,
 }
 
 #[derive(Debug, Deserialize, Default)]
@@ -206,6 +265,28 @@ struct QdrantRaw {
 #[derive(Debug, Deserialize)]
 struct SqliteRaw {
     path: Option<String>,
+}
+
+#[derive(Debug, Deserialize, Default)]
+struct PairRuleRaw {
+    source: Option<String>,
+    header: Option<String>,
+}
+
+#[derive(Debug, Deserialize, Default)]
+struct PreprocessRaw {
+    worker_count: Option<usize>,
+    pairing_rules: Option<Vec<PairRuleRaw>>,
+    exclude_patterns: Option<Vec<String>>,
+    header_extensions: Option<Vec<String>>,
+    source_extensions: Option<Vec<String>>,
+    large_file_threshold: Option<u64>,
+    chunk_size: Option<usize>,
+}
+
+#[derive(Debug, Deserialize, Default)]
+struct CProjectRaw {
+    preprocess: Option<PreprocessRaw>,
 }
 
 pub fn check_default_config() -> Result<ConfigCheckReport> {
@@ -359,6 +440,7 @@ fn analyze_config(raw: RawConfig, path: PathBuf, project_root: PathBuf) -> Confi
         llm,
         qdrant,
         sqlite,
+        cproject,
     } = raw;
 
     let mut issues = Vec::new();
@@ -566,6 +648,68 @@ fn analyze_config(raw: RawConfig, path: PathBuf, project_root: PathBuf) -> Confi
 
     let provider_kind = provider_kind;
 
+    // Build cproject.preprocess with defaults + overrides
+    let mut preprocess = default_preprocess();
+
+    if let Some(cp) = cproject {
+        if let Some(pp) = cp.preprocess {
+            if let Some(v) = pp.worker_count {
+                preprocess.worker_count = v;
+            }
+            if let Some(rules) = pp.pairing_rules {
+                let mut pairs: Vec<(String, String)> = Vec::new();
+                for r in rules {
+                    if let (Some(s), Some(h)) = (r.source, r.header) {
+                        pairs.push((s, h));
+                    } else {
+                        issues.push(ConfigIssue::warning(
+                            "cproject.preprocess.pairing_rules",
+                            "pairing rule missing source or header; skipped",
+                        ));
+                    }
+                }
+                if !pairs.is_empty() {
+                    preprocess.pairing_rules = pairs;
+                }
+            }
+            if let Some(x) = pp.exclude_patterns {
+                if !x.is_empty() {
+                    preprocess.exclude_patterns = x;
+                }
+            }
+            if let Some(x) = pp.header_extensions {
+                if !x.is_empty() {
+                    preprocess.header_extensions = x;
+                }
+            }
+            if let Some(x) = pp.source_extensions {
+                if !x.is_empty() {
+                    preprocess.source_extensions = x;
+                }
+            }
+            if let Some(x) = pp.large_file_threshold {
+                preprocess.large_file_threshold = x;
+            }
+            if let Some(x) = pp.chunk_size {
+                preprocess.chunk_size = x;
+            }
+        }
+    }
+
+    // basic validation
+    if preprocess.chunk_size == 0 {
+        issues.push(ConfigIssue::error(
+            "cproject.preprocess.chunk_size",
+            "`cproject.preprocess.chunk_size` must be greater than zero",
+        ));
+    }
+    if preprocess.large_file_threshold == 0 {
+        issues.push(ConfigIssue::error(
+            "cproject.preprocess.large_file_threshold",
+            "`cproject.preprocess.large_file_threshold` must be greater than zero",
+        ));
+    }
+
     if let Some(kind) = provider_kind.as_ref() {
         let provider_has_config = match kind {
             ProviderKind::DeepSeek => providers.deepseek.is_some(),
@@ -597,6 +741,7 @@ fn analyze_config(raw: RawConfig, path: PathBuf, project_root: PathBuf) -> Confi
                 qdrant: qdrant_settings.unwrap(),
                 sqlite: sqlite_settings.unwrap(),
             },
+            cproject: CProjectSettings { preprocess },
         })
     } else {
         None

@@ -5,7 +5,7 @@ use std::collections::HashSet;
 use std::path::{Path, PathBuf};
 
 // Internal crates
-use cproject_analy::file_remanager::{CProjectPreprocessor, PreprocessConfig};
+use cproject_analy::PreProcessor;
 use db_services::DatabaseManager;
 use env_checker::ai_checker::{AIConnectionStatus, ai_service_init};
 use env_checker::dbdata_init;
@@ -228,9 +228,17 @@ pub async fn run_preprocess(input_dir: &Path, output_dir: Option<&Path>) -> Resu
 
     std::fs::create_dir_all(&output_dir)?;
     info!("正在预处理项目...");
-    let config = PreprocessConfig::default();
-    let mut preprocessor = CProjectPreprocessor::new(Some(config));
-    preprocessor.preprocess_project(input_dir, &output_dir)?;
+    let mut preprocessor = PreProcessor::new_default();
+    match preprocessor
+        .preprocess_project(input_dir, &output_dir)
+        .await
+    {
+        Ok(_) => {}
+        Err(e) => {
+            error!("预处理失败: {}", e);
+            return Err(e);
+        }
+    }
 
     info!("预处理完成，缓存目录: {}", output_dir.display());
     info!("开始分析项目...");
@@ -281,9 +289,14 @@ pub async fn run_translate(input_dir: &Path, output_dir: Option<&Path>) -> Resul
     }
 
     if !cache_has_c_or_h(&cache_dir) {
-        let config = PreprocessConfig::default();
-        let mut preprocessor = CProjectPreprocessor::new(Some(config));
-        preprocessor.preprocess_project(input_dir, &cache_dir)?;
+        let mut preprocessor = PreProcessor::new_default();
+        match preprocessor.preprocess_project(input_dir, &cache_dir).await {
+            Ok(_) => {}
+            Err(e) => {
+                error!("预处理失败: {}", e);
+                return Err(e);
+            }
+        }
         info!("预处理完成，缓存目录: {}", cache_dir.display());
     } else {
         info!("检测到已有缓存目录: {}，跳过预处理", cache_dir.display());

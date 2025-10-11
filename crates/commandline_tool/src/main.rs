@@ -1,6 +1,6 @@
 use commandline_tool::Commands;
 use commandline_tool::parse_args;
-use cproject_analy::file_remanager::{CProjectPreprocessor, PreprocessConfig};
+use cproject_analy::PreProcessor;
 use lsp_services::lsp_services::{
     analyze_project_with_default_database, check_function_and_class_name,
 };
@@ -268,10 +268,12 @@ async fn main() -> Result<()> {
                 println!("正在预处理项目...");
             }
 
-            let config = PreprocessConfig::default();
-            let mut preprocessor = CProjectPreprocessor::new(Some(config));
+            let mut preprocessor = PreProcessor::new_default();
 
-            if let Err(e) = preprocessor.preprocess_project(input_dir, &output_dir) {
+            if let Err(e) = preprocessor
+                .preprocess_project(input_dir, &output_dir)
+                .await
+            {
                 error!("预处理失败: {}", e);
                 return Ok(());
             }
@@ -347,13 +349,14 @@ async fn main() -> Result<()> {
                     println!("--force 已启用：即使存在缓存也将重新预处理");
                     info!("--force enabled: re-run preprocess even if cache exists");
                 }
-                let config = PreprocessConfig::default();
-                let mut preprocessor = CProjectPreprocessor::new(Some(config));
-                if let Err(e) = preprocessor.preprocess_project(input_dir, &cache_dir) {
+
+                let mut preprocessor = PreProcessor::new_default();
+                if let Err(e) = preprocessor.preprocess_project(input_dir, &cache_dir).await {
                     error!("预处理失败: {}", e);
                     println!("预处理失败: {}", e);
                     return Ok(());
                 }
+
                 println!("预处理完成，缓存目录: {}", cache_dir.display());
             } else {
                 println!("检测到已有缓存目录: {}，跳过预处理", cache_dir.display());

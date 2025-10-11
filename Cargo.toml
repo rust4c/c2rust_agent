@@ -21,22 +21,6 @@ default-members = ["crates/commandline_tool"]
 
 
 [workspace.dependencies]
-agent = { path = "crates/agent" }
 anyhow = "1.0.99"
-commandline_tool = { path = "crates/commandline_tool" }
-cproject_analy = { path = "crates/cproject_analy" }
-db_services = { path = "crates/db_services" }
-llm_requester = { path = "crates/llm_requester" }
-env_checker = { path = "crates/env_checker" }
 log = "0.4.27"
-lsp_services = { path = "crates/lsp_services" }
-prompt_builder = { path = "crates/prompt_builder" }
-relation_analy = { path = "crates/relation_analy" }
-rust_checker = { path = "crates/rust_checker" }
-file_editor = { path = "crates/file_editor" }
-simple_agent = { path = "crates/simple_agent" }
-single_processor = { path = "crates/single_processor" }
-ui_main = { path = "crates/ui_main" }
-web_searcher = { path = "crates/web_searcher" }
-tokio = { version = "1.0", features = ["full"] }
 tempfile = "3.8"
