@@ -544,6 +544,8 @@ libc = "0.2"
                 .await?;
 
             info!("Built prompt with {} characters", prompt.len());
+            debug!("Built prompt with {} characters", prompt.len());
+            debug!("Prompt: {}", prompt);
             Ok(prompt)
         } else {
             // Fallback: Create basic prompt with C source code

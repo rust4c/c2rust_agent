@@ -95,8 +95,8 @@ host = "localhost"
 port = 6334
 # 向量集合名称
 collection_name = "c2rust_vectors"
-# 向量维度大小 (需要与嵌入模型匹配；FastEmbed 默认 AllMiniLML6V2 = 384，如使用其它模型请相应调整)
-vector_size = 384
+# 向量维度大小 (需要与嵌入模型匹配, 如使用其它模型请相应调整)
+vector_size = 1024
 
 # ----------------------------------------------------------------------------
 # SQLite 数据库配置

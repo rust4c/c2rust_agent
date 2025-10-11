@@ -334,9 +334,9 @@ impl PreProcessor {
                 }
 
                 if !documents.is_empty() {
-                    // 初始化 FastEmbed，AllMiniLML6V2 -> 384 维度，符合默认 Qdrant 配置
+                    // 初始化 FastEmbed，AllMiniLML6V2 -> 1024 维度，符合默认 Qdrant 配置
                     let mut model =
-                        TextEmbedding::try_new(InitOptions::new(EmbeddingModel::AllMiniLML6V2))
+                        TextEmbedding::try_new(InitOptions::new(EmbeddingModel::BGELargeENV15))
                             .map_err(|e| {
                                 anyhow::anyhow!(format!("Failed to initialize FastEmbed: {}", e))
                             })?;
