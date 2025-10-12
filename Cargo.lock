@@ -3696,6 +3696,7 @@ dependencies = [
  "anyhow",
  "config 0.15.18",
  "duckduckgo_search",
+ "env_logger 0.11.8",
  "log",
  "serde",
  "serial_test",
