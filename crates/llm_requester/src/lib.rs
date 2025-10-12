@@ -1,5 +1,7 @@
 use anyhow::Result;
 use log::{debug, error, info, warn};
+use std::time::Duration;
+use tokio::time::sleep;
 
 pub mod deepseek_provider;
 pub mod ollama_provider;
@@ -9,8 +11,13 @@ pub mod xai_provider;
 
 pub mod pkg_config;
 
-/// Make a simple LLM request with better error handling and logging
+/// Make a simple LLM request with retry logic and better error handling
 pub async fn llm_request(messages: Vec<String>) -> Result<String> {
+    llm_request_with_retry(messages, 3).await
+}
+
+/// Make a simple LLM request with specified retry count
+pub async fn llm_request_with_retry(messages: Vec<String>, max_retries: usize) -> Result<String> {
     info!("Starting LLM request with {} messages", messages.len());
 
     let config = match pkg_config::get_config() {
@@ -24,56 +31,94 @@ pub async fn llm_request(messages: Vec<String>) -> Result<String> {
         }
     };
 
-    let result = match config.provider.as_str() {
-        "deepseek" => {
-            info!("Using DeepSeek provider");
-            deepseek_provider::DeepSeekProvider::get_llm_request(messages).await
-        }
-        "ollama" => {
-            info!("Using Ollama provider");
-            ollama_provider::OllamaProvider::get_llm_request(messages).await
-        }
-        "openai" => {
-            info!("Using OpenAI provider");
-            openai_provider::OpenAIProvider::get_llm_request(messages).await
-        }
-        "xai" => {
-            info!("Using xAI provider");
-            xai_provider::XAIProvider::get_llm_request(messages).await
-        }
-        _ => {
-            error!("Invalid provider specified: {}", config.provider);
-            return Err(anyhow::anyhow!(
-                "Invalid provider: {}. Supported providers: deepseek, ollama, openai, xai",
-                config.provider
-            ));
-        }
-    };
+    let mut last_error = None;
 
-    match result {
-        Ok(response) => {
-            info!(
-                "LLM request completed successfully, response length: {} chars",
-                response.len()
-            );
-            Ok(response)
-        }
-        Err(e) => {
-            error!(
-                "LLM request failed with provider {}: {}",
-                config.provider, e
-            );
-            Err(anyhow::anyhow!(
-                "AI translation request failed with {}: {}",
-                config.provider,
-                e
-            ))
+    for attempt in 1..=max_retries {
+        info!("LLM request attempt {} of {}", attempt, max_retries);
+
+        let result = match config.provider.as_str() {
+            "deepseek" => {
+                info!("Using DeepSeek provider");
+                deepseek_provider::DeepSeekProvider::get_llm_request(messages.clone()).await
+            }
+            "ollama" => {
+                info!("Using Ollama provider");
+                ollama_provider::OllamaProvider::get_llm_request(messages.clone()).await
+            }
+            "openai" => {
+                info!("Using OpenAI provider");
+                openai_provider::OpenAIProvider::get_llm_request(messages.clone()).await
+            }
+            "xai" => {
+                info!("Using xAI provider");
+                xai_provider::XAIProvider::get_llm_request(messages.clone()).await
+            }
+            _ => {
+                error!("Invalid provider specified: {}", config.provider);
+                return Err(anyhow::anyhow!(
+                    "Invalid provider: {}. Supported providers: deepseek, ollama, openai, xai",
+                    config.provider
+                ));
+            }
+        };
+
+        match result {
+            Ok(response) => {
+                info!(
+                    "LLM request completed successfully on attempt {}, response length: {} chars",
+                    attempt,
+                    response.len()
+                );
+                return Ok(response);
+            }
+            Err(e) => {
+                error!(
+                    "LLM request attempt {} failed with provider {}: {}",
+                    attempt, config.provider, e
+                );
+                last_error = Some(e);
+
+                // Check if this is a retryable error
+                if attempt < max_retries && is_retryable_error(&last_error.as_ref().unwrap()) {
+                    let delay_seconds = 2_u64.pow((attempt - 1) as u32); // Exponential backoff
+                    warn!(
+                        "Retrying in {} seconds (attempt {} of {})",
+                        delay_seconds, attempt, max_retries
+                    );
+                    sleep(Duration::from_secs(delay_seconds)).await;
+                    continue;
+                } else {
+                    break;
+                }
+            }
         }
     }
+
+    // All retries exhausted
+    let final_error = last_error.unwrap();
+    error!(
+        "All {} retry attempts failed with provider {}: {}",
+        max_retries, config.provider, final_error
+    );
+    Err(anyhow::anyhow!(
+        "AI translation request failed after {} attempts with {}: {}",
+        max_retries,
+        config.provider,
+        final_error
+    ))
 }
 
 /// Make an LLM request with prompt, including automatic chunking for large inputs
 pub async fn llm_request_with_prompt(messages: Vec<String>, prompt: String) -> Result<String> {
+    llm_request_with_prompt_and_retry(messages, prompt, 3).await
+}
+
+/// Make an LLM request with prompt and specified retry count
+pub async fn llm_request_with_prompt_and_retry(
+    messages: Vec<String>,
+    prompt: String,
+    max_retries: usize,
+) -> Result<String> {
     info!(
         "Starting LLM request with prompt, {} messages, prompt length: {} chars",
         messages.len(),
@@ -112,52 +157,115 @@ pub async fn llm_request_with_prompt(messages: Vec<String>, prompt: String) -> R
         }
     };
 
-    let result = match config.provider.as_str() {
-        "deepseek" => {
-            info!("Using DeepSeek provider for prompt request");
-            deepseek_provider::DeepSeekProvider::chat_with_prompt_static(messages, prompt).await
-        }
-        "ollama" => {
-            info!("Using Ollama provider for prompt request");
-            ollama_provider::OllamaProvider::chat_with_prompt_static(messages, prompt).await
-        }
-        "openai" => {
-            info!("Using OpenAI provider for prompt request");
-            openai_provider::OpenAIProvider::chat_with_prompt_static(messages, prompt).await
-        }
-        "xai" => {
-            info!("Using xAI provider for prompt request");
-            xai_provider::XAIProvider::chat_with_prompt_static(messages, prompt).await
-        }
-        _ => {
-            error!("Invalid provider specified: {}", config.provider);
-            return Err(anyhow::anyhow!(
-                "Invalid provider: {}. Supported providers: deepseek, ollama, openai, xai",
-                config.provider
-            ));
-        }
-    };
+    let mut last_error = None;
 
-    match result {
-        Ok(response) => {
-            info!(
-                "LLM request with prompt completed successfully, response length: {} chars",
-                response.len()
-            );
-            Ok(response)
-        }
-        Err(e) => {
-            error!(
-                "LLM request with prompt failed with provider {}: {}",
-                config.provider, e
-            );
-            Err(anyhow::anyhow!(
-                "AI translation request failed with {}: {}",
-                config.provider,
-                e
-            ))
+    for attempt in 1..=max_retries {
+        info!(
+            "LLM request with prompt attempt {} of {}",
+            attempt, max_retries
+        );
+
+        let result = match config.provider.as_str() {
+            "deepseek" => {
+                info!("Using DeepSeek provider for prompt request");
+                deepseek_provider::DeepSeekProvider::chat_with_prompt_static(
+                    messages.clone(),
+                    prompt.clone(),
+                )
+                .await
+            }
+            "ollama" => {
+                info!("Using Ollama provider for prompt request");
+                ollama_provider::OllamaProvider::chat_with_prompt_static(
+                    messages.clone(),
+                    prompt.clone(),
+                )
+                .await
+            }
+            "openai" => {
+                info!("Using OpenAI provider for prompt request");
+                openai_provider::OpenAIProvider::chat_with_prompt_static(
+                    messages.clone(),
+                    prompt.clone(),
+                )
+                .await
+            }
+            "xai" => {
+                info!("Using xAI provider for prompt request");
+                xai_provider::XAIProvider::chat_with_prompt_static(messages.clone(), prompt.clone())
+                    .await
+            }
+            _ => {
+                error!("Invalid provider specified: {}", config.provider);
+                return Err(anyhow::anyhow!(
+                    "Invalid provider: {}. Supported providers: deepseek, ollama, openai, xai",
+                    config.provider
+                ));
+            }
+        };
+
+        match result {
+            Ok(response) => {
+                info!(
+                    "LLM request with prompt completed successfully on attempt {}, response length: {} chars",
+                    attempt,
+                    response.len()
+                );
+                return Ok(response);
+            }
+            Err(e) => {
+                error!(
+                    "LLM request with prompt attempt {} failed with provider {}: {}",
+                    attempt, config.provider, e
+                );
+                last_error = Some(e);
+
+                // Check if this is a retryable error
+                if attempt < max_retries && is_retryable_error(&last_error.as_ref().unwrap()) {
+                    let delay_seconds = 2_u64.pow((attempt - 1) as u32); // Exponential backoff
+                    warn!(
+                        "Retrying in {} seconds (attempt {} of {})",
+                        delay_seconds, attempt, max_retries
+                    );
+                    sleep(Duration::from_secs(delay_seconds)).await;
+                    continue;
+                } else {
+                    break;
+                }
+            }
         }
     }
+
+    // All retries exhausted
+    let final_error = last_error.unwrap();
+    error!(
+        "All {} retry attempts failed for request with prompt, provider {}: {}",
+        max_retries, config.provider, final_error
+    );
+    Err(anyhow::anyhow!(
+        "AI translation request with prompt failed after {} attempts with {}: {}",
+        max_retries,
+        config.provider,
+        final_error
+    ))
+}
+
+/// Check if an error is retryable (network issues, timeouts, rate limits)
+fn is_retryable_error(error: &anyhow::Error) -> bool {
+    let error_str = error.to_string().to_lowercase();
+
+    // Check for retryable conditions
+    error_str.contains("timeout")
+        || error_str.contains("connection")
+        || error_str.contains("network")
+        || error_str.contains("rate limit")
+        || error_str.contains("429")
+        || error_str.contains("503")
+        || error_str.contains("502")
+        || error_str.contains("500")
+        || error_str.contains("error decoding response body")
+        || error_str.contains("temporary failure")
+        || error_str.contains("service unavailable")
 }
 
 /// Get chunking configuration with fallback defaults
@@ -205,14 +313,14 @@ pub async fn llm_request_chunked(
 
         for (chunk_idx, chunk) in chunks.iter().enumerate() {
             debug!("Processing chunk {} of {}", chunk_idx + 1, chunks.len());
-            match llm_request(vec![chunk.clone()]).await {
+            match llm_request_with_retry(vec![chunk.clone()], 2).await {
                 Ok(response) => {
                     debug!("Chunk {} processed successfully", chunk_idx + 1);
                     results.push(response);
                 }
                 Err(e) => {
                     error!(
-                        "Failed to process chunk {} of message {}: {}",
+                        "Failed to process chunk {} of message {} after retries: {}",
                         chunk_idx + 1,
                         i + 1,
                         e
@@ -490,6 +598,21 @@ pub async fn diagnose_config_issues() -> Result<String> {
     }
 
     Ok(diagnostics.join("\n"))
+}
+
+/// Get retry configuration from environment or use defaults
+pub fn get_retry_config() -> (usize, u64) {
+    let max_retries = std::env::var("LLM_MAX_RETRIES")
+        .ok()
+        .and_then(|v| v.parse().ok())
+        .unwrap_or(3);
+
+    let base_delay = std::env::var("LLM_RETRY_DELAY")
+        .ok()
+        .and_then(|v| v.parse().ok())
+        .unwrap_or(2);
+
+    (max_retries, base_delay)
 }
 
 /// Print helpful setup instructions

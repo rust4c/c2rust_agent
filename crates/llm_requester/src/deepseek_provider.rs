@@ -94,7 +94,33 @@ impl DeepSeekProvider {
             }
             Err(e) => {
                 error!("DeepSeek chat with prompt failed: {}", e);
-                Err(anyhow!("DeepSeek chat request failed: {}", e))
+
+                // Provide more specific error information
+                let error_msg = if e.to_string().contains("error decoding response body") {
+                    format!(
+                        "DeepSeek API response decoding failed. This could indicate: 1) Network timeout/interruption, 2) Invalid API key, 3) API service issues, 4) Rate limiting. Original error: {}",
+                        e
+                    )
+                } else if e.to_string().contains("401") {
+                    format!(
+                        "DeepSeek API authentication failed. Please check your API key. Error: {}",
+                        e
+                    )
+                } else if e.to_string().contains("429") {
+                    format!(
+                        "DeepSeek API rate limit exceeded. Please wait before retrying. Error: {}",
+                        e
+                    )
+                } else if e.to_string().contains("timeout") {
+                    format!(
+                        "DeepSeek API request timeout. Please check your network connection. Error: {}",
+                        e
+                    )
+                } else {
+                    format!("DeepSeek chat request failed: {}", e)
+                };
+
+                Err(anyhow!("{}", error_msg))
             }
         }
     }
@@ -116,7 +142,33 @@ impl DeepSeekProvider {
             }
             Err(e) => {
                 error!("DeepSeek chat failed: {}", e);
-                Err(anyhow!("DeepSeek chat request failed: {}", e))
+
+                // Provide more specific error information
+                let error_msg = if e.to_string().contains("error decoding response body") {
+                    format!(
+                        "DeepSeek API response decoding failed. This could indicate: 1) Network timeout/interruption, 2) Invalid API key, 3) API service issues, 4) Rate limiting. Original error: {}",
+                        e
+                    )
+                } else if e.to_string().contains("401") {
+                    format!(
+                        "DeepSeek API authentication failed. Please check your API key. Error: {}",
+                        e
+                    )
+                } else if e.to_string().contains("429") {
+                    format!(
+                        "DeepSeek API rate limit exceeded. Please wait before retrying. Error: {}",
+                        e
+                    )
+                } else if e.to_string().contains("timeout") {
+                    format!(
+                        "DeepSeek API request timeout. Please check your network connection. Error: {}",
+                        e
+                    )
+                } else {
+                    format!("DeepSeek chat request failed: {}", e)
+                };
+
+                Err(anyhow!("{}", error_msg))
             }
         }
     }
@@ -223,7 +275,39 @@ impl DeepSeekProvider {
             }
             Err(e) => {
                 error!("DeepSeek connection test failed: {}", e);
-                Err(anyhow!("DeepSeek connection test failed: {}", e))
+
+                // Provide detailed diagnostic information
+                let error_msg = if e.to_string().contains("error decoding response body") {
+                    format!(
+                        "DeepSeek API connection test failed due to response decoding error. Possible causes:\n\
+                            1. Network connectivity issues - check your internet connection\n\
+                            2. Invalid or expired API key - verify your DeepSeek API key\n\
+                            3. DeepSeek service temporarily unavailable\n\
+                            4. Firewall or proxy blocking the request\n\
+                            5. Rate limiting - too many requests\n\
+                            Original error: {}",
+                        e
+                    )
+                } else if e.to_string().contains("401") {
+                    format!(
+                        "DeepSeek API authentication failed. Your API key may be invalid or expired. Please check your configuration. Error: {}",
+                        e
+                    )
+                } else if e.to_string().contains("429") {
+                    format!(
+                        "DeepSeek API rate limit exceeded. Please wait a few minutes before retrying. Error: {}",
+                        e
+                    )
+                } else if e.to_string().contains("timeout") {
+                    format!(
+                        "DeepSeek API connection timeout. Please check your network connection and try again. Error: {}",
+                        e
+                    )
+                } else {
+                    format!("DeepSeek connection test failed: {}", e)
+                };
+
+                Err(anyhow!("{}", error_msg))
             }
         }
     }
