@@ -1,12 +1,13 @@
-use anyhow::Result;
-use anyhow::anyhow;
+use anyhow::{Result, anyhow};
 use log::{debug, error, info};
-use siumai::prelude::*;
+use rig::providers::openai::responses_api::ResponsesCompletionModel;
+use rig::{agent::Agent, client::CompletionClient, completion::Prompt, providers::openai};
 
+use crate::llm_provider_trait::LLMProvider;
 use crate::pkg_config::{OpenAIConfig, get_config};
 
 pub struct OpenAIProvider {
-    client: Siumai,
+    agent: Agent<ResponsesCompletionModel>,
 }
 
 impl OpenAIProvider {
@@ -23,16 +24,11 @@ impl OpenAIProvider {
             ));
         }
 
-        let client = Siumai::builder()
-            .openai()
-            .model(openai_config.model.clone())
-            .api_key(openai_config.api_key)
-            .build()
-            .await
-            .map_err(|e| anyhow!("Failed to create OpenAI client: {}", e))?;
+        let client = openai::Client::new(&openai_config.api_key);
+        let agent = client.agent(&openai_config.model).build();
 
         info!("Successfully created OpenAI provider");
-        Ok(Self { client })
+        Ok(Self { agent })
     }
 
     pub async fn init_with_config() -> Result<Self> {
@@ -59,19 +55,11 @@ impl OpenAIProvider {
             ));
         }
 
-        let client = Siumai::builder()
-            .openai()
-            .model(model)
-            .api_key(api_key)
-            .build()
-            .await
-            .map_err(|e| {
-                error!("Failed to build OpenAI client: {}", e);
-                anyhow!("Failed to create OpenAI client: {}", e)
-            })?;
+        let client = openai::Client::new(&api_key);
+        let agent = client.agent(&model).build();
 
         info!("Successfully initialized OpenAI provider from config");
-        Ok(Self { client })
+        Ok(Self { agent })
     }
 
     pub async fn chat_with_prompt(&self, message: &str, system_prompt: &str) -> Result<String> {
@@ -79,16 +67,15 @@ impl OpenAIProvider {
         debug!("Message length: {} chars", message.len());
         debug!("System prompt length: {} chars", system_prompt.len());
 
-        let request = vec![user!(message), system!(system_prompt)];
+        let prompt = format!("System: {}\n\nUser: {}", system_prompt, message);
 
-        match self.client.chat_with_tools(request, None).await {
+        match self.agent.prompt(&prompt).await {
             Ok(response) => {
-                let text = response.text().unwrap_or_default();
                 info!(
                     "OpenAI chat with prompt completed successfully, response length: {} chars",
-                    text.len()
+                    response.len()
                 );
-                Ok(text)
+                Ok(response)
             }
             Err(e) => {
                 error!("OpenAI chat with prompt failed: {}", e);
@@ -97,20 +84,21 @@ impl OpenAIProvider {
         }
     }
 
-    pub async fn chat(&self, request: Vec<ChatMessage>) -> Result<String> {
+    pub async fn chat(&self, messages: Vec<String>) -> Result<String> {
         info!(
             "Starting OpenAI chat request with {} messages",
-            request.len()
+            messages.len()
         );
 
-        match self.client.chat_with_tools(request, None).await {
+        let combined_message = messages.join("\n");
+
+        match self.agent.prompt(&combined_message).await {
             Ok(response) => {
-                let text = response.text().unwrap_or_default();
                 info!(
                     "OpenAI chat completed successfully, response length: {} chars",
-                    text.len()
+                    response.len()
                 );
-                Ok(text)
+                Ok(response)
             }
             Err(e) => {
                 error!("OpenAI chat failed: {}", e);
@@ -127,9 +115,7 @@ impl OpenAIProvider {
             e
         })?;
 
-        let chat_messages: Vec<ChatMessage> = messages.into_iter().map(|msg| user!(msg)).collect();
-
-        match provider.chat(chat_messages).await {
+        match provider.chat(messages).await {
             Ok(response) => {
                 info!("LLM request completed successfully");
                 Ok(response)
@@ -206,14 +192,12 @@ impl OpenAIProvider {
         info!("Testing OpenAI connection");
 
         let provider = Self::init_with_config().await?;
-        let test_message = vec![user!(
-            "Hello, this is a connection test. Please respond with 'OK'."
-        )];
+        let test_message =
+            vec!["Hello, this is a connection test. Please respond with 'OK'.".to_string()];
 
-        match provider.client.chat_with_tools(test_message, None).await {
+        match provider.chat(test_message).await {
             Ok(response) => {
-                let text = response.text().unwrap_or_default();
-                info!("OpenAI connection test successful, response: {}", text);
+                info!("OpenAI connection test successful, response: {}", response);
                 Ok(())
             }
             Err(e) => {
@@ -221,6 +205,51 @@ impl OpenAIProvider {
                 Err(anyhow!("OpenAI connection test failed: {}", e))
             }
         }
+    }
+}
+
+#[async_trait::async_trait]
+impl LLMProvider for OpenAIProvider {
+    async fn init_with_config() -> Result<Box<dyn LLMProvider>> {
+        let provider = Self::init_with_config().await?;
+        Ok(Box::new(provider))
+    }
+
+    async fn chat(&self, messages: Vec<String>) -> Result<String> {
+        self.chat(messages).await
+    }
+
+    async fn chat_with_prompt(
+        &self,
+        messages: Vec<String>,
+        system_prompt: String,
+    ) -> Result<String> {
+        let combined_message = messages.join(" ");
+        self.chat_with_prompt(&combined_message, &system_prompt)
+            .await
+    }
+
+    async fn get_llm_request(messages: Vec<String>) -> Result<String> {
+        Self::get_llm_request(messages).await
+    }
+
+    async fn chat_with_prompt_static(
+        messages: Vec<String>,
+        system_prompt: String,
+    ) -> Result<String> {
+        Self::chat_with_prompt_static(messages, system_prompt).await
+    }
+
+    async fn validate_config() -> Result<()> {
+        Self::validate_config().await
+    }
+
+    async fn test_connection() -> Result<()> {
+        Self::test_connection().await
+    }
+
+    fn provider_name(&self) -> &'static str {
+        "openai"
     }
 }
 
@@ -272,11 +301,8 @@ mod tests {
         }
 
         let provider = OpenAIProvider::init_with_config().await.unwrap();
-        let request = vec![
-            user!("What is the capital of France?"),
-            system!("You are a helpful assistant."),
-        ];
-        let response = provider.chat(request).await;
+        let messages = vec!["What is the capital of France?".to_string()];
+        let response = provider.chat(messages).await;
 
         match response {
             Ok(resp) => {

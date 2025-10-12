@@ -4,6 +4,7 @@ use std::time::Duration;
 use tokio::time::sleep;
 
 pub mod deepseek_provider;
+pub mod llm_provider_trait;
 pub mod ollama_provider;
 pub mod openai_provider;
 pub mod utils;
@@ -487,6 +488,14 @@ pub async fn test_llm_connection() -> Result<()> {
             info!("Testing OpenAI connection");
             openai_provider::OpenAIProvider::test_connection().await
         }
+        "xai" => {
+            info!("Testing xAI connection");
+            xai_provider::XAIProvider::test_connection().await
+        }
+        "ollama" => {
+            info!("Testing Ollama connection");
+            ollama_provider::OllamaProvider::test_connection().await
+        }
         provider => {
             warn!("Connection test not implemented for provider: {}", provider);
             Ok(())
@@ -636,6 +645,10 @@ pub fn print_setup_instructions() {
     println!("   - Set provider = \"ollama\"");
     println!("   - Ensure Ollama is running on localhost:11434");
     println!("   - Set llm.ollama.model to your installed model\n");
+
+    println!("   For xAI:");
+    println!("   - Set provider = \"xai\"");
+    println!("   - Set llm.xai.api_key = \"your-actual-xai-key\"\n");
 
     println!("3. Test your configuration:");
     println!("   cargo test --lib validate_config\n");

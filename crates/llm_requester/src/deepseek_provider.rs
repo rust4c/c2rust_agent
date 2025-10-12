@@ -1,12 +1,13 @@
-use anyhow::Result;
-use anyhow::anyhow;
+use anyhow::{Result, anyhow};
 use log::{debug, error, info};
-use siumai::prelude::*;
+use rig::providers::openai::responses_api::ResponsesCompletionModel;
+use rig::{agent::Agent, client::CompletionClient, completion::Prompt, providers::openai};
 
+use crate::llm_provider_trait::LLMProvider;
 use crate::pkg_config::get_config;
 
 pub struct DeepSeekProvider {
-    client: Siumai,
+    agent: Agent<ResponsesCompletionModel>,
 }
 
 impl DeepSeekProvider {
@@ -20,17 +21,15 @@ impl DeepSeekProvider {
             ));
         }
 
-        let client = Siumai::builder()
-            .openai()
-            .model(model.clone())
-            .api_key(api_key)
+        let client = openai::ClientBuilder::new(&api_key)
             .base_url("https://api.deepseek.com/v1")
             .build()
-            .await
             .map_err(|e| anyhow!("Failed to create DeepSeek client: {}", e))?;
 
+        let agent = client.agent(&model).build();
+
         info!("Successfully created DeepSeek provider");
-        Ok(Self { client })
+        Ok(Self { agent })
     }
 
     pub async fn init_with_config() -> Result<Self> {
@@ -60,20 +59,15 @@ impl DeepSeekProvider {
             ));
         }
 
-        let client = Siumai::builder()
-            .openai()
-            .model(model)
-            .api_key(api_key)
+        let client = openai::ClientBuilder::new(&api_key)
             .base_url("https://api.deepseek.com/v1")
             .build()
-            .await
-            .map_err(|e| {
-                error!("Failed to build DeepSeek client: {}", e);
-                anyhow!("Failed to create DeepSeek client: {}", e)
-            })?;
+            .map_err(|e| anyhow!("Failed to create DeepSeek client: {}", e))?;
+
+        let agent = client.agent(&model).build();
 
         info!("Successfully initialized DeepSeek provider from config");
-        Ok(Self { client })
+        Ok(Self { agent })
     }
 
     pub async fn chat_with_prompt(&self, message: &str, system_prompt: &str) -> Result<String> {
@@ -81,16 +75,15 @@ impl DeepSeekProvider {
         debug!("Message length: {} chars", message.len());
         debug!("System prompt length: {} chars", system_prompt.len());
 
-        let request = vec![user!(message), system!(system_prompt)];
+        let prompt = format!("System: {}\n\nUser: {}", system_prompt, message);
 
-        match self.client.chat_with_tools(request, None).await {
+        match self.agent.prompt(&prompt).await {
             Ok(response) => {
-                let text = response.text().unwrap_or_default();
                 info!(
                     "DeepSeek chat with prompt completed successfully, response length: {} chars",
-                    text.len()
+                    response.len()
                 );
-                Ok(text)
+                Ok(response)
             }
             Err(e) => {
                 error!("DeepSeek chat with prompt failed: {}", e);
@@ -125,20 +118,21 @@ impl DeepSeekProvider {
         }
     }
 
-    pub async fn chat(&self, request: Vec<ChatMessage>) -> Result<String> {
+    pub async fn chat(&self, messages: Vec<String>) -> Result<String> {
         info!(
             "Starting DeepSeek chat request with {} messages",
-            request.len()
+            messages.len()
         );
 
-        match self.client.chat_with_tools(request, None).await {
+        let combined_message = messages.join("\n");
+
+        match self.agent.prompt(&combined_message).await {
             Ok(response) => {
-                let text = response.text().unwrap_or_default();
                 info!(
                     "DeepSeek chat completed successfully, response length: {} chars",
-                    text.len()
+                    response.len()
                 );
-                Ok(text)
+                Ok(response)
             }
             Err(e) => {
                 error!("DeepSeek chat failed: {}", e);
@@ -184,9 +178,7 @@ impl DeepSeekProvider {
             e
         })?;
 
-        let chat_messages: Vec<ChatMessage> = messages.into_iter().map(|msg| user!(msg)).collect();
-
-        match provider.chat(chat_messages).await {
+        match provider.chat(messages).await {
             Ok(response) => {
                 info!("DeepSeek LLM request completed successfully");
                 Ok(response)
@@ -263,14 +255,15 @@ impl DeepSeekProvider {
         info!("Testing DeepSeek connection");
 
         let provider = Self::init_with_config().await?;
-        let test_message = vec![user!(
-            "Hello, this is a connection test. Please respond with 'OK'."
-        )];
+        let test_message =
+            vec!["Hello, this is a connection test. Please respond with 'OK'.".to_string()];
 
-        match provider.client.chat_with_tools(test_message, None).await {
+        match provider.chat(test_message).await {
             Ok(response) => {
-                let text = response.text().unwrap_or_default();
-                info!("DeepSeek connection test successful, response: {}", text);
+                info!(
+                    "DeepSeek connection test successful, response: {}",
+                    response
+                );
                 Ok(())
             }
             Err(e) => {
@@ -310,6 +303,51 @@ impl DeepSeekProvider {
                 Err(anyhow!("{}", error_msg))
             }
         }
+    }
+}
+
+#[async_trait::async_trait]
+impl LLMProvider for DeepSeekProvider {
+    async fn init_with_config() -> Result<Box<dyn LLMProvider>> {
+        let provider = Self::init_with_config().await?;
+        Ok(Box::new(provider))
+    }
+
+    async fn chat(&self, messages: Vec<String>) -> Result<String> {
+        self.chat(messages).await
+    }
+
+    async fn chat_with_prompt(
+        &self,
+        messages: Vec<String>,
+        system_prompt: String,
+    ) -> Result<String> {
+        let combined_message = messages.join(" ");
+        self.chat_with_prompt(&combined_message, &system_prompt)
+            .await
+    }
+
+    async fn get_llm_request(messages: Vec<String>) -> Result<String> {
+        Self::get_llm_request(messages).await
+    }
+
+    async fn chat_with_prompt_static(
+        messages: Vec<String>,
+        system_prompt: String,
+    ) -> Result<String> {
+        Self::chat_with_prompt_static(messages, system_prompt).await
+    }
+
+    async fn validate_config() -> Result<()> {
+        Self::validate_config().await
+    }
+
+    async fn test_connection() -> Result<()> {
+        Self::test_connection().await
+    }
+
+    fn provider_name(&self) -> &'static str {
+        "deepseek"
     }
 }
 
@@ -361,11 +399,8 @@ mod tests {
         }
 
         let provider = DeepSeekProvider::init_with_config().await.unwrap();
-        let request = vec![
-            user!("What is the capital of France?"),
-            system!("You are a helpful assistant."),
-        ];
-        let response = provider.chat(request).await;
+        let messages = vec!["What is the capital of France?".to_string()];
+        let response = provider.chat(messages).await;
 
         match response {
             Ok(resp) => {
