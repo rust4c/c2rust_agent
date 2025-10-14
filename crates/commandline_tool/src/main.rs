@@ -185,6 +185,18 @@ async fn main() -> Result<()> {
         SubLevel::INFO
     };
 
+    info!(
+        r#"
+        .oooooo.     .oooo.   ooooooooo.                            .
+       d8P'  `Y8b  .dP""Y88b  `888   `Y88.                        .o8
+      888                ]8P'  888   .d88' oooo  oooo   .oooo.o .o888oo
+      888              .d8P'   888ooo88P'  `888  `888  d88(  "8   888
+      888            .dP'      888`88b.     888   888  `"Y88b.    888
+      `88b    ooo  .oP     .o  888  `88b.   888   888  o.  )88b   888 .
+       `Y8bood8P'  8888888888 o888o  o888o  `V88V"V8P' 8""888P'   "888"
+    "#
+    );
+
     let subscriber = tracing_subscriber::registry()
         .with(stdout_layer.with_filter(stdout_filter))
         .with(file_layer.with_filter(file_filter));
