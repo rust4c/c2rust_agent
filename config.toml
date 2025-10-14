@@ -2,23 +2,23 @@
 # 需要进行评测的 docker image id
 docker_image = "pengheng/c2rust:latest"
 # docker 镜像里代码生成阶段的工作目录。
-codegen_workdir = "/opt/c2rust_agent/translate_chibicc"
+codegen_workdir = "/tmp/translate_chibicc"
 # docker 镜像里代码生成阶段需要运行的命令（不是Shell命令，不能带有管道等Shell操作符）。
 codegen_command = "./opt/c2rust_agent/scripts/codegen_command_chibicc.sh"
 # docker 镜像里代码生成阶段日志输出路径。
 codegen_logfile = "/opt/c2rust_agent/log/latest.log"
 # docker 镜像里生成的代码所在的目录。
-codegen_resultdir = "/opt/c2rust_agent/translate_chibicc/src_cache"
+codegen_resultdir = "/tmp/translate_chibicc"
 # docker 镜像里构建生成的代码的命令，并假设工作目录是 codegen_resultdir。
 build_command = "./opt/c2rust_agent/scripts/build_command_chibicc.sh"
 # docker 镜像里生成的二进制可执行文件路径。
-exe = "/opt/c2rust_agent/tmp/translated_chibicc"
+exe = "/tmp/translate_chibicc/target/debug"
 
 [problem.translate_littlefs_fuse]
 docker_image = "pengheng/c2rust:latest"
-codegen_workdir = "/opt/c2rust_agent/translate_littlefs_fuse"
+codegen_workdir = "/tmp/translate_littlefs_fuse"
 codegen_command = "./opt/c2rust_agent/scripts/codegen_command_littlelefs.sh"
-codegen_resultdir = "/opt/c2rust_agent/translate_littlefs_fuse/src_cache"
+codegen_resultdir = "/tmp/translate_littlefs_fuse"
 codegen_logfile = "/opt/c2rust_agent/log/latest.log"
 build_command = "./opt/c2rust_agent/scripts/build_command_littlelefs.sh"
-exe = "/opt/c2rust_agent/tmp/translated_littlefs_fuse"
+exe = "/tmp/translate_littlefs_fuse"
