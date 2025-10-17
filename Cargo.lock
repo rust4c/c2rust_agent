@@ -3959,6 +3959,15 @@ dependencies = [
 ]
 
 [[package]]
+name = "module_installer"
+version = "0.1.0"
+dependencies = [
+ "anyhow",
+ "log",
+ "tempfile",
+]
+
+[[package]]
 name = "monostate"
 version = "0.1.18"
 source = "registry+https://github.com/rust-lang/crates.io-index"

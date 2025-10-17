@@ -5,9 +5,7 @@ use std::path::PathBuf;
 
 pub use pkg_config::MainProcessorConfig;
 pub use processor::{
-    discover_src_cache_projects,
-    process_batch_paths,
-    process_single_path,
+    discover_src_cache_projects, process_batch_paths, process_single_path,
     process_with_dependency_graph,
 };
 

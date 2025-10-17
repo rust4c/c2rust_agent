@@ -1,5 +1,5 @@
 //! Database query functions
-//! 
+//!
 //! All the get_* database query methods extracted from PromptBuilder.
 //! Pure data access layer - no formatting, no business logic.
 
@@ -119,27 +119,26 @@ pub async fn get_defined_functions(
                     .and_then(|v| v.as_str())
                     .map(|s| s.to_string());
 
-                let parameters_str = parsed
-                    .get("parameters")
-                    .and_then(|v| v.as_array())
-                    .map(|arr| {
-                        let parts: Vec<String> = arr
-                            .iter()
-                            .map(|p| {
-                                let t = p
-                                    .get("type")
-                                    .or_else(|| p.get("r#type"))
-                                    .and_then(|v| v.as_str())
-                                    .unwrap_or("?");
-                                let n = p
-                                    .get("name")
-                                    .and_then(|v| v.as_str())
-                                    .unwrap_or("param");
-                                format!("{} {}", t, n)
-                            })
-                            .collect();
-                        parts.join(", ")
-                    });
+                let parameters_str =
+                    parsed
+                        .get("parameters")
+                        .and_then(|v| v.as_array())
+                        .map(|arr| {
+                            let parts: Vec<String> = arr
+                                .iter()
+                                .map(|p| {
+                                    let t = p
+                                        .get("type")
+                                        .or_else(|| p.get("r#type"))
+                                        .and_then(|v| v.as_str())
+                                        .unwrap_or("?");
+                                    let n =
+                                        p.get("name").and_then(|v| v.as_str()).unwrap_or("param");
+                                    format!("{} {}", t, n)
+                                })
+                                .collect();
+                            parts.join(", ")
+                        });
 
                 let signature = Some(format!(
                     "{} {}({})",
@@ -236,27 +235,26 @@ pub async fn get_function_definition(
                     .and_then(|v| v.as_str())
                     .map(|s| s.to_string());
 
-                let parameters_str = parsed
-                    .get("parameters")
-                    .and_then(|v| v.as_array())
-                    .map(|arr| {
-                        let parts: Vec<String> = arr
-                            .iter()
-                            .map(|p| {
-                                let t = p
-                                    .get("type")
-                                    .or_else(|| p.get("r#type"))
-                                    .and_then(|v| v.as_str())
-                                    .unwrap_or("?");
-                                let n = p
-                                    .get("name")
-                                    .and_then(|v| v.as_str())
-                                    .unwrap_or("param");
-                                format!("{} {}", t, n)
-                            })
-                            .collect();
-                        parts.join(", ")
-                    });
+                let parameters_str =
+                    parsed
+                        .get("parameters")
+                        .and_then(|v| v.as_array())
+                        .map(|arr| {
+                            let parts: Vec<String> = arr
+                                .iter()
+                                .map(|p| {
+                                    let t = p
+                                        .get("type")
+                                        .or_else(|| p.get("r#type"))
+                                        .and_then(|v| v.as_str())
+                                        .unwrap_or("?");
+                                    let n =
+                                        p.get("name").and_then(|v| v.as_str()).unwrap_or("param");
+                                    format!("{} {}", t, n)
+                                })
+                                .collect();
+                            parts.join(", ")
+                        });
 
                 let signature = Some(format!(
                     "{} {}({})",

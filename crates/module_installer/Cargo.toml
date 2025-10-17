@@ -1,0 +1,9 @@
+[package]
+name = "module_installer"
+version = "0.1.0"
+edition = "2024"
+
+[dependencies]
+anyhow.workspace = true
+log.workspace = true
+tempfile.workspace = true

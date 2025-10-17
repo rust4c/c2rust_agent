@@ -7,7 +7,7 @@ members = [
     "crates/env_checker", "crates/file_editor",
     "crates/llm_requester",
     "crates/lsp_services",
-    "crates/main_processor",
+    "crates/main_processor", "crates/module_installer",
     "crates/project_remanager",
     "crates/prompt_builder",
     "crates/relation_analy",

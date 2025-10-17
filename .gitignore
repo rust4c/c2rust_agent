@@ -1,3 +1,9 @@
+# Editor shit
+.vscode/
+.idea/
+*.sublime-project
+*.sublime-workspace
+
 # Python-generated files
 __pycache__/
 *.py[oc]
