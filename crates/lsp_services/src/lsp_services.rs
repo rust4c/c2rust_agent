@@ -9,7 +9,7 @@ use std::{
     collections::HashMap,
     fs,
     path::{Path, PathBuf},
-    process::{Command, Stdio},
+    process::Command,
 };
 
 #[derive(Debug, Serialize, Clone)]
@@ -130,27 +130,6 @@ impl ClangdAnalyzer {
         self.database_manager = Some(db_manager);
         info!("Database storage enabled for ClangdAnalyzer");
 
-        Ok(())
-    }
-
-    pub fn generate_compile_commands(&self) -> Result<()> {
-        info!("Generating compilation database using compiledb...");
-
-        let status = Command::new("compiledb")
-            .arg("-n")
-            .arg("make")
-            .current_dir(&self.project_root)
-            .stdout(Stdio::null())
-            .stderr(Stdio::null())
-            .status()
-            .map_err(|e| anyhow!("Failed to run compiledb: {}", e))?;
-
-        if !status.success() {
-            error!("compiledb failed with exit code: {}", status);
-            return Err(anyhow!("compiledb failed with exit code: {}", status));
-        }
-
-        info!("Successfully generated compilation database");
         Ok(())
     }
 
@@ -644,11 +623,6 @@ impl ClangdAnalyzer {
 
     pub fn analyze_project(&mut self) -> Result<()> {
         info!("Analyzing project: {}", self.project_root.display());
-
-        // Attempt to generate compilation database
-        if let Err(e) = self.generate_compile_commands() {
-            error!("⚠️ Failed to generate compilation database: {}", e);
-        }
 
         // Get source files from compilation database
         let source_files = match self.get_source_files_from_compile_commands() {

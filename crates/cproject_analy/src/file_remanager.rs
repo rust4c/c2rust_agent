@@ -1,5 +1,5 @@
 use crate::pkg_config::PreprocessConfig;
-use anyhow::{Context, Result};
+use anyhow::{Context, Result, anyhow};
 use glob::Pattern;
 use indicatif::{MultiProgress, ProgressBar, ProgressIterator, ProgressStyle};
 use log::{error, info, warn};
@@ -102,14 +102,9 @@ impl CProjectPreprocessor {
         main_pb.set_message("📁 创建输出目录结构...");
         self.create_output_structure(output_dir)?;
 
-        // 创建uv虚拟环境并安装compildb
-        let installer = CompiledbInstaller::new()
-            .with_uv_command(&self.config.uv_command)
-            .with_mirrors(self.config.uv_mirror_sources());
-        let compiledb_venv = self
-            .prepare_compiledb_environment(&installer, output_dir)
-            .context("无法准备 compiledb 虚拟环境")?;
-        info!("compiledb 虚拟环境路径: {:?}", compiledb_venv);
+        // 生成 compile_commands.json
+        main_pb.set_message("⚙️  生成 compile_commands.json...");
+        self.generallyate_compiledb(source_dir, output_dir)?;
 
         // 扫描并分类文件
         main_pb.set_message("🔍 扫描项目文件...");
@@ -163,6 +158,45 @@ impl CProjectPreprocessor {
                 error!("Failed to generate relation graph: {e}");
             }
         }
+        Ok(())
+    }
+
+    /// 生成 compile_commands.json
+    fn generallyate_compiledb(&self, source_dir: &Path, output_dir: &Path) -> Result<()> {
+        // 创建uv虚拟环境并安装compildb
+        let installer = CompiledbInstaller::new()
+            .with_uv_command(&self.config.uv_command)
+            .with_mirrors(self.config.uv_mirror_sources());
+        let compiledb_venv = self
+            .prepare_compiledb_environment(&installer, output_dir)
+            .context("无法准备 compiledb 虚拟环境")?;
+        info!("compiledb 虚拟环境路径: {:?}", compiledb_venv);
+        info!("Generating compilation database using compiledb...");
+
+        if let Err(err) = std::env::set_current_dir(source_dir) {
+            error!("目录更改失败: {}", err);
+        }
+
+        let status = Command::new(output_dir.join(".compiledb-venv/bin/compiledb"))
+            .arg("-n")
+            .arg("make")
+            .status()
+            .map_err(|e| anyhow!("Failed to run compiledb: {}", e))?;
+
+        fs::copy(
+            source_dir.join("compile_commands.json"),
+            output_dir.join("compile_commands.json"),
+        )?;
+
+        if !status.success() {
+            error!("compiledb failed with exit code: {}", status);
+            return Err(anyhow!("compiledb failed with exit code: {}", status));
+        }
+
+        if let Err(err) = std::env::set_current_dir(output_dir) {
+            error!("目录更改失败: {}", err);
+        }
+
         Ok(())
     }
 
