@@ -4,20 +4,23 @@ members = [
     "crates/commandline_tool",
     "crates/cproject_analy",
     "crates/db_services",
-    "crates/env_checker", "crates/file_editor",
+    "crates/env_checker",
+    "crates/file_editor",
     "crates/llm_requester",
     "crates/lsp_services",
-    "crates/main_processor", "crates/module_installer",
+    "crates/main_processor",
+    "crates/module_installer",
     "crates/project_remanager",
     "crates/prompt_builder",
     "crates/relation_analy",
     "crates/rust_checker",
     "crates/single_processor",
-    "crates/ui_main", "crates/web_searcher",
+    "crates/transpile",
+    "crates/ui_main",
+    "crates/web_searcher",
 ]
 resolver = "3"
 default-members = ["crates/commandline_tool"]
-
 
 
 [workspace.dependencies]

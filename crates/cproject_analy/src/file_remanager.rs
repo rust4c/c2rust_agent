@@ -104,7 +104,7 @@ impl CProjectPreprocessor {
 
         // 生成 compile_commands.json
         main_pb.set_message("⚙️  生成 compile_commands.json...");
-        self.generallyate_compiledb(source_dir, output_dir)?;
+        self.generate_compiledb(source_dir, output_dir)?;
 
         // 扫描并分类文件
         main_pb.set_message("🔍 扫描项目文件...");
@@ -162,7 +162,7 @@ impl CProjectPreprocessor {
     }
 
     /// 生成 compile_commands.json
-    fn generallyate_compiledb(&self, source_dir: &Path, output_dir: &Path) -> Result<()> {
+    fn generate_compiledb(&self, source_dir: &Path, output_dir: &Path) -> Result<()> {
         // 创建uv虚拟环境并安装compildb
         let installer = CompiledbInstaller::new()
             .with_uv_command(&self.config.uv_command)
@@ -178,7 +178,7 @@ impl CProjectPreprocessor {
         }
 
         let status = Command::new(output_dir.join(".compiledb-venv/bin/compiledb"))
-            .arg("-n")
+            // .arg("-n")
             .arg("make")
             .status()
             .map_err(|e| anyhow!("Failed to run compiledb: {}", e))?;
