@@ -1,7 +1,37 @@
 use config::{Config, File};
+use module_installer::{MirrorSource, default_uv_mirrors};
 use serde::{Deserialize, Serialize};
 
 /// 预处理配置（集中定义）
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct UvMirrorConfig {
+    pub name: String,
+    #[serde(default)]
+    pub index_url: Option<String>,
+    #[serde(default)]
+    pub extra_index_url: Option<String>,
+}
+
+impl From<MirrorSource> for UvMirrorConfig {
+    fn from(source: MirrorSource) -> Self {
+        Self {
+            name: source.name,
+            index_url: source.index_url,
+            extra_index_url: source.extra_index_url,
+        }
+    }
+}
+
+impl From<&UvMirrorConfig> for MirrorSource {
+    fn from(config: &UvMirrorConfig) -> Self {
+        MirrorSource::new(
+            config.name.clone(),
+            config.index_url.clone(),
+            config.extra_index_url.clone(),
+        )
+    }
+}
+
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct PreprocessConfig {
     /// 并行工作者数量 (0=自动检测)
@@ -18,6 +48,15 @@ pub struct PreprocessConfig {
     pub large_file_threshold: u64,
     /// 块大小 (字节)
     pub chunk_size: usize,
+    /// uv 可执行文件路径
+    #[serde(default = "default_uv_command")]
+    pub uv_command: String,
+    /// uv 虚拟环境路径 (相对路径基于输出目录)
+    #[serde(default)]
+    pub uv_venv_path: Option<String>,
+    /// uv 安装源配置
+    #[serde(default = "default_uv_mirrors_config")]
+    pub uv_mirrors: Vec<UvMirrorConfig>,
 }
 
 impl Default for PreprocessConfig {
@@ -61,8 +100,32 @@ impl Default for PreprocessConfig {
             ],
             large_file_threshold: 1024 * 1024,
             chunk_size: 1024 * 1024,
+            uv_command: default_uv_command(),
+            uv_venv_path: Some(".compiledb-venv".to_string()),
+            uv_mirrors: default_uv_mirrors_config(),
         }
     }
+}
+
+impl PreprocessConfig {
+    pub fn uv_mirror_sources(&self) -> Vec<MirrorSource> {
+        if self.uv_mirrors.is_empty() {
+            default_uv_mirrors()
+        } else {
+            self.uv_mirrors.iter().map(MirrorSource::from).collect()
+        }
+    }
+}
+
+fn default_uv_command() -> String {
+    "uv".to_string()
+}
+
+fn default_uv_mirrors_config() -> Vec<UvMirrorConfig> {
+    default_uv_mirrors()
+        .into_iter()
+        .map(UvMirrorConfig::from)
+        .collect()
 }
 
 /// 预处理器顶层配置（集中定义）

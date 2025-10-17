@@ -1246,6 +1246,7 @@ dependencies = [
  "llm_requester",
  "log",
  "lsp_services",
+ "module_installer",
  "num_cpus",
  "prompt_builder",
  "rayon",

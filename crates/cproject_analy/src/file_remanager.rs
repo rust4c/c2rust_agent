@@ -2,7 +2,7 @@ use crate::pkg_config::PreprocessConfig;
 use anyhow::{Context, Result};
 use glob::Pattern;
 use indicatif::{MultiProgress, ProgressBar, ProgressIterator, ProgressStyle};
-use log::{error, info};
+use log::{error, info, warn};
 use rayon::prelude::*;
 use relation_analy::generate_c_dependency_graph;
 use serde::Serialize;
@@ -12,9 +12,12 @@ use std::{
     fs::{self, File},
     io::{BufReader, BufWriter, Read, Write},
     path::{Path, PathBuf},
+    process::Command,
     sync::{Arc, Mutex},
     time::{Duration, Instant},
 };
+
+use module_installer::CompiledbInstaller;
 
 /// 文件分类类型
 #[derive(Debug, Clone, PartialEq)]
@@ -98,6 +101,15 @@ impl CProjectPreprocessor {
         // 创建输出目录结构
         main_pb.set_message("📁 创建输出目录结构...");
         self.create_output_structure(output_dir)?;
+
+        // 创建uv虚拟环境并安装compildb
+        let installer = CompiledbInstaller::new()
+            .with_uv_command(&self.config.uv_command)
+            .with_mirrors(self.config.uv_mirror_sources());
+        let compiledb_venv = self
+            .prepare_compiledb_environment(&installer, output_dir)
+            .context("无法准备 compiledb 虚拟环境")?;
+        info!("compiledb 虚拟环境路径: {:?}", compiledb_venv);
 
         // 扫描并分类文件
         main_pb.set_message("🔍 扫描项目文件...");
@@ -711,6 +723,72 @@ impl CProjectPreprocessor {
     /// 获取统计信息
     pub fn get_stats(&self) -> &ProcessingStats {
         &self.stats
+    }
+
+    fn prepare_compiledb_environment(
+        &self,
+        installer: &CompiledbInstaller,
+        output_dir: &Path,
+    ) -> Result<PathBuf> {
+        let venv_path = self.resolve_uv_venv_path(output_dir);
+        self.ensure_uv_virtualenv(&venv_path)?;
+        installer
+            .ensure_installed(&venv_path)
+            .with_context(|| format!("无法在 {:?} 安装 compiledb", venv_path))?;
+        Ok(venv_path)
+    }
+
+    fn resolve_uv_venv_path(&self, output_dir: &Path) -> PathBuf {
+        if let Some(ref configured) = self.config.uv_venv_path {
+            let candidate = PathBuf::from(configured);
+            if candidate.is_absolute() {
+                candidate
+            } else {
+                output_dir.join(candidate)
+            }
+        } else {
+            output_dir.join(".compiledb-venv")
+        }
+    }
+
+    fn ensure_uv_virtualenv(&self, venv_path: &Path) -> Result<()> {
+        if self.venv_has_python(venv_path) {
+            return Ok(());
+        }
+
+        if let Some(parent) = venv_path.parent() {
+            fs::create_dir_all(parent)
+                .with_context(|| format!("无法创建虚拟环境父目录: {:?}", parent))?;
+        }
+
+        info!("创建 uv 虚拟环境: {:?}", venv_path);
+        let status = Command::new(&self.config.uv_command)
+            .arg("venv")
+            .arg(venv_path)
+            .status()
+            .with_context(|| format!("无法执行 uv venv 创建虚拟环境: {:?}", venv_path))?;
+
+        if !status.success() {
+            return Err(anyhow::anyhow!(
+                "uv venv 创建虚拟环境失败，退出码 {:?}",
+                status.code()
+            ));
+        }
+
+        if !self.venv_has_python(venv_path) {
+            warn!(
+                "uv 虚拟环境 {:?} 创建后未找到 Python 解释器，可能创建失败",
+                venv_path
+            );
+        }
+
+        Ok(())
+    }
+
+    fn venv_has_python(&self, venv_path: &Path) -> bool {
+        let unix_candidate = venv_path.join("bin/python");
+        let windows_candidate = venv_path.join("Scripts/python.exe");
+        unix_candidate.exists() || windows_candidate.exists()
     }
 }
 

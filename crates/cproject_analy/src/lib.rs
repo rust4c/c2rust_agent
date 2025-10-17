@@ -153,12 +153,6 @@ impl PreProcessor {
         main_pb.enable_steady_tick(Duration::from_millis(100));
         main_pb.set_message("🔄 开始并行分析和存储...");
 
-        // // 读取映射文件
-        // let mapping_content =
-        //     fs::read_to_string(mapping_path).context("Failed to read mapping file")?;
-        // let mapping: Value =
-        //     serde_json::from_str(&mapping_content).context("Failed to parse mapping JSON")?;
-
         let db_manager = Arc::new(self.db_manager.take().unwrap());
 
         // 创建进度条
@@ -217,48 +211,15 @@ impl PreProcessor {
             })
         };
 
-        // // 启动数据库存储线程
-        // let db_handle = {
-        //     let db_pb = db_pb.clone();
-        //     let mapping = mapping.clone();
-
-        //     thread::spawn(move || -> Result<()> {
-        //         let rt = tokio::runtime::Runtime::new().unwrap();
-        //         rt.block_on(async {
-        //             db_pb.set_message("💾 正在存储到数据库...");
-
-        //             // 这里可以根据映射文件处理数据库存储逻辑
-        //             // 例如：存储文件映射信息、接口信息等
-        //             if let Some(mappings) = mapping.get("mappings").and_then(|m| m.as_array()) {
-        //                 db_pb.set_message(format!("💾 正在存储 {} 个文件映射...", mappings.len()));
-
-        //                 // 示例：可以在这里添加具体的数据库存储逻辑
-        //                 // for mapping in mappings {
-        //                 //     // 处理每个映射项的数据库存储
-        //                 // }
-        //             }
-
-        //             db_pb.finish_with_message("✅ 数据库存储完成!");
-        //             Ok(())
-        //         })
-        //     })
-        // };
-
-        // 等待两个线程完成
+        // 等待线程完成
         let lsp_result = lsp_handle
             .join()
             .map_err(|e| anyhow::anyhow!("LSP thread panicked: {:?}", e))?;
-        // let db_result = db_handle
-        //     .join()
-        //     .map_err(|e| anyhow::anyhow!("DB thread panicked: {:?}", e))?;
 
         // 检查结果
         if let Err(e) = lsp_result {
             error!("LSP 分析失败: {}", e);
         }
-        // if let Err(e) = db_result {
-        //     error!("数据库存储失败: {}", e);
-        // }
 
         // 基于 FastEmbed 生成向量并批量入库
         let embed_pb = self.multi_progress.add(ProgressBar::new_spinner());

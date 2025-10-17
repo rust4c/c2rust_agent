@@ -5,52 +5,55 @@ use std::path::{Path, PathBuf};
 use std::process::Command;
 
 /// Known Python package mirrors that we try sequentially when installing via `uv`.
-#[derive(Debug, Clone, Copy)]
+#[derive(Debug, Clone)]
 pub struct MirrorSource {
-    pub name: &'static str,
-    pub index_url: Option<&'static str>,
-    pub extra_index_url: Option<&'static str>,
+    pub name: String,
+    pub index_url: Option<String>,
+    pub extra_index_url: Option<String>,
 }
 
 impl MirrorSource {
-    pub const fn new(
-        name: &'static str,
-        index_url: Option<&'static str>,
-        extra_index_url: Option<&'static str>,
-    ) -> Self {
+    pub fn new<N, I, E>(name: N, index_url: Option<I>, extra_index_url: Option<E>) -> Self
+    where
+        N: Into<String>,
+        I: Into<String>,
+        E: Into<String>,
+    {
         Self {
-            name,
-            index_url,
-            extra_index_url,
+            name: name.into(),
+            index_url: index_url.map(Into::into),
+            extra_index_url: extra_index_url.map(Into::into),
         }
     }
 }
 
 /// Default mirror list: PyPI followed by a few popular mainland China mirrors.
-pub const DEFAULT_UV_MIRRORS: &[MirrorSource] = &[
-    MirrorSource::new("PyPI", None, None),
-    MirrorSource::new(
-        "Tsinghua",
-        Some("https://pypi.tuna.tsinghua.edu.cn/simple"),
-        None,
-    ),
-    MirrorSource::new(
-        "Aliyun",
-        Some("https://mirrors.aliyun.com/pypi/simple"),
-        None,
-    ),
-    MirrorSource::new(
-        "USTC",
-        Some("https://pypi.mirrors.ustc.edu.cn/simple"),
-        None,
-    ),
-];
+pub fn default_uv_mirrors() -> Vec<MirrorSource> {
+    vec![
+        MirrorSource::new("PyPI", None::<&str>, None::<&str>),
+        MirrorSource::new(
+            "Tsinghua",
+            Some("https://pypi.tuna.tsinghua.edu.cn/simple"),
+            None::<&str>,
+        ),
+        MirrorSource::new(
+            "Aliyun",
+            Some("https://mirrors.aliyun.com/pypi/simple"),
+            None::<&str>,
+        ),
+        MirrorSource::new(
+            "USTC",
+            Some("https://pypi.mirrors.ustc.edu.cn/simple"),
+            None::<&str>,
+        ),
+    ]
+}
 
 /// Handles `compiledb` availability within a user-provided virtual environment.
 #[derive(Debug, Clone)]
 pub struct CompiledbInstaller {
     uv_command: PathBuf,
-    mirrors: &'static [MirrorSource],
+    mirrors: Vec<MirrorSource>,
     package_spec: &'static str,
 }
 
@@ -58,7 +61,7 @@ impl Default for CompiledbInstaller {
     fn default() -> Self {
         Self {
             uv_command: PathBuf::from("uv"),
-            mirrors: DEFAULT_UV_MIRRORS,
+            mirrors: default_uv_mirrors(),
             package_spec: "compiledb",
         }
     }
@@ -74,8 +77,11 @@ impl CompiledbInstaller {
         self
     }
 
-    pub fn with_mirrors(mut self, mirrors: &'static [MirrorSource]) -> Self {
-        self.mirrors = mirrors;
+    pub fn with_mirrors<I>(mut self, mirrors: I) -> Self
+    where
+        I: IntoIterator<Item = MirrorSource>,
+    {
+        self.mirrors = mirrors.into_iter().collect();
         self
     }
 
@@ -106,7 +112,7 @@ impl CompiledbInstaller {
         let python_path = resolve_python_path(venv_path.as_ref())?;
 
         let mut last_error: Option<anyhow::Error> = None;
-        for mirror in self.mirrors {
+        for mirror in &self.mirrors {
             match install_with_mirror(&self.uv_command, &python_path, self.package_spec, mirror) {
                 Ok(()) => {
                     info!(
@@ -202,11 +208,11 @@ fn install_with_mirror(
         .arg(python_path)
         .arg("--upgrade");
 
-    if let Some(index_url) = mirror.index_url {
+    if let Some(index_url) = &mirror.index_url {
         command.arg("--index-url").arg(index_url);
     }
 
-    if let Some(extra_index_url) = mirror.extra_index_url {
+    if let Some(extra_index_url) = &mirror.extra_index_url {
         command.arg("--extra-index-url").arg(extra_index_url);
     }
 
