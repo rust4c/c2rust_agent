@@ -127,11 +127,34 @@ impl CompiledbInstaller {
                         mirror.name
                     );
 
-                    if err
-                        .chain()
-                        .any(|cause| matches!(cause.downcast_ref::<std::io::Error>(), Some(io) if io.kind() == ErrorKind::NotFound))
-                    {
-                        return Err(err);
+                    // 如果是找不到uv命令的错误，并且我们已经尝试过安装uv，则直接返回错误
+                    if self.is_uv_not_found_error(&err) {
+                        // 尝试安装uv工具
+                        if let Err(install_err) = self.try_install_uv() {
+                            warn!("自动安装uv失败: {}", install_err);
+                            return Err(err);
+                        }
+
+                        // 重试安装compiledb
+                        info!("uv安装完成，重试安装compiledb...");
+                        match install_with_mirror(
+                            &self.uv_command,
+                            &python_path,
+                            self.package_spec,
+                            mirror,
+                        ) {
+                            Ok(()) => {
+                                info!(
+                                    "compiledb installed successfully via {} mirror after installing uv",
+                                    mirror.name
+                                );
+                                return Ok(());
+                            }
+                            Err(retry_err) => {
+                                warn!("重试安装compiledb失败: {}", retry_err);
+                                return Err(retry_err);
+                            }
+                        }
                     }
 
                     warn!("Switching uv mirror from {} after failure", mirror.name);
@@ -143,6 +166,69 @@ impl CompiledbInstaller {
         Err(last_error.unwrap_or_else(|| {
             anyhow!("failed to install compiledb via uv: no mirror attempts succeeded")
         }))
+    }
+
+    /// 尝试安装uv工具本身
+    fn try_install_uv(&self) -> Result<()> {
+        info!("尝试通过pip安装uv工具...");
+
+        let mut command = Command::new("pip");
+        command
+            .arg("install")
+            .arg("uv")
+            .arg("--break-system-packages");
+
+        let output = command.output().with_context(|| "无法执行pip命令安装uv")?;
+
+        if output.status.success() {
+            info!("uv工具安装成功");
+            return Ok(());
+        }
+
+        let stderr = String::from_utf8_lossy(&output.stderr);
+        warn!("pip安装uv失败: {}，尝试使用镜像源...", stderr);
+
+        // 尝试使用镜像源安装uv
+        for mirror in &self.mirrors {
+            if let Some(index_url) = &mirror.index_url {
+                let mut mirror_command = Command::new("pip");
+                mirror_command
+                    .arg("install")
+                    .arg("uv")
+                    .arg("--break-system-packages")
+                    .arg("--index-url")
+                    .arg(index_url);
+
+                match mirror_command.output() {
+                    Ok(output) if output.status.success() => {
+                        info!("通过{}镜像源成功安装uv工具", mirror.name);
+                        return Ok(());
+                    }
+                    Ok(output) => {
+                        debug!(
+                            "通过{}镜像源安装uv失败: {}",
+                            mirror.name,
+                            String::from_utf8_lossy(&output.stderr)
+                        );
+                    }
+                    Err(err) => {
+                        debug!("执行pip命令失败 ({}镜像源): {}", mirror.name, err);
+                    }
+                }
+            }
+        }
+
+        Err(anyhow!("无法通过pip安装uv工具，请手动安装"))
+    }
+
+    /// 检查错误是否是由于找不到uv命令引起的
+    fn is_uv_not_found_error(&self, err: &anyhow::Error) -> bool {
+        err.chain().any(|cause| {
+            if let Some(io_err) = cause.downcast_ref::<std::io::Error>() {
+                return io_err.kind() == ErrorKind::NotFound;
+            }
+            false
+        })
     }
 }
 
@@ -199,50 +285,111 @@ fn install_with_mirror(
     package: &str,
     mirror: &MirrorSource,
 ) -> Result<()> {
-    let mut command = Command::new(uv_command);
+    fn try_install_command(
+        uv_command: &Path,
+        python_path: &Path,
+        package: &str,
+        mirror: &MirrorSource,
+    ) -> Result<()> {
+        let mut command = Command::new(uv_command);
+        command
+            .arg("pip")
+            .arg("install")
+            .arg(package)
+            .arg("--python")
+            .arg(python_path)
+            .arg("--upgrade");
+
+        if let Some(index_url) = &mirror.index_url {
+            command.arg("--index-url").arg(index_url);
+        }
+
+        if let Some(extra_index_url) = &mirror.extra_index_url {
+            command.arg("--extra-index-url").arg(extra_index_url);
+        }
+
+        let output = command
+            .output()
+            .with_context(|| format!("failed to invoke uv using {} mirror", mirror.name))?;
+
+        if output.status.success() {
+            return Ok(());
+        }
+
+        let stdout = String::from_utf8_lossy(&output.stdout);
+        let stderr = String::from_utf8_lossy(&output.stderr);
+        let mut message = format!(
+            "uv pip install {package} exited with code {:?} via {} mirror",
+            output.status.code(),
+            mirror.name
+        );
+
+        if !stdout.trim().is_empty() {
+            message.push_str("\nstdout:\n");
+            message.push_str(stdout.trim());
+        }
+
+        if !stderr.trim().is_empty() {
+            message.push_str("\nstderr:\n");
+            message.push_str(stderr.trim());
+        }
+
+        Err(anyhow!(message))
+    }
+
+    // 首次尝试
+    match try_install_command(uv_command, python_path, package, mirror) {
+        Ok(()) => return Ok(()),
+        Err(err) => {
+            // 检查是否是找不到uv命令的错误
+            if err.chain().any(|cause| {
+                if let Some(io_err) = cause.downcast_ref::<std::io::Error>() {
+                    return io_err.kind() == ErrorKind::NotFound;
+                }
+                false
+            }) {
+                warn!("检测到uv命令未找到，尝试自动安装uv...");
+
+                // 尝试安装uv
+                if let Err(install_err) = try_install_uv_with_mirror(mirror) {
+                    warn!("自动安装uv失败: {}", install_err);
+                    return Err(err);
+                }
+
+                // 重试原命令
+                info!("uv安装完成，重试安装{}...", package);
+                return try_install_command(uv_command, python_path, package, mirror);
+            }
+
+            return Err(err);
+        }
+    }
+}
+
+fn try_install_uv_with_mirror(mirror: &MirrorSource) -> Result<()> {
+    info!("尝试通过{}镜像源安装uv工具...", mirror.name);
+
+    let mut command = Command::new("pip");
     command
-        .arg("pip")
         .arg("install")
-        .arg(package)
-        .arg("--python")
-        .arg(python_path)
-        .arg("--upgrade");
+        .arg("uv")
+        .arg("--break-system-packages");
 
     if let Some(index_url) = &mirror.index_url {
         command.arg("--index-url").arg(index_url);
     }
 
-    if let Some(extra_index_url) = &mirror.extra_index_url {
-        command.arg("--extra-index-url").arg(extra_index_url);
-    }
-
     let output = command
         .output()
-        .with_context(|| format!("failed to invoke uv using {} mirror", mirror.name))?;
+        .with_context(|| format!("无法执行pip命令安装uv ({}镜像源)", mirror.name))?;
 
     if output.status.success() {
+        info!("通过{}镜像源成功安装uv工具", mirror.name);
         return Ok(());
     }
 
-    let stdout = String::from_utf8_lossy(&output.stdout);
     let stderr = String::from_utf8_lossy(&output.stderr);
-    let mut message = format!(
-        "uv pip install {package} exited with code {:?} via {} mirror",
-        output.status.code(),
-        mirror.name
-    );
-
-    if !stdout.trim().is_empty() {
-        message.push_str("\nstdout:\n");
-        message.push_str(stdout.trim());
-    }
-
-    if !stderr.trim().is_empty() {
-        message.push_str("\nstderr:\n");
-        message.push_str(stderr.trim());
-    }
-
-    Err(anyhow!(message))
+    Err(anyhow!("通过{}镜像源安装uv失败: {}", mirror.name, stderr))
 }
 
 #[cfg(test)]
@@ -271,5 +418,36 @@ mod tests {
             error.to_string().contains("no Python interpreter"),
             "unexpected error: {error:?}"
         );
+    }
+
+    #[test]
+    fn test_is_uv_not_found_error() {
+        let installer = CompiledbInstaller::new();
+
+        // 创建一个NotFound错误
+        let io_error = std::io::Error::new(std::io::ErrorKind::NotFound, "command not found");
+        let anyhow_error = anyhow::Error::new(io_error);
+
+        assert!(installer.is_uv_not_found_error(&anyhow_error));
+
+        // 创建一个非NotFound错误
+        let other_error = anyhow::anyhow!("some other error");
+        assert!(!installer.is_uv_not_found_error(&other_error));
+    }
+
+    #[test]
+    fn test_try_install_uv_with_no_mirrors() {
+        let installer = CompiledbInstaller::new().with_mirrors(vec![]);
+
+        // 由于没有镜像源且pip install可能失败，这个测试主要验证函数不会panic
+        // 在实际环境中，这个函数会尝试pip install，但在测试环境中我们只验证逻辑
+        let result = installer.try_install_uv();
+
+        // 无论成功还是失败，都不应该panic
+        // 如果pip不可用或uv已安装，这都是预期的行为
+        match result {
+            Ok(_) => println!("uv installation succeeded"),
+            Err(e) => println!("uv installation failed as expected: {}", e),
+        }
     }
 }

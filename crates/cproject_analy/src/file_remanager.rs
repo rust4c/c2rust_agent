@@ -796,6 +796,36 @@ impl CProjectPreprocessor {
         }
 
         info!("创建 uv 虚拟环境: {:?}", venv_path);
+        match self.try_create_uv_venv(venv_path) {
+            Ok(()) => {}
+            Err(err) => {
+                // 检查是否是找不到uv命令的错误
+                if self.is_uv_not_found_error(&err) {
+                    warn!("检测到uv命令未找到，尝试自动安装uv...");
+
+                    // 尝试安装uv
+                    self.try_install_uv()?;
+
+                    // 重试创建虚拟环境
+                    info!("uv安装完成，重试创建虚拟环境...");
+                    self.try_create_uv_venv(venv_path)?;
+                } else {
+                    return Err(err);
+                }
+            }
+        }
+
+        if !self.venv_has_python(venv_path) {
+            warn!(
+                "uv 虚拟环境 {:?} 创建后未找到 Python 解释器，可能创建失败",
+                venv_path
+            );
+        }
+
+        Ok(())
+    }
+
+    fn try_create_uv_venv(&self, venv_path: &Path) -> Result<()> {
         let status = Command::new(&self.config.uv_command)
             .arg("venv")
             .arg(venv_path)
@@ -809,14 +839,67 @@ impl CProjectPreprocessor {
             ));
         }
 
-        if !self.venv_has_python(venv_path) {
-            warn!(
-                "uv 虚拟环境 {:?} 创建后未找到 Python 解释器，可能创建失败",
-                venv_path
-            );
+        Ok(())
+    }
+
+    fn try_install_uv(&self) -> Result<()> {
+        info!("尝试通过pip安装uv工具...");
+
+        let mut command = Command::new("pip");
+        command
+            .arg("install")
+            .arg("uv")
+            .arg("--break-system-packages");
+
+        let output = command.output().with_context(|| "无法执行pip命令安装uv")?;
+
+        if output.status.success() {
+            info!("uv工具安装成功");
+            return Ok(());
         }
 
-        Ok(())
+        warn!("pip安装uv失败，尝试使用镜像源...");
+
+        // 尝试使用镜像源安装uv
+        for mirror in self.config.uv_mirror_sources() {
+            if let Some(index_url) = &mirror.index_url {
+                let mut mirror_command = Command::new("pip");
+                mirror_command
+                    .arg("install")
+                    .arg("uv")
+                    .arg("--break-system-packages")
+                    .arg("--index-url")
+                    .arg(index_url);
+
+                match mirror_command.output() {
+                    Ok(output) if output.status.success() => {
+                        info!("通过{}镜像源成功安装uv工具", mirror.name);
+                        return Ok(());
+                    }
+                    Ok(output) => {
+                        warn!(
+                            "通过{}镜像源安装uv失败: {}",
+                            mirror.name,
+                            String::from_utf8_lossy(&output.stderr)
+                        );
+                    }
+                    Err(err) => {
+                        warn!("执行pip命令失败 ({}镜像源): {}", mirror.name, err);
+                    }
+                }
+            }
+        }
+
+        Err(anyhow::anyhow!("无法通过pip安装uv工具，请手动安装"))
+    }
+
+    fn is_uv_not_found_error(&self, err: &anyhow::Error) -> bool {
+        err.chain().any(|cause| {
+            if let Some(io_err) = cause.downcast_ref::<std::io::Error>() {
+                return io_err.kind() == std::io::ErrorKind::NotFound;
+            }
+            false
+        })
     }
 
     fn venv_has_python(&self, venv_path: &Path) -> bool {
