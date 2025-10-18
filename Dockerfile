@@ -95,50 +95,43 @@ RUN mkdir -p /root/.cargo && \
 RUN set -eux; \
     mkdir -p /opt/fastgithub; \
     cd /opt/fastgithub; \
-    # Function to download with retries and multiple sources
-    download_fastgithub() { \
-    local urls=( \
-    "https://github.com/creazyboyone/FastGithub/releases/download/v2.1.5/fastgithub-linux-x64-ok.tar.gz" \
-    "https://github.com/creazyboyone/FastGithub/releases/download/v2.1.5/fastgithub-linux-x64.tar.gz" \
-    "https://ghproxy.com/https://github.com/creazyboyone/FastGithub/releases/download/v2.1.5/fastgithub-linux-x64-ok.tar.gz" \
-    "https://mirror.ghproxy.com/https://github.com/creazyboyone/FastGithub/releases/download/v2.1.5/fastgithub-linux-x64-ok.tar.gz" \
-    ); \
-    for url in "${urls[@]}"; do \
-    echo "Trying to download from: $url"; \
-    if wget --timeout=30 --tries=3 --retry-connrefused -O fastgithub.tar.gz "$url"; then \
-    echo "Successfully downloaded from: $url"; \
-    return 0; \
-    fi; \
-    echo "Failed to download from: $url"; \
-    rm -f fastgithub.tar.gz; \
-    done; \
-    return 1; \
-    }; \
-    # Download FastGithub with retries
-    if download_fastgithub; then \
-    # Extract with fallback methods
-    if tar -tf fastgithub.tar.gz | head -1 | grep -q '/'; then \
-    tar -xzf fastgithub.tar.gz --strip-components=1; \
-    else \
-    tar -xzf fastgithub.tar.gz; \
-    fi; \
-    rm fastgithub.tar.gz; \
-    chmod +x fastgithub 2>/dev/null || chmod +x */fastgithub 2>/dev/null || find . -name "fastgithub" -exec chmod +x {} \;; \
-    # Ensure fastgithub binary exists
-    if [ ! -x "./fastgithub" ] && [ -x "*/fastgithub" ]; then \
-    mv */fastgithub ./; \
-    mv */cacert . 2>/dev/null || true; \
-    rm -rf fastgithub-*/ 2>/dev/null || true; \
-    fi; \
-    echo "FastGithub installation completed"; \
-    else \
-    echo "Warning: FastGithub download failed, continuing without it"; \
-    touch fastgithub; \
-    chmod +x fastgithub; \
+    # Try multiple download sources with retries
+    ( \
+    wget --timeout=30 --tries=3 -O fastgithub.tar.gz "https://github.com/creazyboyone/FastGithub/releases/download/v2.1.5/fastgithub-linux-x64-ok.tar.gz" || \
+    wget --timeout=30 --tries=3 -O fastgithub.tar.gz "https://github.com/creazyboyone/FastGithub/releases/download/v2.1.5/fastgithub-linux-x64.tar.gz" || \
+    wget --timeout=30 --tries=3 -O fastgithub.tar.gz "https://ghproxy.com/https://github.com/creazyboyone/FastGithub/releases/download/v2.1.5/fastgithub-linux-x64-ok.tar.gz" || \
+    wget --timeout=30 --tries=3 -O fastgithub.tar.gz "https://mirror.ghproxy.com/https://github.com/creazyboyone/FastGithub/releases/download/v2.1.5/fastgithub-linux-x64-ok.tar.gz" \
+    ) && \
+    # Extract the archive
+    ( \
+    tar -xzf fastgithub.tar.gz --strip-components=1 2>/dev/null || \
+    tar -xzf fastgithub.tar.gz \
+    ) && \
+    rm -f fastgithub.tar.gz && \
+    # Find and setup the FastGithub binary
+    ( \
+    chmod +x fastgithub 2>/dev/null || \
+    find . -name "fastgithub" -executable -exec chmod +x {} \; || \
+    find . -name "fastgithub" -exec chmod +x {} \; \
+    ) && \
+    # Move binary to current directory if needed
+    if [ ! -f "./fastgithub" ]; then \
+    find . -name "fastgithub" -executable -exec mv {} ./ \; 2>/dev/null || \
+    find . -name "fastgithub" -exec mv {} ./ \; ; \
+    fi && \
+    # Move cacert directory if it exists
+    find . -name "cacert" -type d -exec mv {} ./ \; 2>/dev/null || true && \
+    # Clean up extracted directories
+    find . -mindepth 1 -maxdepth 1 -type d -name "fastgithub*" -exec rm -rf {} \; 2>/dev/null || true && \
+    echo "FastGithub installation completed" || \
+    # Fallback: create dummy fastgithub if download failed
+    ( \
+    echo "Warning: FastGithub download failed, creating dummy binary"; \
     echo '#!/bin/bash' > fastgithub; \
     echo 'echo "FastGithub not available - using direct connection"' >> fastgithub; \
-    echo 'sleep infinity' >> fastgithub; \
-    fi; \
+    echo 'sleep 3600' >> fastgithub; \
+    chmod +x fastgithub \
+    ); \
     # Create directories for FastGithub
     mkdir -p /etc/fastgithub /var/log/fastgithub; \
     # Configure Git to work with FastGithub proxy (will be activated when FastGithub starts)
@@ -192,64 +185,59 @@ EXPOSE 22 38457
 
 # Create startup script that runs FastGithub in background
 RUN printf '%s\n' \
-    '#!/bin/bash' \
+    '#!/bin/sh' \
     'set -e' \
     '' \
-    '# Function to check if FastGithub is available' \
-    'check_fastgithub() {' \
-    '    if [ ! -x "/opt/fastgithub/fastgithub" ]; then' \
-    '        echo "FastGithub not available, using direct connection"' \
-    '        return 1' \
-    '    fi' \
-    '    return 0' \
-    '}' \
-    '' \
-    '# Function to start FastGithub' \
-    'start_fastgithub() {' \
-    '    if ! check_fastgithub; then' \
-    '        return 1' \
-    '    fi' \
-    '    ' \
-    '    echo "Starting FastGithub..."' \
-    '    cd /opt/fastgithub' \
-    '    ' \
-    '    # Check if port is already in use' \
-    '    if netstat -tuln 2>/dev/null | grep -q ":38457 "; then' \
-    '        echo "Port 38457 already in use, skipping FastGithub startup"' \
-    '        return 0' \
-    '    fi' \
-    '    ' \
-    '    # Start FastGithub in background and redirect output to log' \
-    '    nohup ./fastgithub > /var/log/fastgithub/fastgithub.log 2>&1 &' \
-    '    FASTGITHUB_PID=$!' \
-    '    echo "FastGithub started with PID: $FASTGITHUB_PID"' \
-    '    ' \
-    '    # Wait for FastGithub to start' \
-    '    for i in {1..15}; do' \
-    '        if curl -s --connect-timeout 3 --max-time 5 http://127.0.0.1:38457 > /dev/null 2>&1; then' \
-    '            echo "FastGithub proxy is running on port 38457"' \
-    '            # Configure git to use proxy once FastGithub is confirmed running' \
-    '            git config --global http.proxy http://127.0.0.1:38457' \
-    '            git config --global https.proxy http://127.0.0.1:38457' \
-    '            export HTTP_PROXY=http://127.0.0.1:38457' \
-    '            export HTTPS_PROXY=http://127.0.0.1:38457' \
-    '            export http_proxy=http://127.0.0.1:38457' \
-    '            export https_proxy=http://127.0.0.1:38457' \
-    '            return 0' \
-    '        fi' \
-    '        echo "Waiting for FastGithub to start... ($i/15)"' \
-    '        sleep 2' \
-    '    done' \
-    '    echo "Warning: FastGithub may not be running properly"' \
-    '    return 1' \
-    '}' \
-    '' \
-    '# Check if we should skip FastGithub (for environments where it is not needed)' \
+    '# Check if we should skip FastGithub' \
     'if [ "$SKIP_FASTGITHUB" = "1" ] || [ "$SKIP_FASTGITHUB" = "true" ]; then' \
     '    echo "Skipping FastGithub startup (SKIP_FASTGITHUB is set)"' \
-    'else' \
-    '    # Start FastGithub' \
-    '    start_fastgithub || echo "FastGithub failed to start, continuing without proxy..."' \
+    '    exec "$@"' \
+    '    exit 0' \
+    'fi' \
+    '' \
+    '# Check if FastGithub is available' \
+    'if [ ! -x "/opt/fastgithub/fastgithub" ]; then' \
+    '    echo "FastGithub not available, using direct connection"' \
+    '    exec "$@"' \
+    '    exit 0' \
+    'fi' \
+    '' \
+    '# Check if port is already in use' \
+    'if netstat -tuln 2>/dev/null | grep -q ":38457 "; then' \
+    '    echo "Port 38457 already in use, skipping FastGithub startup"' \
+    '    exec "$@"' \
+    '    exit 0' \
+    'fi' \
+    '' \
+    'echo "Starting FastGithub..."' \
+    'cd /opt/fastgithub' \
+    '' \
+    '# Start FastGithub in background' \
+    'nohup ./fastgithub > /var/log/fastgithub/fastgithub.log 2>&1 &' \
+    'FASTGITHUB_PID=$!' \
+    'echo "FastGithub started with PID: $FASTGITHUB_PID"' \
+    '' \
+    '# Wait for FastGithub to start (simple loop)' \
+    'i=1' \
+    'while [ $i -le 15 ]; do' \
+    '    if curl -s --connect-timeout 3 --max-time 5 http://127.0.0.1:38457 >/dev/null 2>&1; then' \
+    '        echo "FastGithub proxy is running on port 38457"' \
+    '        # Configure git to use proxy' \
+    '        git config --global http.proxy http://127.0.0.1:38457' \
+    '        git config --global https.proxy http://127.0.0.1:38457' \
+    '        export HTTP_PROXY=http://127.0.0.1:38457' \
+    '        export HTTPS_PROXY=http://127.0.0.1:38457' \
+    '        export http_proxy=http://127.0.0.1:38457' \
+    '        export https_proxy=http://127.0.0.1:38457' \
+    '        break' \
+    '    fi' \
+    '    echo "Waiting for FastGithub to start... ($i/15)"' \
+    '    sleep 2' \
+    '    i=$((i+1))' \
+    'done' \
+    '' \
+    'if [ $i -gt 15 ]; then' \
+    '    echo "Warning: FastGithub may not be running properly"' \
     'fi' \
     '' \
     '# Execute the original command' \
