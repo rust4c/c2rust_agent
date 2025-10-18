@@ -63,7 +63,7 @@ RUN apt-get update && \
     && rm -rf /var/lib/apt/lists/*
 
 # Set github host
-RUN curl -fsSL https://github.com/TinsFox/github-hosts/releases/download/v0.0.1/github-hosts.linux-amd64 \
+RUN curl -fsSL https://gh-proxy.com/https://github.com/TinsFox/github-hosts/releases/download/v0.0.1/github-hosts.linux-amd64 \
     -o github-hosts && chmod +x ./github-hosts && ./github-hosts
 
 # Make LLVM/Clang discoverable by CMake (for c2rust-ast-exporter)
