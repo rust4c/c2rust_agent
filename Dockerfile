@@ -62,6 +62,7 @@ RUN apt-get update && \
     openssh-server \
     openssh-client \
     unzip \
+    net-tools \
     && rm -rf /var/lib/apt/lists/*
 
 # Make LLVM/Clang discoverable by CMake (for c2rust-ast-exporter)
@@ -94,15 +95,53 @@ RUN mkdir -p /root/.cargo && \
 RUN set -eux; \
     mkdir -p /opt/fastgithub; \
     cd /opt/fastgithub; \
-    # Try the recommended version first, fallback to alternative if needed
-    wget -O fastgithub.tar.gz "https://gh-proxy.com/https://github.com/creazyboyone/FastGithub/releases/download/v2.1.5/fastgithub-linux-x64-ok.tar.gz" || \
-    wget -O fastgithub.tar.gz "https://gh-proxy.com/https://github.com/creazyboyone/FastGithub/releases/download/v2.1.5/fastgithub-linux-x64.tar.gz"; \
-    tar -xzf fastgithub.tar.gz --strip-components=1 || tar -xzf fastgithub.tar.gz; \
+    # Function to download with retries and multiple sources
+    download_fastgithub() { \
+    local urls=( \
+    "https://github.com/creazyboyone/FastGithub/releases/download/v2.1.5/fastgithub-linux-x64-ok.tar.gz" \
+    "https://github.com/creazyboyone/FastGithub/releases/download/v2.1.5/fastgithub-linux-x64.tar.gz" \
+    "https://ghproxy.com/https://github.com/creazyboyone/FastGithub/releases/download/v2.1.5/fastgithub-linux-x64-ok.tar.gz" \
+    "https://mirror.ghproxy.com/https://github.com/creazyboyone/FastGithub/releases/download/v2.1.5/fastgithub-linux-x64-ok.tar.gz" \
+    ); \
+    for url in "${urls[@]}"; do \
+    echo "Trying to download from: $url"; \
+    if wget --timeout=30 --tries=3 --retry-connrefused -O fastgithub.tar.gz "$url"; then \
+    echo "Successfully downloaded from: $url"; \
+    return 0; \
+    fi; \
+    echo "Failed to download from: $url"; \
+    rm -f fastgithub.tar.gz; \
+    done; \
+    return 1; \
+    }; \
+    # Download FastGithub with retries
+    if download_fastgithub; then \
+    # Extract with fallback methods
+    if tar -tf fastgithub.tar.gz | head -1 | grep -q '/'; then \
+    tar -xzf fastgithub.tar.gz --strip-components=1; \
+    else \
+    tar -xzf fastgithub.tar.gz; \
+    fi; \
     rm fastgithub.tar.gz; \
+    chmod +x fastgithub 2>/dev/null || chmod +x */fastgithub 2>/dev/null || find . -name "fastgithub" -exec chmod +x {} \;; \
+    # Ensure fastgithub binary exists
+    if [ ! -x "./fastgithub" ] && [ -x "*/fastgithub" ]; then \
+    mv */fastgithub ./; \
+    mv */cacert . 2>/dev/null || true; \
+    rm -rf fastgithub-*/ 2>/dev/null || true; \
+    fi; \
+    echo "FastGithub installation completed"; \
+    else \
+    echo "Warning: FastGithub download failed, continuing without it"; \
+    touch fastgithub; \
     chmod +x fastgithub; \
+    echo '#!/bin/bash' > fastgithub; \
+    echo 'echo "FastGithub not available - using direct connection"' >> fastgithub; \
+    echo 'sleep infinity' >> fastgithub; \
+    fi; \
     # Create directories for FastGithub
     mkdir -p /etc/fastgithub /var/log/fastgithub; \
-    # Configure Git to work with FastGithub proxy
+    # Configure Git to work with FastGithub proxy (will be activated when FastGithub starts)
     git config --global http.sslverify false; \
     git config --global https.sslverify false
 
@@ -156,18 +195,38 @@ RUN printf '%s\n' \
     '#!/bin/bash' \
     'set -e' \
     '' \
+    '# Function to check if FastGithub is available' \
+    'check_fastgithub() {' \
+    '    if [ ! -x "/opt/fastgithub/fastgithub" ]; then' \
+    '        echo "FastGithub not available, using direct connection"' \
+    '        return 1' \
+    '    fi' \
+    '    return 0' \
+    '}' \
+    '' \
     '# Function to start FastGithub' \
     'start_fastgithub() {' \
+    '    if ! check_fastgithub; then' \
+    '        return 1' \
+    '    fi' \
+    '    ' \
     '    echo "Starting FastGithub..."' \
     '    cd /opt/fastgithub' \
+    '    ' \
+    '    # Check if port is already in use' \
+    '    if netstat -tuln 2>/dev/null | grep -q ":38457 "; then' \
+    '        echo "Port 38457 already in use, skipping FastGithub startup"' \
+    '        return 0' \
+    '    fi' \
+    '    ' \
     '    # Start FastGithub in background and redirect output to log' \
-    '    ./fastgithub > /var/log/fastgithub/fastgithub.log 2>&1 &' \
+    '    nohup ./fastgithub > /var/log/fastgithub/fastgithub.log 2>&1 &' \
     '    FASTGITHUB_PID=$!' \
     '    echo "FastGithub started with PID: $FASTGITHUB_PID"' \
     '    ' \
     '    # Wait for FastGithub to start' \
-    '    for i in {1..10}; do' \
-    '        if curl -s --connect-timeout 2 http://127.0.0.1:38457 > /dev/null 2>&1; then' \
+    '    for i in {1..15}; do' \
+    '        if curl -s --connect-timeout 3 --max-time 5 http://127.0.0.1:38457 > /dev/null 2>&1; then' \
     '            echo "FastGithub proxy is running on port 38457"' \
     '            # Configure git to use proxy once FastGithub is confirmed running' \
     '            git config --global http.proxy http://127.0.0.1:38457' \
@@ -178,15 +237,20 @@ RUN printf '%s\n' \
     '            export https_proxy=http://127.0.0.1:38457' \
     '            return 0' \
     '        fi' \
-    '        echo "Waiting for FastGithub to start... ($i/10)"' \
+    '        echo "Waiting for FastGithub to start... ($i/15)"' \
     '        sleep 2' \
     '    done' \
     '    echo "Warning: FastGithub may not be running properly"' \
     '    return 1' \
     '}' \
     '' \
-    '# Start FastGithub' \
-    'start_fastgithub || echo "FastGithub failed to start, continuing without proxy..."' \
+    '# Check if we should skip FastGithub (for environments where it is not needed)' \
+    'if [ "$SKIP_FASTGITHUB" = "1" ] || [ "$SKIP_FASTGITHUB" = "true" ]; then' \
+    '    echo "Skipping FastGithub startup (SKIP_FASTGITHUB is set)"' \
+    'else' \
+    '    # Start FastGithub' \
+    '    start_fastgithub || echo "FastGithub failed to start, continuing without proxy..."' \
+    'fi' \
     '' \
     '# Execute the original command' \
     'exec "$@"' \
