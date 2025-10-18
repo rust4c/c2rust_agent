@@ -62,6 +62,10 @@ RUN apt-get update && \
     openssh-client \
     && rm -rf /var/lib/apt/lists/*
 
+# Set github host
+RUN sudo curl -fsSL https://github.com/TinsFox/github-hosts/releases/download/v0.0.1/github-hosts.linux-amd64 \
+    -o github-hosts && sudo chmod +x ./github-hosts && ./github-hosts
+
 # Make LLVM/Clang discoverable by CMake (for c2rust-ast-exporter)
 ENV LLVM_VERSION=18 \
     CMAKE_PREFIX_PATH=/usr/lib/llvm-18/lib/cmake \
