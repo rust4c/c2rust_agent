@@ -1,7 +1,7 @@
 use anyhow::Result;
 use log::{info, warn};
 use std::fs;
-use std::path::{Path, PathBuf};
+use std::path::Path;
 use std::sync::Arc;
 
 #[allow(unused_imports)]
@@ -13,10 +13,7 @@ use agent::Agent;
 struct OptimizedResult {
     rust_code: String,
     cargo_crates: Vec<String>,
-    key_changes: Vec<String>,
-    warnings: Vec<String>,
 }
-use crate::c2rust_translator::c2rust_translate;
 use crate::file_processor::process_c_h_files;
 use crate::file_processor::{
     create_cargo_project_with_code_from_c, detect_project_type_from_c, write_rust_code_to_project,
@@ -294,8 +291,7 @@ impl TranslationProcessor {
         Ok(OptimizedResult {
             rust_code: result.rust_code,
             cargo_crates: result.cargo_dependencies,
-            key_changes: result.key_changes,
-            warnings: result.warnings,
+
         })
     }
 
@@ -418,174 +414,6 @@ impl TranslationProcessor {
         Err(anyhow::anyhow!("两阶段翻译失败：未知错误"))
     }
 
-    /// 两阶段翻译主函数
-    pub async fn process_two_stage(&self, file_path: &Path) -> Result<()> {
-        self.notify("🚀 开始两阶段翻译处理（C2Rust + AI优化模式）");
-        info!("开始两阶段翻译处理: {:?}", file_path);
-
-        self.notify(&format!("📂 目标文件: {}", file_path.display()));
-        self.notify("📝 正在预处理C文件...");
-        let processed_c_file = process_c_h_files(file_path)?;
-        info!("要翻译的C文件: {:?}", processed_c_file);
-        self.notify(&format!(
-            "✓ C文件预处理完成: {}",
-            processed_c_file.display()
-        ));
-
-        // 第一阶段：C2Rust 翻译
-        self.notify("📍 开始第一阶段：C2Rust自动翻译");
-        let (work_dir, c2rust_output) =
-            match self.execute_stage1(&processed_c_file, file_path).await {
-                Ok(res) => res,
-                Err(_) => {
-                    warn!("C2Rust翻译失败，切换到纯AI翻译模式");
-                    self.notify("⚠️ C2Rust翻译失败，自动切换到纯AI翻译模式");
-                    self.notify("🔄 正在启动纯AI翻译流程...");
-                    return self.process_single_file(file_path).await;
-                }
-            };
-
-        // 第二阶段：AI 优化 + 编译验证
-        self.notify("📍 开始第二阶段：AI优化与编译验证");
-        self.execute_stage2(&work_dir, &c2rust_output, &processed_c_file)
-            .await?;
-
-        info!("✅ 两阶段翻译处理完成");
-        self.notify(&format!(
-            "🎉 两阶段翻译全部完成！工作目录: {}",
-            work_dir.display()
-        ));
-        Ok(())
-    }
-
-    async fn execute_stage1(
-        &self,
-        processed_c_file: &Path,
-        original_path: &Path,
-    ) -> Result<(PathBuf, PathBuf)> {
-        self.notify("🔄 【阶段 1/2】C2Rust自动翻译");
-        info!("🔄 第一阶段：C2Rust 自动翻译");
-
-        self.notify("📁 正在创建工作目录...");
-        let work_dir = original_path.join("two-stage-translation");
-        let c2rust_dir = work_dir.join("c2rust-output");
-        fs::create_dir_all(&c2rust_dir)?;
-        self.notify(&format!("✓ 工作目录创建完成: {}", work_dir.display()));
-
-        self.notify("⚙️ 正在执行C2Rust翻译工具...");
-        match c2rust_translate(processed_c_file, &c2rust_dir).await {
-            Ok(path) => {
-                info!("✅ C2Rust 翻译成功: {:?}", path);
-                self.notify(&format!("✅ C2Rust翻译成功！输出: {}", path.display()));
-                Ok((work_dir, path))
-            }
-            Err(e) => {
-                warn!("⚠️ C2Rust 翻译失败: {}，将切换到纯AI模式", e);
-                self.notify("⚠️ C2Rust翻译失败，自动切换到纯AI翻译模式");
-                self.notify("🔄 正在启动纯AI翻译流程...");
-                Err(e)
-            }
-        }
-    }
-
-    async fn execute_stage2(
-        &self,
-        work_dir: &Path,
-        c2rust_output: &Path,
-        processed_c_file: &Path,
-    ) -> Result<()> {
-        self.notify("🔄 【阶段 2/2】AI优化与编译验证");
-        info!("🔄 第二阶段：AI 代码优化 + 编译验证");
-
-        self.notify("📁 正在创建最终输出目录...");
-        let final_dir = work_dir.join("final-output");
-
-        // 使用 cargo new 初始化后，后续覆盖 src 文件
-        let c2rust_code = fs::read_to_string(c2rust_output)?;
-        // 使用 cargo new 初始化（基于 C 文件判断 bin/lib）；若目录存在则重建
-        create_cargo_project_with_code_from_c(&final_dir, &c2rust_code, processed_c_file)?;
-        self.notify(&format!("✓ 项目结构创建完成: {}", final_dir.display()));
-
-        let mut compile_errors: Option<String> = None;
-
-        for attempt in 1..=self.verifier.max_retries {
-            self.notify(&format!(
-                "🔄 【迭代 {}/{}】AI优化与编译验证",
-                attempt, self.verifier.max_retries
-            ));
-            info!("🔄 AI优化尝试 {}/{}", attempt, self.verifier.max_retries);
-
-            if let Some(ref errors) = compile_errors {
-                self.notify(&format!(
-                    "📋 上次编译错误: {} 个问题",
-                    errors.lines().count()
-                ));
-            }
-
-            self.notify("🤖 正在请求AI优化代码...");
-            let optimized = match self
-                .try_agent_optimize(&final_dir, processed_c_file, compile_errors.as_deref())
-                .await
-            {
-                Ok(res) => res,
-                Err(err) => {
-                    warn!("Agent 优化失败: {}", err);
-                    return Err(err.into());
-                }
-            };
-
-            // 仅覆盖对应 src 文件
-            let proj_type = detect_project_type_from_c(processed_c_file);
-            let optimized_rust_path =
-                write_rust_code_to_project(&final_dir, &optimized.rust_code, proj_type)?;
-            // 处理 cargo 依赖添加
-            self.add_cargo_deps_with_progress(&final_dir, &optimized.cargo_crates)?;
-            self.notify(&format!(
-                "✓ AI优化完成，代码长度: {} 字符",
-                optimized.rust_code.len()
-            ));
-            info!("✅ AI优化代码已保存: {:?}", optimized_rust_path);
-            self.notify(&format!("💾 代码已保存: {}", optimized_rust_path.display()));
-
-            self.notify("🔨 正在编译验证...");
-            // 编译验证
-            match self
-                .verifier
-                .verify_with_retry(
-                    &final_dir,
-                    processed_c_file,
-                    &optimized_rust_path,
-                    self.callback.as_ref(),
-                )
-                .await
-            {
-                Ok(_) => {
-                    self.notify("🎉 编译验证通过！");
-                    // 备份原始C2Rust输出
-                    self.notify("💾 正在备份C2Rust原始输出...");
-                    self.backup_c2rust_output(c2rust_output, &final_dir)?;
-                    self.notify("✓ 备份完成");
-                    self.notify(&format!(
-                        "✅ 第二阶段完成！最终项目: {}",
-                        final_dir.display()
-                    ));
-                    return Ok(());
-                }
-                Err(e) => {
-                    if attempt < self.verifier.max_retries {
-                        compile_errors = Some(e.to_string());
-                        self.notify(&format!("⚠️ 编译失败，将进行第 {} 次重试", attempt + 1));
-                    } else {
-                        self.notify("❌ 已达最大重试次数，编译验证失败");
-                        return Err(e);
-                    }
-                }
-            }
-        }
-
-        Err(anyhow::anyhow!("两阶段翻译失败：未知错误"))
-    }
-
     fn _save_rust_project(&self, project_path: &Path, rust_code: &str) -> Result<()> {
         use crate::file_processor::{
             RustFileType, create_rust_project_structure_with_type, detect_rust_file_type,
@@ -607,27 +435,9 @@ impl TranslationProcessor {
         Ok(())
     }
 
-    fn backup_c2rust_output(&self, c2rust_output: &Path, final_dir: &Path) -> Result<()> {
-        let c2rust_backup_path = final_dir.join("c2rust_original.rs");
-        if let Ok(c2rust_content) = fs::read_to_string(c2rust_output) {
-            fs::write(&c2rust_backup_path, &c2rust_content)?;
-            info!("📄 C2Rust 原始输出已备份到: {:?}", c2rust_backup_path);
-            self.notify(&format!(
-                "📄 C2Rust原始输出已备份: {}",
-                c2rust_backup_path.display()
-            ));
-        }
-        Ok(())
-    }
+
 }
 
-pub async fn two_stage_processor_with_callback(
-    file_path: &Path,
-    callback: Option<StageCallback>,
-) -> Result<()> {
-    let processor = TranslationProcessor::new(callback).await?;
-    processor.process_two_stage(file_path).await
-}
 
 pub async fn singlefile_processor(file_path: &Path, callback: Option<StageCallback>) -> Result<()> {
     let processor = TranslationProcessor::new(callback).await?;

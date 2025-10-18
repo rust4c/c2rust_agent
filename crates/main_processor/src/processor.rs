@@ -1,7 +1,7 @@
 use anyhow::{anyhow, Context, Result};
 use indicatif::{MultiProgress, ProgressBar, ProgressStyle};
 use log::{error, info};
-use single_processor::{two_stage_processor_with_callback, StageCallback};
+use single_processor::{singlefile_processor, StageCallback};
 use std::collections::{HashMap, HashSet, VecDeque};
 use std::path::{Path, PathBuf};
 use std::sync::Arc;
@@ -60,7 +60,7 @@ pub async fn process_single_path(path: &Path) -> Result<()> {
         info!("{} - {}", file_name_for_log, msg);
     });
 
-    match two_stage_processor_with_callback(path, Some(callback)).await {
+    match singlefile_processor(path, Some(callback)).await {
         Ok(_) => {
             pb.finish_with_message(format!(
                 "✅ Two-stage translation successful: {}",
@@ -241,7 +241,7 @@ pub async fn process_batch_paths(cfg: MainProcessorConfig, paths: Vec<PathBuf>) 
                     pb_clone.enable_steady_tick(Duration::from_millis(100));
 
                     // 使用带回调的两阶段处理器
-                    match two_stage_processor_with_callback(&p, Some(callback)).await {
+                    match singlefile_processor(&p, Some(callback)).await {
                         Ok(()) => {
                             pb_clone.set_style(progress_style_completed());
                             pb_clone.finish_with_message(format!("✅ {}", file_name));
@@ -474,7 +474,7 @@ pub async fn process_with_dependency_graph(
                         name2, stage, attempt, max_retries
                     ));
                 });
-                match two_stage_processor_with_callback(&dir_clone, Some(callback)).await {
+                match singlefile_processor(&dir_clone, Some(callback)).await {
                     Ok(()) => {
                         pb.set_style(progress_style_completed());
                         pb.finish_with_message(format!("✅ {}", name));
