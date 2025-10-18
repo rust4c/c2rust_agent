@@ -122,31 +122,30 @@ RUN mkdir -p /etc/systemd/resolved.conf.d && \
     > /etc/cloudflared/config.yml || true
 
 RUN cat > /usr/local/bin/test-dns <<'EOF'
-    #!/bin/bash
-    echo "Testing DNS resolution..."
-    echo "Standard DNS (1.1.1.1):"
-    nslookup cloudflare.com 1.1.1.1 || echo "Standard DNS failed"
+#!/bin/bash
+echo "Testing DNS resolution..."
+echo "Standard DNS (1.1.1.1):"
+nslookup cloudflare.com 1.1.1.1 || echo "Standard DNS failed"
 
-    echo ""
-    echo "DoH via cloudflared/dev-sidecar:"
-    if command -v dev-sidecar >/dev/null 2>&1 || [ -x "${DEV_SIDECAR_BIN}" ]; then
-        echo "dev-sidecar binary present, attempting DoH test against local proxy (127.0.0.1:5053)"
-        nslookup cloudflare.com 127.0.0.1 -port=5053 || echo "DoH DNS failed"
-    elif pgrep cloudflared > /dev/null; then
-        nslookup cloudflare.com 127.0.0.1 -port=5053 || echo "DoH DNS failed"
-    else
-        echo "dev-sidecar/cloudflared not running"
-    fi
+echo ""
+echo "DoH via cloudflared/dev-sidecar:"
+if command -v dev-sidecar >/dev/null 2>&1 || [ -x "${DEV_SIDECAR_BIN}" ]; then
+    echo "dev-sidecar binary present, attempting DoH test against local proxy (127.0.0.1:5053)"
+    nslookup cloudflare.com 127.0.0.1 -port=5053 || echo "DoH DNS failed"
+elif pgrep cloudflared > /dev/null; then
+    nslookup cloudflare.com 127.0.0.1 -port=5053 || echo "DoH DNS failed"
+else
+    echo "dev-sidecar/cloudflared not running"
+fi
 
-    echo ""
-    echo "Current DNS config (build-time fallback shown if set):"
-    if [ -f /usr/local/etc/resolv.conf ]; then
-        cat /usr/local/etc/resolv.conf
-    else
-        cat /etc/resolv.conf || true
-    fi
-    EOF
-
+echo ""
+echo "Current DNS config (build-time fallback shown if set):"
+if [ -f /usr/local/etc/resolv.conf ]; then
+    cat /usr/local/etc/resolv.conf
+else
+    cat /etc/resolv.conf || true
+fi
+EOF
 RUN chmod +x /usr/local/bin/test-dns
 
 # Configure Git for better HTTPS handling and retry logic:cite[5]
