@@ -1,7 +1,7 @@
-//! 调用关系分析器
+//! Call relation analyzer
 //!
-//! 分析项目中的函数调用关系，并建立关系数据库。
-//! 专注于 C/Rust 文件的函数分析和数据库查询。
+//! Analyze function call relationships in projects and build relational database.
+//! Focus on function analysis and database queries for C/Rust files.
 
 use anyhow::{Context, Result};
 use log::{debug, info, warn};
@@ -14,7 +14,7 @@ use std::path::{Path, PathBuf};
 use db_services::DatabaseManager;
 use lsp_services::lsp_services::{ClangdAnalyzer, Parameter};
 
-/// 函数定义信息
+/// Function definition information
 #[derive(Debug, Clone, Serialize)]
 pub struct FunctionDefinition {
     pub name: String,
@@ -26,7 +26,7 @@ pub struct FunctionDefinition {
     pub language: String, // "rust", "c", "cpp"
 }
 
-/// 函数调用信息
+/// Function call information
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct FunctionCall {
     pub caller_file: String,
@@ -37,15 +37,15 @@ pub struct FunctionCall {
     pub call_type: CallType,
 }
 
-/// 调用类型
+/// Call type
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub enum CallType {
-    DirectCall,   // 直接调用
-    IndirectCall, // 间接调用
-    CBindingCall, // C 绑定调用
+    DirectCall,   // Direct call
+    IndirectCall, // Indirect call
+    CBindingCall, // C binding call
 }
 
-/// 文件依赖关系
+/// File dependency relationship
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct FileDependency {
     pub source_file: String,
@@ -53,15 +53,15 @@ pub struct FileDependency {
     pub dependency_type: DependencyType,
 }
 
-/// 依赖类型
+/// Dependency type
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub enum DependencyType {
     Include, // #include
     Use,     // Rust use
-    Call,    // 函数调用依赖
+    Call,    // Function call dependency
 }
 
-/// 数据库函数记录
+/// Database function record
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct FunctionRecord {
     pub id: Option<i64>,
@@ -98,9 +98,9 @@ pub struct CallRelationAnalyzer {
 }
 
 impl CallRelationAnalyzer {
-    /// 创建新的调用关系分析器
+    /// Create new call relation analyzer
     pub fn new(db_manager: DatabaseManager, project_root: PathBuf) -> Result<Self> {
-        // 不在这里创建ClangdAnalyzer，而是在需要时异步创建
+        // Don't create ClangdAnalyzer here, create it asynchronously when needed
         Ok(Self {
             db_manager,
             project_root,
@@ -110,7 +110,7 @@ impl CallRelationAnalyzer {
         })
     }
 
-    /// 创建带数据库支持的调用关系分析器
+    /// Create call relation analyzer with database support
     pub async fn new_with_database(
         db_manager: DatabaseManager,
         project_root: PathBuf,
@@ -133,28 +133,28 @@ impl CallRelationAnalyzer {
         })
     }
 
-    /// 分析指定文件的函数并返回字符串结果
+    /// Analyze functions in specified files and return string result
     pub async fn analyze_files_and_search(
         &mut self,
         file_paths: Vec<PathBuf>,
         project_name: &str,
     ) -> Result<String> {
-        info!("开始分析文件并搜索函数定义");
+        info!("Starting file analysis and function definition search");
 
-        // 1. 创建数据库表
+        // 1. Create database tables
         self.create_relation_tables().await?;
 
-        // 2. 过滤出 C/Rust 文件
+        // 2. Filter out C/Rust files
         let target_files = self.filter_c_rust_files(file_paths)?;
 
-        // 3. 获取所有函数到列表
+        // 3. Get all functions to list
         let mut all_functions = Vec::new();
         for file_path in &target_files {
             let functions = self.extract_functions_from_file(file_path).await?;
             all_functions.extend(functions);
         }
 
-        // 4. 基于函数名称查找数据库
+        // 4. Search database based on function names
         let mut search_results = HashMap::new();
         for function_def in &all_functions {
             let db_results = self
@@ -165,22 +165,22 @@ impl CallRelationAnalyzer {
             }
         }
 
-        // 5. 保存新发现的函数到数据库
+        // 5. Save newly discovered functions to database
         self.save_functions_to_database(&all_functions, project_name)
             .await?;
 
-        // 6. 构成字典
+        // 6. Build dictionary
         let result = FunctionSearchResult {
             functions: search_results.clone(),
             total_count: all_functions.len(),
             search_summary: self.generate_search_summary(&search_results, &all_functions),
         };
 
-        // 7. 返回字符串结果
+        // 7. Return string result
         Ok(serde_json::to_string_pretty(&result)?)
     }
 
-    /// 过滤出 C/Rust 文件
+    /// Filter out C/Rust files
     fn filter_c_rust_files(&self, file_paths: Vec<PathBuf>) -> Result<Vec<PathBuf>> {
         let target_extensions = ["rs", "c", "cpp", "cc", "cxx", "h", "hpp", "hxx"];
 
@@ -195,11 +195,11 @@ impl CallRelationAnalyzer {
             })
             .collect();
 
-        info!("过滤出 {} 个 C/Rust 文件", filtered.len());
+        info!("Filtered out {} C/Rust files", filtered.len());
         Ok(filtered)
     }
 
-    /// 从单个文件中提取函数
+    /// Extract functions from single file
     async fn extract_functions_from_file(
         &mut self,
         file_path: &Path,
@@ -215,17 +215,17 @@ impl CallRelationAnalyzer {
         }
     }
 
-    /// 从 Rust 文件中提取函数定义
+    /// Extract function definitions from Rust files
     async fn extract_rust_functions(
         &mut self,
         file_path: &Path,
     ) -> Result<Vec<FunctionDefinition>> {
         let content = fs::read_to_string(file_path)
-            .with_context(|| format!("读取文件失败: {:?}", file_path))?;
+            .with_context(|| format!("Failed to read file: {:?}", file_path))?;
 
         let mut functions = Vec::new();
 
-        // Rust 函数定义的正则表达式
+        // Regular expression for Rust function definitions
         let fn_regex = Regex::new(
             r"(?m)^[\s]*(?:pub\s+)?(?:async\s+)?fn\s+(\w+)\s*(<[^>]*>)?\s*\(([^)]*)\)\s*(?:->\s*([^{]+))?\s*\{",
         )?;
@@ -236,10 +236,10 @@ impl CallRelationAnalyzer {
             let params_str = captures.get(3).unwrap().as_str();
             let return_type = captures.get(4).map(|m| m.as_str().trim()).unwrap_or("()");
 
-            // 解析参数
+            // Parse parameters
             let parameters = self.parse_rust_parameters(params_str);
 
-            // 构造函数定义
+            // Construct function definition
             let function_def = FunctionDefinition {
                 name: function_name.to_string(),
                 file_path: file_path.to_string_lossy().to_string(),
@@ -256,18 +256,22 @@ impl CallRelationAnalyzer {
             functions.push(function_def);
         }
 
-        info!("从 {:?} 提取到 {} 个 Rust 函数", file_path, functions.len());
+        info!(
+            "Extracted {} Rust functions from {:?}",
+            functions.len(),
+            file_path
+        );
         Ok(functions)
     }
 
-    /// 从 C/C++ 文件中提取函数定义
+    /// Extract function definitions from C/C++ files
     async fn extract_c_cpp_functions(
         &mut self,
         file_path: &Path,
     ) -> Result<Vec<FunctionDefinition>> {
         let mut functions = Vec::new();
 
-        // 如果没有clangd_analyzer，创建一个带数据库支持的
+        // If no clangd_analyzer, create one with database support
         if self.clangd_analyzer.is_none() {
             let analyzer = ClangdAnalyzer::new_with_database(
                 &self.project_root.to_string_lossy(),
@@ -281,7 +285,7 @@ impl CallRelationAnalyzer {
         }
 
         if let Some(ref mut analyzer) = self.clangd_analyzer {
-            // 使用 ClangdAnalyzer 分析 C/C++ 代码
+            // Use ClangdAnalyzer to analyze C/C++ code
             if let Err(e) = analyzer.analyze_with_clang_ast(file_path) {
                 warn!(
                     "ClangdAnalyzer failed for {:?}: {}, falling back to regex",
@@ -290,7 +294,7 @@ impl CallRelationAnalyzer {
                 return self.extract_c_cpp_functions_with_regex(file_path).await;
             }
 
-            // 转换 ClangdAnalyzer 的结果到我们的格式
+            // Convert ClangdAnalyzer results to our format
             for function in &analyzer.functions {
                 if function.file == *file_path {
                     let function_def = FunctionDefinition {
@@ -317,31 +321,31 @@ impl CallRelationAnalyzer {
                 }
             }
 
-            // 自动保存分析结果到数据库
+            // Automatically save analysis results to database
             if let Err(e) = analyzer.save_analysis_results_to_database().await {
                 warn!("Failed to save analysis results to database: {}", e);
             }
         }
 
         info!(
-            "从 {:?} 提取到 {} 个 C/C++ 函数",
-            file_path,
-            functions.len()
+            "Extracted {} C/C++ functions from {:?}",
+            functions.len(),
+            file_path
         );
         Ok(functions)
     }
 
-    /// 使用正则表达式提取C/C++函数的回退方法
+    /// Fallback method to extract C/C++ functions using regular expressions
     async fn extract_c_cpp_functions_with_regex(
         &self,
         file_path: &Path,
     ) -> Result<Vec<FunctionDefinition>> {
         let content = fs::read_to_string(file_path)
-            .with_context(|| format!("读取文件失败: {:?}", file_path))?;
+            .with_context(|| format!("Failed to read file: {:?}", file_path))?;
 
         let mut functions = Vec::new();
 
-        // 简单的C/C++函数定义正则表达式
+        // Simple C/C++ function definition regular expression
         let fn_regex = Regex::new(
             r"(?m)^[\s]*(?:static\s+|extern\s+|inline\s+)*([a-zA-Z_][a-zA-Z0-9_*\s]+)\s+([a-zA-Z_][a-zA-Z0-9_]*)\s*\([^)]*\)\s*(?:\{|;)",
         )?;
@@ -356,7 +360,7 @@ impl CallRelationAnalyzer {
                     file_path: file_path.to_string_lossy().to_string(),
                     line_number: (line_num + 1) as u32,
                     return_type: return_type.to_string(),
-                    parameters: Vec::new(), // 正则表达式无法精确解析参数
+                    parameters: Vec::new(), // Regular expressions cannot accurately parse parameters
                     signature: line.trim().to_string(),
                     language: "c_cpp".to_string(),
                 };
@@ -366,14 +370,14 @@ impl CallRelationAnalyzer {
         }
 
         info!(
-            "使用正则表达式从 {:?} 提取到 {} 个函数",
-            file_path,
-            functions.len()
+            "Extracted {} functions from {:?} using regular expressions",
+            functions.len(),
+            file_path
         );
         Ok(functions)
     }
 
-    /// 解析 Rust 函数参数
+    /// Parse Rust function parameters
     fn parse_rust_parameters(&self, params_str: &str) -> Vec<Parameter> {
         let mut parameters = Vec::new();
 
@@ -381,14 +385,14 @@ impl CallRelationAnalyzer {
             return parameters;
         }
 
-        // 简单的参数解析，实际情况可能更复杂
+        // Simple parameter parsing, actual cases may be more complex
         for param in params_str.split(',') {
             let param = param.trim();
             if param.is_empty() {
                 continue;
             }
 
-            // 解析 name: type 格式
+            // Parse name: type format
             if let Some(colon_pos) = param.find(':') {
                 let name = param[..colon_pos].trim();
                 let type_str = param[colon_pos + 1..].trim();
@@ -463,22 +467,22 @@ impl CallRelationAnalyzer {
                 Ok(function_defs)
             }
             Err(e) => {
-                warn!("数据库查询失败: {}", e);
+                warn!("Database query failed: {}", e);
                 Ok(Vec::new())
             }
         }
     }
 
-    /// 保存函数到数据库
+    /// Save functions to database
     async fn save_functions_to_database(
         &self,
         functions: &[FunctionDefinition],
         project_name: &str,
     ) -> Result<()> {
-        info!("保存 {} 个函数到数据库", functions.len());
+        info!("Saving {} functions to database", functions.len());
 
         for function in functions {
-            // 构造输入参数
+            // Construct input parameters
             let inputs: Vec<std::collections::HashMap<String, serde_json::Value>> = function
                 .parameters
                 .iter()
@@ -496,7 +500,7 @@ impl CallRelationAnalyzer {
                 })
                 .collect();
 
-            // 构造输出参数
+            // Construct output parameters
             let outputs: Vec<std::collections::HashMap<String, serde_json::Value>> = vec![{
                 let mut output_map = std::collections::HashMap::new();
                 output_map.insert(
@@ -506,11 +510,11 @@ impl CallRelationAnalyzer {
                 output_map
             }];
 
-            // 使用 DatabaseManager 的 store_interface_with_vector 方法
-            // 由于没有向量数据，我们创建一个空向量
-            let empty_vector = vec![0.0; 384]; // 假设向量维度为384
+            // Use DatabaseManager's store_interface_with_vector method
+            // Since there's no vector data, we create an empty vector
+            let empty_vector = vec![0.0; 384]; // Assume vector dimension is 384
 
-            debug!("保存函数定义: {}", function.name);
+            debug!("Saving function definition: {}", function.name);
 
             match self
                 .db_manager
@@ -529,21 +533,21 @@ impl CallRelationAnalyzer {
             {
                 Ok((interface_id, vector_id)) => {
                     debug!(
-                        "函数 {} 保存成功，接口ID: {}, 向量ID: {}",
+                        "Function {} saved successfully, interface ID: {}, vector ID: {}",
                         function.name, interface_id, vector_id
                     );
                 }
                 Err(e) => {
-                    warn!("保存函数 {} 失败: {}", function.name, e);
+                    warn!("Failed to save function {}: {}", function.name, e);
                 }
             }
         }
 
-        info!("函数定义保存完成");
+        info!("Function definition saving completed");
         Ok(())
     }
 
-    /// 生成搜索摘要
+    /// Generate search summary
     fn generate_search_summary(
         &self,
         search_results: &HashMap<String, Vec<FunctionDefinition>>,
@@ -561,7 +565,7 @@ impl CallRelationAnalyzer {
             .count();
 
         format!(
-            "函数搜索完成:\n- 总计分析函数: {}\n- 数据库匹配函数: {}\n- Rust 函数: {}\n- C/C++ 函数: {}\n- 匹配率: {:.2}%",
+            "Function search completed:\n- Total analyzed functions: {}\n- Database matched functions: {}\n- Rust functions: {}\n- C/C++ functions: {}\n- Match rate: {:.2}%",
             total_count,
             found_count,
             rust_count,
@@ -574,11 +578,11 @@ impl CallRelationAnalyzer {
         )
     }
 
-    /// 创建关系数据库表
+    /// Create relational database tables
     async fn create_relation_tables(&self) -> Result<()> {
-        info!("创建关系数据库表");
+        info!("Creating relational database tables");
 
-        // 函数定义表
+        // Function definitions table
         let _create_function_definitions = r#"
             CREATE TABLE IF NOT EXISTS function_definitions (
                 id INTEGER PRIMARY KEY AUTOINCREMENT,
@@ -595,7 +599,7 @@ impl CallRelationAnalyzer {
             )
         "#;
 
-        // 函数调用表
+        // Function calls table
         let _create_function_calls = r#"
             CREATE TABLE IF NOT EXISTS function_calls (
                 id INTEGER PRIMARY KEY AUTOINCREMENT,
@@ -610,7 +614,7 @@ impl CallRelationAnalyzer {
             )
         "#;
 
-        // 文件依赖表
+        // File dependencies table
         let _create_file_dependencies = r#"
             CREATE TABLE IF NOT EXISTS file_dependencies (
                 id INTEGER PRIMARY KEY AUTOINCREMENT,
@@ -623,35 +627,35 @@ impl CallRelationAnalyzer {
             )
         "#;
 
-        // 由于 DatabaseManager 已经有内置的表结构，这里主要是确保项目存在
+        // Since DatabaseManager already has built-in table structure, here we mainly ensure the project exists
         match self
             .db_manager
             .create_project(
-                "函数分析项目",
+                "Function Analysis Project",
                 &self.project_root.to_string_lossy(),
-                Some("自动创建的函数分析项目"),
+                Some("Automatically created function analysis project"),
             )
             .await
         {
             Ok(_) => {
-                info!("项目创建或确认存在");
+                info!("Project created or confirmed to exist");
             }
             Err(e) => {
-                debug!("项目可能已存在: {}", e);
+                debug!("Project may already exist: {}", e);
             }
         }
 
-        info!("关系数据库表创建完成");
+        info!("Relational database tables creation completed");
         Ok(())
     }
 
-    /// 查找行号
+    /// Find line number
     fn find_line_number(&self, content: &str, position: usize) -> Result<u32> {
         let line_num = content[..position].lines().count() as u32;
         Ok(line_num)
     }
 
-    /// 获取项目中的所有 C/Rust 源文件
+    /// Get all C/Rust source files in the project
     pub fn get_project_c_rust_files(&self) -> Result<Vec<PathBuf>> {
         let mut source_files = Vec::new();
         let source_extensions = ["rs", "c", "cpp", "cc", "cxx", "h", "hpp", "hxx"];
@@ -666,7 +670,7 @@ impl CallRelationAnalyzer {
                     let entry = entry?;
                     let path = entry.path();
 
-                    // 跳过常见的构建目录
+                    // Skip common build directories
                     if let Some(name) = path.file_name().and_then(|n| n.to_str()) {
                         if [
                             "target",
@@ -708,27 +712,27 @@ impl CallRelationAnalyzer {
             .collect()
     }
 
-    /// 获取文件的调用关系
+    /// Get call relationships of file
     pub fn get_file_calls(&self, file_path: &str) -> Option<&Vec<FunctionCall>> {
         self.function_calls.get(file_path)
     }
 
-    /// 批量分析整个项目
+    /// Batch analyze entire project
     pub async fn analyze_entire_project(&mut self, project_name: &str) -> Result<String> {
-        info!("开始分析整个项目: {}", project_name);
+        info!("Starting analysis of entire project: {}", project_name);
 
         let source_files = self.get_project_c_rust_files()?;
         self.analyze_files_and_search(source_files, project_name)
             .await
     }
 
-    /// 分析指定目录下的文件
+    /// Analyze files in specified directory
     pub async fn analyze_directory(
         &mut self,
         directory_path: &Path,
         project_name: &str,
     ) -> Result<String> {
-        info!("开始分析目录: {:?}", directory_path);
+        info!("Starting directory analysis: {:?}", directory_path);
 
         let mut source_files = Vec::new();
         let target_extensions = ["rs", "c", "cpp", "cc", "cxx", "h", "hpp", "hxx"];
@@ -752,7 +756,7 @@ impl CallRelationAnalyzer {
             .await
     }
 
-    /// 获取项目中的函数统计信息
+    /// Get function statistics by language in project
     pub fn get_function_statistics_by_language(&self) -> HashMap<String, usize> {
         let mut stats = HashMap::new();
 
@@ -763,7 +767,7 @@ impl CallRelationAnalyzer {
         stats
     }
 
-    /// 根据文件路径获取函数列表
+    /// Get function list by file path
     pub fn get_functions_by_file(&self, file_path: &str) -> Vec<&FunctionDefinition> {
         self.function_definitions
             .values()
@@ -771,7 +775,7 @@ impl CallRelationAnalyzer {
             .collect()
     }
 
-    /// 搜索包含特定参数类型的函数
+    /// Search functions containing specific parameter type
     pub fn search_functions_by_parameter_type(&self, param_type: &str) -> Vec<&FunctionDefinition> {
         self.function_definitions
             .values()
@@ -783,7 +787,7 @@ impl CallRelationAnalyzer {
             .collect()
     }
 
-    /// 搜索特定返回类型的函数
+    /// Search functions with specific return type
     pub fn search_functions_by_return_type(&self, return_type: &str) -> Vec<&FunctionDefinition> {
         self.function_definitions
             .values()
@@ -791,45 +795,45 @@ impl CallRelationAnalyzer {
             .collect()
     }
 
-    /// 获取项目分析报告
+    /// Get project analysis report
     pub fn generate_analysis_report(&self, project_name: &str) -> String {
         let stats = self.get_statistics();
         let lang_stats = self.get_function_statistics_by_language();
 
-        let mut report = format!("# {} 项目分析报告\n\n", project_name);
-        report.push_str("## 函数统计\n");
-        report.push_str(&format!("- 总函数数: {}\n", stats.total_functions));
-        report.push_str(&format!("- Rust 函数: {}\n", stats.rust_functions));
-        report.push_str(&format!("- C/C++ 函数: {}\n", stats.c_cpp_functions));
+        let mut report = format!("# {} Project Analysis Report\n\n", project_name);
+        report.push_str("## Function Statistics\n");
+        report.push_str(&format!("- Total functions: {}\n", stats.total_functions));
+        report.push_str(&format!("- Rust functions: {}\n", stats.rust_functions));
+        report.push_str(&format!("- C/C++ functions: {}\n", stats.c_cpp_functions));
 
-        report.push_str("\n## 按语言分布\n");
+        report.push_str("\n## Distribution by Language\n");
         for (lang, count) in &lang_stats {
-            report.push_str(&format!("- {}: {} 个函数\n", lang, count));
+            report.push_str(&format!("- {}: {} functions\n", lang, count));
         }
 
-        report.push_str("\n## 文件分析\n");
-        report.push_str(&format!("- 分析文件数: {}\n", stats.total_files));
+        report.push_str("\n## File Analysis\n");
+        report.push_str(&format!("- Analyzed files: {}\n", stats.total_files));
 
         report
     }
 
-    /// 根据函数名获取函数定义
+    /// Get function definition by function name
     pub fn get_function_definition(&self, function_name: &str) -> Option<&FunctionDefinition> {
         self.function_definitions
             .values()
             .find(|def| def.name == function_name)
     }
 
-    /// 获取所有函数定义的字符串表示
+    /// Get string representation of all function definitions
     pub fn get_all_functions_as_string(&self) -> String {
         let functions: Vec<&FunctionDefinition> = self.function_definitions.values().collect();
         match serde_json::to_string_pretty(&functions) {
             Ok(json_str) => json_str,
-            Err(e) => format!("序列化函数定义失败: {}", e),
+            Err(e) => format!("Failed to serialize function definitions: {}", e),
         }
     }
 
-    /// 获取调用关系统计
+    /// Get call relationship statistics
     pub fn get_statistics(&self) -> CallRelationStatistics {
         CallRelationStatistics {
             total_functions: self.function_definitions.len(),
@@ -849,7 +853,7 @@ impl CallRelationAnalyzer {
     }
 }
 
-/// 调用关系统计信息
+/// Call relationship statistics information
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct CallRelationStatistics {
     pub total_functions: usize,
@@ -885,7 +889,7 @@ fn private_function() {
 
         std::fs::write(&file_path, rust_code).unwrap();
 
-        // 这里需要模拟 DatabaseManager
+        // DatabaseManager simulation needed here
         // let db_manager = DatabaseManager::new_default().await.unwrap();
         // let mut analyzer = CallRelationAnalyzer::new(db_manager, temp_dir.path().to_path_buf()).unwrap();
 
@@ -897,7 +901,7 @@ fn private_function() {
 
     #[tokio::test]
     async fn test_function_search_by_type() {
-        // 模拟函数定义数据
+        // Simulate function definition data
         let function1 = FunctionDefinition {
             name: "test_func".to_string(),
             file_path: "test.rs".to_string(),
@@ -911,7 +915,7 @@ fn private_function() {
             language: "rust".to_string(),
         };
 
-        // 测试基本功能，实际测试需要完整的 DatabaseManager
+        // Test basic functionality, actual testing requires complete DatabaseManager
         assert_eq!(function1.name, "test_func");
         assert_eq!(function1.return_type, "String");
     }
@@ -920,7 +924,7 @@ fn private_function() {
     async fn test_file_filtering() {
         let temp_dir = TempDir::new().unwrap();
 
-        // 创建测试文件
+        // Create test files
         let rust_file = temp_dir.path().join("test.rs");
         let c_file = temp_dir.path().join("test.c");
         let py_file = temp_dir.path().join("test.py");
@@ -931,12 +935,12 @@ fn private_function() {
 
         let _input_files = vec![rust_file.clone(), c_file.clone(), py_file.clone()];
 
-        // 这里需要模拟 DatabaseManager
+        // DatabaseManager simulation needed here
         // let db_manager = DatabaseManager::new_default().await.unwrap();
         // let analyzer = CallRelationAnalyzer::new(db_manager, temp_dir.path().to_path_buf()).unwrap();
 
         // let filtered = analyzer.filter_c_rust_files(input_files).unwrap();
-        // assert_eq!(filtered.len(), 2); // 只有 .rs 和 .c 文件
+        // assert_eq!(filtered.len(), 2); // Only .rs and .c files
         // assert!(filtered.contains(&rust_file));
         // assert!(filtered.contains(&c_file));
         // assert!(!filtered.contains(&py_file));

@@ -55,7 +55,7 @@ pub struct ProcessingStats {
     pub mapping_count: usize,
 }
 
-/// 文件预处理器
+/// File preprocessor
 pub struct CProjectPreprocessor {
     config: PreprocessConfig,
     stats: ProcessingStats,
@@ -63,7 +63,7 @@ pub struct CProjectPreprocessor {
 }
 
 impl CProjectPreprocessor {
-    /// 创建新的预处理器
+    /// Create new preprocessor
     pub fn new(config: Option<PreprocessConfig>) -> Self {
         let config = match config {
             Some(config) => config,
@@ -76,7 +76,7 @@ impl CProjectPreprocessor {
         }
     }
 
-    /// 预处理项目文件
+    /// Preprocess project files
     pub fn preprocess_project(
         &mut self,
         source_dir: &Path,
@@ -91,48 +91,50 @@ impl CProjectPreprocessor {
                 .unwrap(),
         );
         main_pb.enable_steady_tick(Duration::from_millis(100));
-        main_pb.set_message("🚀 开始预处理项目文件...");
+        main_pb.set_message("🚀 Starting project file preprocessing...");
 
-        // 验证目录
+        // Validate directory
         if !source_dir.exists() || !source_dir.is_dir() {
-            return Err(anyhow::anyhow!("源目录不存在或不是目录"));
+            return Err(anyhow::anyhow!(
+                "Source directory does not exist or is not a directory"
+            ));
         }
 
-        // 创建输出目录结构
-        main_pb.set_message("📁 创建输出目录结构...");
+        // Create output directory structure
+        main_pb.set_message("📁 Creating output directory structure...");
         self.create_output_structure(output_dir)?;
 
-        // 生成 compile_commands.json
-        main_pb.set_message("⚙️  生成 compile_commands.json...");
+        // Generate compile_commands.json
+        main_pb.set_message("⚙️  Generating compile_commands.json...");
         self.generate_compiledb(source_dir, output_dir)?;
 
-        // 扫描并分类文件
-        main_pb.set_message("🔍 扫描项目文件...");
+        // Scan and categorize files
+        main_pb.set_message("🔍 Scanning project files...");
         let all_files = self.scan_files(source_dir, &m)?;
 
-        main_pb.set_message("📋 分类文件中...");
+        main_pb.set_message("📋 Categorizing files...");
         let categorized_files = self.categorize_files(&all_files, &m)?;
 
-        // 生成映射文件
-        main_pb.set_message("🗺️  生成文件映射...");
+        // Generate mapping files
+        main_pb.set_message("🗺️  Generating file mappings...");
         self.generate_mapping(&categorized_files, source_dir, output_dir)?;
         self.save_mapping(output_dir)?;
 
-        // 处理分类后的文件
-        main_pb.set_message("📦 处理分类文件...");
+        // Process categorized files
+        main_pb.set_message("📦 Processing categorized files...");
         self.process_categorized_files(&categorized_files, output_dir, &m)?;
 
-        // 关系分析
-        main_pb.set_message("🔗 进行关系分析...");
+        // Relationship analysis
+        main_pb.set_message("🔗 Performing relationship analysis...");
         self.relation_analysis(output_dir)?;
 
-        // 生成报告
-        main_pb.set_message("📊 生成处理报告...");
+        // Generate report
+        main_pb.set_message("📊 Generating processing report...");
         self.generate_report(output_dir)?;
 
-        // 记录处理时间
+        // Record processing time
         self.stats.processing_time = start_time.elapsed().as_secs_f64();
-        main_pb.finish_with_message("✅ 预处理完成!");
+        main_pb.finish_with_message("✅ Preprocessing completed!");
 
         Ok(std::mem::take(&mut self.stats))
     }
@@ -161,20 +163,20 @@ impl CProjectPreprocessor {
         Ok(())
     }
 
-    /// 生成 compile_commands.json
+    /// Generate compile_commands.json
     fn generate_compiledb(&self, source_dir: &Path, output_dir: &Path) -> Result<()> {
-        // 创建uv虚拟环境并安装compildb
+        // Create uv virtual environment and install compiledb
         let installer = CompiledbInstaller::new()
             .with_uv_command(&self.config.uv_command)
             .with_mirrors(self.config.uv_mirror_sources());
         let compiledb_venv = self
             .prepare_compiledb_environment(&installer, output_dir)
-            .context("无法准备 compiledb 虚拟环境")?;
-        info!("compiledb 虚拟环境路径: {:?}", compiledb_venv);
+            .context("Unable to prepare compiledb virtual environment")?;
+        info!("compiledb virtual environment path: {:?}", compiledb_venv);
         info!("Generating compilation database using compiledb...");
 
         if let Err(err) = std::env::set_current_dir(source_dir) {
-            error!("目录更改失败: {}", err);
+            error!("Directory change failed: {}", err);
         }
 
         let status = Command::new(output_dir.join(".compiledb-venv/bin/compiledb"))
@@ -194,27 +196,28 @@ impl CProjectPreprocessor {
         }
 
         if let Err(err) = std::env::set_current_dir(output_dir) {
-            error!("目录更改失败: {}", err);
+            error!("Directory change failed: {}", err);
         }
 
         Ok(())
     }
 
-    /// 创建输出目录结构
+    /// Create output directory structure
     fn create_output_structure(&self, output_dir: &Path) -> Result<()> {
         let dirs = [
-            output_dir.join("paired_files"),     // 配对文件
-            output_dir.join("individual_files"), // 单独文件
-            output_dir.join("unrelated_files"),  // 不相关文件
+            output_dir.join("paired_files"),     // Paired files
+            output_dir.join("individual_files"), // Individual files
+            output_dir.join("unrelated_files"),  // Unrelated files
         ];
 
         for dir in &dirs {
-            fs::create_dir_all(dir).with_context(|| format!("无法创建目录: {:?}", dir))?;
+            fs::create_dir_all(dir)
+                .with_context(|| format!("Unable to create directory: {:?}", dir))?;
         }
         Ok(())
     }
 
-    /// 扫描文件
+    /// Scan files
     fn scan_files(&mut self, source_dir: &Path, m: &MultiProgress) -> Result<Vec<PathBuf>> {
         let pb = m.add(ProgressBar::new_spinner());
         pb.set_style(
@@ -223,7 +226,7 @@ impl CProjectPreprocessor {
                 .unwrap(),
         );
         pb.enable_steady_tick(Duration::from_millis(80));
-        pb.set_message("🔍 扫描文件中...");
+        pb.set_message("🔍 Scanning files...");
 
         let mut files = Vec::new();
         let exclude_patterns: Vec<_> = self
@@ -247,13 +250,13 @@ impl CProjectPreprocessor {
                 )
                 .unwrap(),
         );
-        scan_pb.set_message("扫描中");
+        scan_pb.set_message("Scanning");
 
         for entry in entries.iter().progress_with(scan_pb.clone()) {
             let path = entry.path();
             let relative_path = path.strip_prefix(source_dir).unwrap_or(path);
 
-            // 检查排除模式
+            // Check exclude patterns
             if exclude_patterns
                 .iter()
                 .any(|p| p.matches_path(relative_path))
@@ -268,17 +271,20 @@ impl CProjectPreprocessor {
             } else {
                 self.stats
                     .errors
-                    .push(format!("无法访问文件: {}", path.display()));
+                    .push(format!("Unable to access file: {}", path.display()));
                 self.stats.skipped_files += 1;
             }
         }
 
         self.stats.total_files = files.len();
-        pb.finish_with_message(format!("✅ 扫描完成，发现 {} 个文件", files.len()));
+        pb.finish_with_message(format!(
+            "✅ Scanning completed, found {} files",
+            files.len()
+        ));
         Ok(files)
     }
 
-    /// 文件分类
+    /// File categorization
     fn categorize_files(
         &mut self,
         files: &[PathBuf],
@@ -290,22 +296,22 @@ impl CProjectPreprocessor {
                 .template("{spinner:.yellow} [{elapsed_precise}] [{bar:30.yellow/blue}] {pos}/{len} 📋 {msg}")
                 .unwrap()
         );
-        pb.set_message("文件分类中");
+        pb.set_message("Categorizing files");
 
         let mut categorized = Vec::new();
         let mut processed_files = HashSet::new();
 
-        // 分离源文件和头文件
+        // Separate source files and header files
         let source_files: Vec<_> = files.iter().filter(|f| self.is_source_file(f)).collect();
         let header_files: Vec<_> = files.iter().filter(|f| self.is_header_file(f)).collect();
 
         pb.set_message(format!(
-            "找到 {} 个源文件，{} 个头文件",
+            "Found {} source files, {} header files",
             source_files.len(),
             header_files.len()
         ));
 
-        // 寻找配对文件
+        // Find paired files
         for source_file in source_files.iter().progress_with(pb.clone()) {
             if processed_files.contains(*source_file) {
                 continue;
@@ -322,7 +328,7 @@ impl CProjectPreprocessor {
             }
         }
 
-        // 处理单独的源文件和头文件
+        // Process individual source files and header files
         for file in files.iter().progress_with(pb.clone()) {
             if processed_files.contains(file) {
                 continue;
@@ -335,7 +341,7 @@ impl CProjectPreprocessor {
             }
         }
 
-        // 处理不相关文件
+        // Process unrelated files
         for file in files.iter().progress_with(pb.clone()) {
             if !processed_files.contains(file) {
                 categorized.push(FileCategory::Unrelated(file.clone()));
@@ -343,11 +349,11 @@ impl CProjectPreprocessor {
             }
         }
 
-        pb.finish_with_message("✅ 文件分类完成");
+        pb.finish_with_message("✅ File categorization completed");
         Ok(categorized)
     }
 
-    /// 处理分类后的文件
+    /// Process categorized files
     fn process_categorized_files(
         &mut self,
         categorized_files: &[FileCategory],
@@ -360,7 +366,7 @@ impl CProjectPreprocessor {
                 .template("{spinner:.green} [{elapsed_precise}] [{bar:30.cyan/blue}] {pos}/{len} 📦 {msg}")
                 .unwrap(),
         );
-        pb.set_message("处理文件中");
+        pb.set_message("Processing files");
 
         let errors = Arc::new(Mutex::new(Vec::new()));
 
@@ -371,10 +377,10 @@ impl CProjectPreprocessor {
                     let target_dir = output_dir.join("paired_files").join(&pair_name);
 
                     if let Err(e) = self.process_paired_files(source, header, &target_dir) {
-                        errors
-                            .lock()
-                            .unwrap()
-                            .push(format!("处理配对文件失败 {}: {}", pair_name, e));
+                        errors.lock().unwrap().push(format!(
+                            "Failed to process paired file {}: {}",
+                            pair_name, e
+                        ));
                     }
                 }
                 FileCategory::Individual(file) => {
@@ -382,10 +388,10 @@ impl CProjectPreprocessor {
                     let target_dir = output_dir.join("individual_files").join(&file_name);
 
                     if let Err(e) = self.process_individual_file(file, &target_dir) {
-                        errors
-                            .lock()
-                            .unwrap()
-                            .push(format!("处理单独文件失败 {}: {}", file_name, e));
+                        errors.lock().unwrap().push(format!(
+                            "Failed to process individual file {}: {}",
+                            file_name, e
+                        ));
                     }
                 }
                 FileCategory::Unrelated(file) => {
@@ -393,7 +399,7 @@ impl CProjectPreprocessor {
 
                     if let Err(e) = self.process_unrelated_file(file, &target_dir) {
                         errors.lock().unwrap().push(format!(
-                            "处理不相关文件失败 {}: {}",
+                            "Failed to process unrelated file {}: {}",
                             file.display(),
                             e
                         ));
@@ -403,13 +409,13 @@ impl CProjectPreprocessor {
             pb.inc(1);
         });
 
-        // 收集错误
+        // Collect errors
         self.stats.errors.extend(errors.lock().unwrap().drain(..));
-        pb.finish_with_message("✅ 文件处理完成");
+        pb.finish_with_message("✅ File processing completed");
         Ok(())
     }
 
-    /// 处理配对文件
+    /// Process paired files
     fn process_paired_files(&self, source: &Path, header: &Path, target_dir: &Path) -> Result<()> {
         fs::create_dir_all(target_dir)?;
 
@@ -422,7 +428,7 @@ impl CProjectPreprocessor {
         Ok(())
     }
 
-    /// 处理单独文件
+    /// Process individual file
     fn process_individual_file(&self, file: &Path, target_dir: &Path) -> Result<()> {
         fs::create_dir_all(target_dir)?;
         let target_file = target_dir.join(file.file_name().unwrap());
@@ -430,7 +436,7 @@ impl CProjectPreprocessor {
         Ok(())
     }
 
-    /// 处理不相关文件
+    /// Process unrelated file
     fn process_unrelated_file(&self, file: &Path, target_dir: &Path) -> Result<()> {
         fs::create_dir_all(target_dir)?;
         let target_file = target_dir.join(file.file_name().unwrap());
@@ -438,7 +444,7 @@ impl CProjectPreprocessor {
         Ok(())
     }
 
-    /// 复制文件
+    /// Copy file
     fn copy_file(&self, src: &Path, dst: &Path) -> Result<()> {
         let metadata = fs::metadata(src)?;
 
@@ -451,7 +457,7 @@ impl CProjectPreprocessor {
         Ok(())
     }
 
-    /// 复制大文件（分块）
+    /// Copy large file (in chunks)
     fn copy_large_file(&self, src: &Path, dst: &Path) -> Result<()> {
         let mut src_file = BufReader::with_capacity(self.config.chunk_size, File::open(src)?);
         let mut dst_file = BufWriter::with_capacity(self.config.chunk_size, File::create(dst)?);
@@ -469,7 +475,7 @@ impl CProjectPreprocessor {
         Ok(())
     }
 
-    /// 寻找匹配的头文件
+    /// Find matching header file
     fn find_matching_header(
         &self,
         source_file: &Path,
@@ -481,7 +487,7 @@ impl CProjectPreprocessor {
                 if let Some(captures) = regex.captures(&source_str) {
                     let mut expected_header = header_pattern.clone();
 
-                    // 替换捕获组
+                    // Replace capture groups
                     for i in 0..captures.len() {
                         if let Some(cap) = captures.get(i) {
                             expected_header =
@@ -489,7 +495,7 @@ impl CProjectPreprocessor {
                         }
                     }
 
-                    // 寻找匹配的头文件
+                    // Find matching header file
                     for header_file in header_files {
                         let header_str = header_file.to_string_lossy();
                         if header_str.contains(&expected_header)
@@ -504,7 +510,7 @@ impl CProjectPreprocessor {
         None
     }
 
-    /// 获取配对名称
+    /// Get pair name
     fn get_pair_name(&self, source_file: &Path) -> String {
         source_file
             .file_stem()
@@ -513,7 +519,7 @@ impl CProjectPreprocessor {
             .to_string()
     }
 
-    /// 获取文件名称（不含扩展名）
+    /// Get file name (without extension)
     fn get_file_name(&self, file: &Path) -> String {
         file.file_stem()
             .unwrap_or(file.file_name().unwrap())
@@ -521,7 +527,7 @@ impl CProjectPreprocessor {
             .to_string()
     }
 
-    /// 判断是否为源文件
+    /// Check if it's a source file
     fn is_source_file(&self, file: &Path) -> bool {
         if let Some(ext) = file.extension() {
             let ext_l = ext.to_string_lossy().to_string().to_ascii_lowercase();
@@ -535,7 +541,7 @@ impl CProjectPreprocessor {
         }
     }
 
-    /// 判断是否为头文件
+    /// Check if it's a header file
     fn is_header_file(&self, file: &Path) -> bool {
         if let Some(ext) = file.extension() {
             let ext_l = ext.to_string_lossy().to_string().to_ascii_lowercase();
@@ -549,7 +555,7 @@ impl CProjectPreprocessor {
         }
     }
 
-    /// 生成文件映射
+    /// Generate file mapping
     // TODO: Implement file mapping generation logic
     fn generate_mapping(
         &mut self,
@@ -629,7 +635,7 @@ impl CProjectPreprocessor {
         Ok(())
     }
 
-    /// 保存映射文件
+    /// Save mapping file
     fn save_mapping(&self, output_dir: &Path) -> Result<()> {
         let mapping_path = output_dir.join("mapping.json");
         let mapping_json = serde_json::json!({
@@ -642,12 +648,12 @@ impl CProjectPreprocessor {
         Ok(())
     }
 
-    /// 生成处理报告
+    /// Generate processing report
     fn generate_report(&self, output_dir: &Path) -> Result<()> {
         let report_path = output_dir.join("processing_report.json");
         let text_report_path = output_dir.join("processing_log.txt");
 
-        // JSON报告
+        // JSON report
         let json_report = serde_json::json!({
             "statistics": &self.stats,
             "config": &self.config,
@@ -656,38 +662,47 @@ impl CProjectPreprocessor {
 
         fs::write(&report_path, serde_json::to_string_pretty(&json_report)?)?;
 
-        // 文本报告
+        // Text report
         let mut text_report = String::new();
-        text_report.push_str("C项目文件预处理报告\n");
-        text_report.push_str("===================\n\n");
-        text_report.push_str(&format!("总文件数: {}\n", self.stats.total_files));
-        text_report.push_str(&format!("配对文件数: {}\n", self.stats.paired_files));
-        text_report.push_str(&format!("单独文件数: {}\n", self.stats.individual_files));
-        text_report.push_str(&format!("不相关文件数: {}\n", self.stats.unrelated_files));
-        text_report.push_str(&format!("跳过文件数: {}\n", self.stats.skipped_files));
-        text_report.push_str(&format!("文件映射数: {}\n", self.stats.mapping_count));
-        text_report.push_str(&format!("处理时间: {:.2} 秒\n", self.stats.processing_time));
+        text_report.push_str("C Project File Preprocessing Report\n");
+        text_report.push_str("==================================\n\n");
+        text_report.push_str(&format!("Total files: {}\n", self.stats.total_files));
+        text_report.push_str(&format!("Paired files: {}\n", self.stats.paired_files));
         text_report.push_str(&format!(
-            "总大小: {}\n\n",
+            "Individual files: {}\n",
+            self.stats.individual_files
+        ));
+        text_report.push_str(&format!(
+            "Unrelated files: {}\n",
+            self.stats.unrelated_files
+        ));
+        text_report.push_str(&format!("Skipped files: {}\n", self.stats.skipped_files));
+        text_report.push_str(&format!("File mappings: {}\n", self.stats.mapping_count));
+        text_report.push_str(&format!(
+            "Processing time: {:.2} seconds\n",
+            self.stats.processing_time
+        ));
+        text_report.push_str(&format!(
+            "Total size: {}\n\n",
             format_size(self.stats.total_size)
         ));
 
-        // 终端输出处理报告
-        println!("\n🎯 C项目文件预处理报告");
+        // Terminal output processing report
+        println!("\n🎯 C Project File Preprocessing Report");
         println!("═══════════════════════════════════════");
-        println!("📊 处理统计:");
-        println!("   • 总文件数量: {}", self.stats.total_files);
+        println!("📊 Processing Statistics:");
+        println!("   • Total files: {}", self.stats.total_files);
         println!(
-            "   • 配对文件数: {} ({}个配对)",
+            "   • Paired files: {} ({} pairs)",
             self.stats.paired_files,
             self.stats.paired_files / 2
         );
-        println!("   • 单独文件数: {}", self.stats.individual_files);
-        println!("   • 不相关文件: {}", self.stats.unrelated_files);
-        println!("   • 跳过文件数: {}", self.stats.skipped_files);
-        println!("   • 文件映射数: {}", self.stats.mapping_count);
+        println!("   • Individual files: {}", self.stats.individual_files);
+        println!("   • Unrelated files: {}", self.stats.unrelated_files);
+        println!("   • Skipped files: {}", self.stats.skipped_files);
+        println!("   • File mappings: {}", self.stats.mapping_count);
 
-        println!("\n🔗 关系分析:");
+        println!("\n🔗 Relationship Analysis:");
         match generate_c_dependency_graph(output_dir) {
             Ok(rel) => {
                 let include_edges: usize = rel
@@ -695,56 +710,68 @@ impl CProjectPreprocessor {
                     .values()
                     .map(|n| n.local_includes.len() + n.system_includes.len())
                     .sum();
-                println!("   • 文件节点数: {}", rel.files.len());
-                println!("   • 包含关系数: {}", include_edges);
-                println!("   • 包含目录数: {}", rel.build.include_dirs.len());
-                println!("   • 链接库数量: {}", rel.build.link_libs.len());
-                println!("   • 链接目录数: {}", rel.build.link_dirs.len());
-                println!("   • 依赖图生成: ✅ 成功");
+                println!("   • File nodes: {}", rel.files.len());
+                println!("   • Include relationships: {}", include_edges);
+                println!("   • Include directories: {}", rel.build.include_dirs.len());
+                println!("   • Link libraries: {}", rel.build.link_libs.len());
+                println!("   • Link directories: {}", rel.build.link_dirs.len());
+                println!("   • Dependency graph generation: ✅ Success");
             }
             Err(_) => {
-                println!("   • 依赖图生成: ❌ 失败");
+                println!("   • Dependency graph generation: ❌ Failed");
             }
         }
 
-        println!("\n⏱️  性能指标:");
-        println!("   • 处理时间: {:.2} 秒", self.stats.processing_time);
-        println!("   • 总数据量: {}", format_size(self.stats.total_size));
+        println!("\n⏱️  Performance Metrics:");
+        println!(
+            "   • Processing time: {:.2} seconds",
+            self.stats.processing_time
+        );
+        println!(
+            "   • Total data volume: {}",
+            format_size(self.stats.total_size)
+        );
         let avg_speed_bytes_per_sec = if self.stats.processing_time > 0.0 {
             (self.stats.total_size as f64 / self.stats.processing_time) as u64
         } else {
             0
         };
-        println!("   • 平均速度: {}/秒", format_size(avg_speed_bytes_per_sec));
-        println!("\n⚙️  配置参数:");
-        println!("   • 工作线程数: {}", self.config.worker_count);
         println!(
-            "   • 大文件阈值: {}",
+            "   • Average speed: {}/sec",
+            format_size(avg_speed_bytes_per_sec)
+        );
+        println!("\n⚙️  Configuration Parameters:");
+        println!("   • Worker threads: {}", self.config.worker_count);
+        println!(
+            "   • Large file threshold: {}",
             format_size(self.config.large_file_threshold)
         );
         println!(
-            "   • 块处理大小: {}",
+            "   • Chunk processing size: {}",
             format_size(self.config.chunk_size as u64)
         );
 
         if !self.stats.errors.is_empty() {
-            println!("\n❌ 错误信息 ({} 项):", self.stats.errors.len());
+            println!(
+                "\n❌ Error Information ({} items):",
+                self.stats.errors.len()
+            );
             for (i, error) in self.stats.errors.iter().enumerate().take(5) {
                 println!("   {}. {}", i + 1, error);
             }
             if self.stats.errors.len() > 5 {
                 println!(
-                    "   ... 还有 {} 个错误 (详见日志文件)",
+                    "   ... {} more errors (see log file for details)",
                     self.stats.errors.len() - 5
                 );
             }
         } else {
-            println!("\n✅ 处理完成，无错误发生");
+            println!("\n✅ Processing completed, no errors occurred");
         }
         println!("═══════════════════════════════════════\n");
 
         if !self.stats.errors.is_empty() {
-            text_report.push_str("错误信息:\n");
+            text_report.push_str("Error Information:\n");
             for error in &self.stats.errors {
                 text_report.push_str(&format!("- {}\n", error));
             }
@@ -754,7 +781,7 @@ impl CProjectPreprocessor {
         Ok(())
     }
 
-    /// 获取统计信息
+    /// Get statistics
     pub fn get_stats(&self) -> &ProcessingStats {
         &self.stats
     }
@@ -768,7 +795,7 @@ impl CProjectPreprocessor {
         self.ensure_uv_virtualenv(&venv_path)?;
         installer
             .ensure_installed(&venv_path)
-            .with_context(|| format!("无法在 {:?} 安装 compiledb", venv_path))?;
+            .with_context(|| format!("Unable to install compiledb in {:?}", venv_path))?;
         Ok(venv_path)
     }
 
@@ -791,23 +818,27 @@ impl CProjectPreprocessor {
         }
 
         if let Some(parent) = venv_path.parent() {
-            fs::create_dir_all(parent)
-                .with_context(|| format!("无法创建虚拟环境父目录: {:?}", parent))?;
+            fs::create_dir_all(parent).with_context(|| {
+                format!(
+                    "Unable to create virtual environment parent directory: {:?}",
+                    parent
+                )
+            })?;
         }
 
-        info!("创建 uv 虚拟环境: {:?}", venv_path);
+        info!("Creating uv virtual environment: {:?}", venv_path);
         match self.try_create_uv_venv(venv_path) {
             Ok(()) => {}
             Err(err) => {
-                // 检查是否是找不到uv命令的错误
+                // Check if it's an error of uv command not found
                 if self.is_uv_not_found_error(&err) {
-                    warn!("检测到uv命令未找到，尝试自动安装uv...");
+                    warn!("Detected uv command not found, attempting to auto-install uv...");
 
-                    // 尝试安装uv
+                    // Try to install uv
                     self.try_install_uv()?;
 
-                    // 重试创建虚拟环境
-                    info!("uv安装完成，重试创建虚拟环境...");
+                    // Retry creating virtual environment
+                    info!("uv installation completed, retrying virtual environment creation...");
                     self.try_create_uv_venv(venv_path)?;
                 } else {
                     return Err(err);
@@ -817,7 +848,7 @@ impl CProjectPreprocessor {
 
         if !self.venv_has_python(venv_path) {
             warn!(
-                "uv 虚拟环境 {:?} 创建后未找到 Python 解释器，可能创建失败",
+                "Python interpreter not found after creating uv virtual environment {:?}, creation may have failed",
                 venv_path
             );
         }
@@ -830,11 +861,16 @@ impl CProjectPreprocessor {
             .arg("venv")
             .arg(venv_path)
             .status()
-            .with_context(|| format!("无法执行 uv venv 创建虚拟环境: {:?}", venv_path))?;
+            .with_context(|| {
+                format!(
+                    "Unable to execute uv venv to create virtual environment: {:?}",
+                    venv_path
+                )
+            })?;
 
         if !status.success() {
             return Err(anyhow::anyhow!(
-                "uv venv 创建虚拟环境失败，退出码 {:?}",
+                "uv venv failed to create virtual environment, exit code {:?}",
                 status.code()
             ));
         }
@@ -843,7 +879,7 @@ impl CProjectPreprocessor {
     }
 
     fn try_install_uv(&self) -> Result<()> {
-        info!("尝试通过pip安装uv工具...");
+        info!("Attempting to install uv tool via pip...");
 
         let mut command = Command::new("pip");
         command
@@ -851,16 +887,18 @@ impl CProjectPreprocessor {
             .arg("uv")
             .arg("--break-system-packages");
 
-        let output = command.output().with_context(|| "无法执行pip命令安装uv")?;
+        let output = command
+            .output()
+            .with_context(|| "Unable to execute pip command to install uv")?;
 
         if output.status.success() {
-            info!("uv工具安装成功");
+            info!("uv tool installation successful");
             return Ok(());
         }
 
-        warn!("pip安装uv失败，尝试使用镜像源...");
+        warn!("pip installation of uv failed, attempting to use mirror sources...");
 
-        // 尝试使用镜像源安装uv
+        // Try to install uv using mirror sources
         for mirror in self.config.uv_mirror_sources() {
             if let Some(index_url) = &mirror.index_url {
                 let mut mirror_command = Command::new("pip");
@@ -873,24 +911,32 @@ impl CProjectPreprocessor {
 
                 match mirror_command.output() {
                     Ok(output) if output.status.success() => {
-                        info!("通过{}镜像源成功安装uv工具", mirror.name);
+                        info!(
+                            "Successfully installed uv tool via {} mirror source",
+                            mirror.name
+                        );
                         return Ok(());
                     }
                     Ok(output) => {
                         warn!(
-                            "通过{}镜像源安装uv失败: {}",
+                            "Failed to install uv via {} mirror source: {}",
                             mirror.name,
                             String::from_utf8_lossy(&output.stderr)
                         );
                     }
                     Err(err) => {
-                        warn!("执行pip命令失败 ({}镜像源): {}", mirror.name, err);
+                        warn!(
+                            "Failed to execute pip command ({} mirror source): {}",
+                            mirror.name, err
+                        );
                     }
                 }
             }
         }
 
-        Err(anyhow::anyhow!("无法通过pip安装uv工具，请手动安装"))
+        Err(anyhow::anyhow!(
+            "Unable to install uv tool via pip, please install manually"
+        ))
     }
 
     fn is_uv_not_found_error(&self, err: &anyhow::Error) -> bool {
@@ -909,7 +955,7 @@ impl CProjectPreprocessor {
     }
 }
 
-/// 格式化文件大小
+/// Format file size
 fn format_size(size: u64) -> String {
     const UNITS: &[&str] = &["B", "KB", "MB", "GB", "TB"];
     let mut size = size as f64;
@@ -932,12 +978,12 @@ mod tests {
         let config = PreprocessConfig::default();
         let preprocessor = CProjectPreprocessor::new(Some(config));
 
-        // 测试源文件识别
+        // Test source file recognition
         assert!(preprocessor.is_source_file(Path::new("test.c")));
         assert!(preprocessor.is_source_file(Path::new("test.cpp")));
         assert!(!preprocessor.is_source_file(Path::new("test.txt")));
 
-        // 测试头文件识别
+        // Test header file recognition
         assert!(preprocessor.is_header_file(Path::new("test.h")));
         assert!(preprocessor.is_header_file(Path::new("test.hpp")));
         assert!(!preprocessor.is_header_file(Path::new("test.txt")));

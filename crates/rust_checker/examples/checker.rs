@@ -48,7 +48,7 @@ fn main() {
     let project_dir = match project_dir {
         Some(dir) => dir,
         None => {
-            eprintln!("缺少项目路径参数");
+            eprintln!("Missing project path parameter");
             print_usage(&program_name);
             std::process::exit(1);
         }
@@ -64,13 +64,13 @@ fn main() {
     match result {
         Ok(_) => {
             if workspace_mode {
-                println!("✅ Workspace 检查与构建成功");
+                println!("✅ Workspace check and build successful");
             } else {
-                println!("✅ 项目检查和编译成功");
+                println!("✅ Project check and compilation successful");
             }
         }
         Err(e) => {
-            eprintln!("❌ 检查失败: {e}");
+            eprintln!("❌ Check failed: {e}");
             std::process::exit(1);
         }
     }

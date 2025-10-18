@@ -4,12 +4,12 @@ pub mod env_checker;
 
 use db_services::DatabaseManager;
 
-// env_checker导出枚举类型和函数
+// env_checker exports enum types and functions
 pub use env_checker::{
     DatabaseConnectionStatus, check_database_existence, dbdata_init, get_detailed_database_status,
 };
 
-// ai_checker 导出枚举类型和函数
+// ai_checker exports enum types and functions
 pub use ai_checker::{
     AIConnectionStatus, ai_service_init, check_all_ai_services, get_detailed_ai_status,
 };

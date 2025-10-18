@@ -9,7 +9,7 @@ use std::collections::HashMap;
 /// Format file basic information
 pub fn format_file_info(file_info: &serde_json::Value) -> String {
     format!(
-        "## 文件信息\n- 文件路径: {}\n- 编程语言: {}\n- 项目名称: {}\n- 接口数量: {}\n",
+        "## File Information\n- File path: {}\n- Programming language: {}\n- Project name: {}\n- Interface count: {}\n",
         file_info
             .get("file_path")
             .and_then(|v| v.as_str())
@@ -25,7 +25,7 @@ pub fn format_file_info(file_info: &serde_json::Value) -> String {
         file_info
             .get("interface_count")
             .and_then(|v| v.as_u64())
-            .unwrap_or(0)
+            .unwrap_or(0),
     )
 }
 
@@ -35,10 +35,10 @@ pub fn format_defined_functions(functions: &[FunctionInfo]) -> String {
         return String::new();
     }
 
-    let mut section = "## 文件中定义的函数\n".to_string();
+    let mut section = "## Functions defined in file\n".to_string();
     for func in functions {
         section.push_str(&format!(
-            "\n### {} (行 {})\n- 返回类型: {}\n- 函数签名: `{}`\n- 参数: {}\n",
+            "\n### {} (line {})\n- Return type: {}\n- Function signature: `{}`\n- Parameters: {}\n",
             func.name,
             func.line_number.unwrap_or(0),
             func.return_type.as_deref().unwrap_or("unknown"),
@@ -55,14 +55,14 @@ pub fn format_call_relationships(relationships: &HashMap<String, Vec<CallRelatio
         return String::new();
     }
 
-    let mut section = "## 函数调用关系\n".to_string();
+    let mut section = "## Function call relationships\n".to_string();
 
     if let Some(internal_calls) = relationships.get("internal_calls") {
         if !internal_calls.is_empty() {
-            section.push_str("### 文件内部调用\n");
+            section.push_str("### Internal file calls\n");
             for call in internal_calls {
                 section.push_str(&format!(
-                    "- `{}` 调用 `{}` (行 {})\n",
+                    "- `{}` calls `{}` (line {})\n",
                     call.caller,
                     call.called,
                     call.line.unwrap_or(0)
@@ -73,7 +73,7 @@ pub fn format_call_relationships(relationships: &HashMap<String, Vec<CallRelatio
 
     if let Some(external_calls) = relationships.get("external_calls") {
         if !external_calls.is_empty() {
-            section.push_str("\n### 外部文件调用\n");
+            section.push_str("\n### External file calls\n");
             for call in external_calls {
                 let caller_file = call
                     .caller_file
@@ -82,7 +82,7 @@ pub fn format_call_relationships(relationships: &HashMap<String, Vec<CallRelatio
                     .and_then(|n| n.to_str())
                     .unwrap_or("unknown");
                 section.push_str(&format!(
-                    "- `{}:{}` 调用 `{}` (行 {})\n",
+                    "- `{}:{}` calls `{}` (line {})\n",
                     caller_file,
                     call.caller,
                     call.called,
@@ -101,7 +101,7 @@ pub fn format_file_dependencies(dependencies: &[FileDependency]) -> String {
         return String::new();
     }
 
-    let mut section = "## 文件依赖关系\n".to_string();
+    let mut section = "## File dependencies\n".to_string();
     for dep in dependencies.iter().take(10) {
         let source_file = dep
             .from
@@ -130,7 +130,7 @@ pub fn format_interface_context(interfaces: &[InterfaceContext]) -> String {
         return String::new();
     }
 
-    let mut section = "## 相关接口信息\n".to_string();
+    let mut section = "## Related interface information\n".to_string();
     for interface in interfaces.iter().take(5) {
         let file_name = interface
             .file_path
@@ -140,7 +140,7 @@ pub fn format_interface_context(interfaces: &[InterfaceContext]) -> String {
             .unwrap_or_else(|| interface.file_path.to_string_lossy().into_owned());
 
         section.push_str(&format!(
-            "\n### {}\n- 文件: {}\n- 语言: {}\n",
+            "\n### {}\n- File: {}\n- Language: {}\n",
             interface.name, file_name, interface.language
         ));
     }
@@ -157,7 +157,7 @@ pub fn format_function_definition(func_def: &FunctionInfo) -> String {
         .unwrap_or_else(|| func_def.file_path.to_string_lossy().into_owned());
 
     format!(
-        "## 函数定义\n- 函数名: {}\n- 文件: {}\n- 行号: {}\n- 返回类型: {}\n- 函数签名: `{}`\n- 参数: {}\n",
+        "## Function definition\n- Function name: {}\n- File: {}\n- Line number: {}\n- Return type: {}\n- Function signature: `{}`\n- Parameters: {}\n",
         func_def.name,
         file_name,
         func_def.line_number.unwrap_or(0),
@@ -173,7 +173,7 @@ pub fn format_function_callers(callers: &[CallRelationship]) -> String {
         return String::new();
     }
 
-    let mut section = "## 调用该函数的位置\n".to_string();
+    let mut section = "## Locations calling this function\n".to_string();
     for caller in callers {
         let caller_file = caller
             .caller_file
@@ -183,7 +183,7 @@ pub fn format_function_callers(callers: &[CallRelationship]) -> String {
             .unwrap_or("unknown");
 
         section.push_str(&format!(
-            "- `{}:{}` (行 {})\n",
+            "- `{}:{}` (line {})\n",
             caller_file,
             caller.caller,
             caller.line.unwrap_or(0)
@@ -198,7 +198,7 @@ pub fn format_function_callees(callees: &[CallRelationship]) -> String {
         return String::new();
     }
 
-    let mut section = "## 该函数调用的其他函数\n".to_string();
+    let mut section = "## Other functions called by this function\n".to_string();
     for callee in callees {
         let called_file = callee
             .called_file
@@ -208,7 +208,7 @@ pub fn format_function_callees(callees: &[CallRelationship]) -> String {
             .unwrap_or("unknown");
 
         section.push_str(&format!(
-            "- `{}` 在 `{}` (行 {})\n",
+            "- `{}` in `{}` (line {})\n",
             callee.called,
             called_file,
             callee.line.unwrap_or(0)
@@ -220,7 +220,7 @@ pub fn format_function_callees(callees: &[CallRelationship]) -> String {
 /// Format error message
 pub fn format_error_message(error_message: &str) -> String {
     format!(
-        "## 错误信息\n在上一次构建中,发生错误信息: {}\n",
+        "## Error information\nError occurred in previous build: {}\n",
         error_message
     )
 }
@@ -228,7 +228,7 @@ pub fn format_error_message(error_message: &str) -> String {
 /// Build complete file conversion prompt
 pub fn build_file_prompt(file_path: &str, sections: &[String], conversion_guide: &str) -> String {
     let header = format!(
-        "# C到Rust转换上下文信息\n\n正在转换文件: **{}**\n\n以下是基于项目调用关系分析得到的上下文信息，请在转换过程中参考这些信息以保持函数调用关系和接口一致性。\n\n",
+        "# C to Rust conversion context information\n\nConverting file: **{}**\n\nThe following is context information obtained from project call relationship analysis. Please refer to this information during the conversion process to maintain function call relationships and interface consistency.\n\n",
         file_path
     );
 
@@ -244,7 +244,7 @@ pub fn build_function_prompt(
     conversion_guide: &str,
 ) -> String {
     let header = format!(
-        "# 函数转换上下文信息\n\n正在转换函数: **{}**\n\n以下是该函数的调用关系和上下文信息：\n\n",
+        "# Function conversion context information\n\nConverting function: **{}**\n\nThe following is the call relationship and context information for this function:\n\n",
         function_name
     );
 
@@ -271,7 +271,7 @@ mod tests {
 
         let result = format_defined_functions(&functions);
         assert!(result.contains("test_func"));
-        assert!(result.contains("行 10"));
+        assert!(result.contains("line 10"));
     }
 
     #[test]

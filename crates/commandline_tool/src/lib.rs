@@ -22,10 +22,10 @@ use walkdir::WalkDir;
 #[command(about = "C to Rust", long_about = None)]
 
 pub struct Cli {
-    /// 显示调试日志 (默认关闭)
+    /// Show debug logs (disabled by default)
     #[arg(long, short = 'd', global = true, help = "show debug log")]
     pub debug: bool,
-    /// 强制重复执行（例如：即使存在缓存也重新预处理）
+    /// Force re-execution (e.g., re-preprocess even if cached output exists)
     #[arg(
         long,
         short = 'f',
@@ -122,27 +122,27 @@ pub enum Commands {
 
 #[derive(Copy, Clone, PartialEq, Eq, PartialOrd, Ord, ValueEnum, Debug)]
 pub enum QueryType {
-    /// 列出所有可用项目
+    /// List all available projects
     ListProjects,
-    /// 显示项目统计信息
+    /// Show project statistics
     Stats,
-    /// 生成项目报告
+    /// Generate project report
     Report,
-    /// 查找函数定义和调用
+    /// Find function definitions and calls
     FindFunc,
-    /// 获取函数调用链
+    /// Get function call chain
     CallChain,
-    /// 分析文件关系
+    /// Analyze file relationships
     FileAnalysis,
-    /// 获取最常调用的函数
+    /// Get most frequently called functions
     TopCalled,
-    /// 获取最复杂的函数
+    /// Get most complex functions
     TopComplex,
-    /// 分析文件依赖
+    /// Analyze file dependencies
     DepsAnalysis,
-    /// 搜索函数使用情况
+    /// Search function usage
     Search,
-    /// 获取函数使用摘要
+    /// Get function usage summary
     FuncUsage,
 }
 
@@ -178,25 +178,25 @@ pub async fn init_services(debug: bool) -> Result<()> {
     let manager: DatabaseManager = _dbdata_create().await;
     match dbdata_init(manager).await {
         Ok(status) => {
-            info!("数据库状态: {:?}", status);
+            info!("Database status: {:?}", status);
         }
         Err(e) => {
-            error!("查询数据库状态失败: {}", e);
+            error!("Failed to query database status: {}", e);
         }
     }
 
     // Initialize AI services
     match ai_service_init().await {
         Ok(status) => {
-            info!("AI 服务状态: {:?}", status);
+            info!("AI service status: {:?}", status);
             match status {
-                AIConnectionStatus::AllConnected => info!("AI 服务已连接"),
-                AIConnectionStatus::AllDisconnected => error!("所有 AI 服务均未连接"),
-                _ => warn!("部分 AI 服务连接状态不明"),
+                AIConnectionStatus::AllConnected => info!("AI services connected"),
+                AIConnectionStatus::AllDisconnected => error!("All AI services disconnected"),
+                _ => warn!("Some AI services connection status unknown"),
             }
         }
         Err(e) => {
-            error!("查询 AI 服务状态失败: {}", e);
+            error!("Failed to query AI service status: {}", e);
         }
     }
 
@@ -207,9 +207,12 @@ pub async fn init_services(debug: bool) -> Result<()> {
 pub async fn run_analyze(input_dir: &Path) -> Result<()> {
     let input_str = input_dir.to_string_lossy();
     match analyze_project_with_default_database(&input_str, false).await {
-        Ok(_) => info!("✅ 分析完成，结果已保存到数据库"),
+        Ok(_) => info!("✅ Analysis completed, results saved to database"),
         Err(e) => {
-            error!("⚠️ 数据库分析失败，尝试基础分析: {}", e);
+            error!(
+                "⚠️ Database analysis failed, attempting basic analysis: {}",
+                e
+            );
             let _ = check_function_and_class_name(&input_str, false);
         }
     }
@@ -223,11 +226,11 @@ pub async fn run_preprocess(input_dir: &Path, output_dir: Option<&Path>) -> Resu
         .map(|p| p.to_path_buf())
         .unwrap_or_else(|| default_cache_dir_for(input_dir));
 
-    info!("输入目录:{}", input_dir.display());
-    info!("输出目录: {}", output_dir.display());
+    info!("Input directory: {}", input_dir.display());
+    info!("Output directory: {}", output_dir.display());
 
     std::fs::create_dir_all(&output_dir)?;
-    info!("正在预处理项目...");
+    info!("Preprocessing project...");
     let mut preprocessor = PreProcessor::new_default();
     match preprocessor
         .preprocess_project(input_dir, &output_dir)
@@ -235,18 +238,24 @@ pub async fn run_preprocess(input_dir: &Path, output_dir: Option<&Path>) -> Resu
     {
         Ok(_) => {}
         Err(e) => {
-            error!("预处理失败: {}", e);
+            error!("Preprocessing failed: {}", e);
             return Err(e);
         }
     }
 
-    info!("预处理完成，缓存目录: {}", output_dir.display());
-    info!("开始分析项目...");
+    info!(
+        "Preprocessing completed, cache directory: {}",
+        output_dir.display()
+    );
+    info!("Starting project analysis...");
     let output_str = output_dir.to_string_lossy();
     match analyze_project_with_default_database(&output_str, false).await {
-        Ok(_) => info!("✅ 项目分析完成，结果已保存到数据库"),
+        Ok(_) => info!("✅ Project analysis completed, results saved to database"),
         Err(e) => {
-            error!("⚠️ 数据库分析失败，尝试基础分析: {}", e);
+            error!(
+                "⚠️ Database analysis failed, attempting basic analysis: {}",
+                e
+            );
             let _ = check_function_and_class_name(&output_str, false);
         }
     }
@@ -258,11 +267,14 @@ pub async fn run_translate(input_dir: &Path, output_dir: Option<&Path>) -> Resul
     use anyhow::anyhow;
 
     if !input_dir.exists() {
-        return Err(anyhow!("输入目录不存在: {}", input_dir.display()));
+        return Err(anyhow!(
+            "Input directory does not exist: {}",
+            input_dir.display()
+        ));
     }
 
     // Preprocess (cache dir). If output_dir is provided, use it as cache dir.
-    info!("开始预处理 (preprocess)...");
+    info!("Starting preprocessing (preprocess)...");
     let cache_dir = output_dir
         .map(|p| p.to_path_buf())
         .unwrap_or_else(|| default_cache_dir_for(input_dir));
@@ -293,38 +305,46 @@ pub async fn run_translate(input_dir: &Path, output_dir: Option<&Path>) -> Resul
         match preprocessor.preprocess_project(input_dir, &cache_dir).await {
             Ok(_) => {}
             Err(e) => {
-                error!("预处理失败: {}", e);
+                error!("Preprocessing failed: {}", e);
                 return Err(e);
             }
         }
-        info!("预处理完成，缓存目录: {}", cache_dir.display());
+        info!(
+            "Preprocessing completed, cache directory: {}",
+            cache_dir.display()
+        );
     } else {
-        info!("检测到已有缓存目录: {}，跳过预处理", cache_dir.display());
+        info!(
+            "Detected existing cache directory: {}, skipping preprocessing",
+            cache_dir.display()
+        );
     }
 
     // Discover C projects
-    info!("正在发现C项目...");
+    info!("Discovering C projects...");
     let projects = discover_c_projects(&cache_dir).await?;
     if projects.is_empty() {
-        warn!("在目录 {} 中没有找到C项目", cache_dir.display());
+        warn!("No C projects found in directory {}", cache_dir.display());
         return Ok(());
     }
-    info!("发现 {} 个C项目:", projects.len());
+    info!("Found {} C projects:", projects.len());
     for (i, project) in projects.iter().enumerate() {
         info!("  {}. {}", i + 1, project.display());
     }
 
     // Convert batch
-    info!("开始批量转换...");
+    info!("Starting batch conversion...");
     let processor = MainProcessor::new(main_processor::pkg_config::get_config()?);
     info!(
-        "调用 MainProcessor::process_batch 处理 {} 个项目",
+        "Calling MainProcessor::process_batch to process {} projects",
         projects.len()
     );
     match processor.process_batch(projects).await {
         Ok(()) => {
-            info!("✅ 所有C到Rust转换完成!");
-            info!("📁 转换结果保存在各项目目录下的 'rust-project' 或 'rust_project' 文件夹中");
+            info!("✅ All C to Rust conversions completed!");
+            info!(
+                "📁 Conversion results saved in 'rust-project' or 'rust_project' folders under each project directory"
+            );
 
             // Reorganize workspace
             // If output_dir (cache) is provided, create workspace next to it with suffix _workspace
@@ -338,19 +358,22 @@ pub async fn run_translate(input_dir: &Path, output_dir: Option<&Path>) -> Resul
             } else {
                 default_workspace_dir_for(input_dir)
             };
-            info!("开始重组项目: {}", workspace_out.display());
+            info!(
+                "Starting project reorganization: {}",
+                workspace_out.display()
+            );
             let reorganizer = ProjectReorganizer::new(cache_dir.clone(), workspace_out.clone());
             if let Err(e) = reorganizer.reorganize() {
-                error!("重组项目失败: {}", e);
+                error!("Project reorganization failed: {}", e);
             } else {
-                info!("📦 已生成工作区: {}", workspace_out.display());
+                info!("📦 Workspace generated: {}", workspace_out.display());
             }
         }
         Err(e) => {
-            error!("❌ 转换过程中出现错误: {}", e);
+            error!("❌ Error occurred during conversion: {}", e);
             if e.to_string().contains("max_retry_attempts") {
                 warn!(
-                    "💡 提示: 请创建配置文件 config/config.toml，并包含 max_retry_attempts 与 concurrent_limit 配置"
+                    "💡 Tip: Please create config file config/config.toml with max_retry_attempts and concurrent_limit configurations"
                 );
             }
         }

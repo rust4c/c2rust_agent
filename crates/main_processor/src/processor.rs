@@ -10,7 +10,7 @@ use tokio::sync::Semaphore;
 
 use crate::pkg_config::MainProcessorConfig;
 
-/// 进度条样式 - 总体进度
+/// Progress bar style - overall progress
 fn progress_style_overall() -> ProgressStyle {
     ProgressStyle::with_template(
         "{prefix:.bold.cyan} [{elapsed_precise}] {bar:40.cyan/blue} {pos}/{len} {msg} ({percent}%)",
@@ -18,32 +18,32 @@ fn progress_style_overall() -> ProgressStyle {
     .unwrap()
 }
 
-/// 进度条样式 - 完成状态
+/// Progress bar style - completed state
 fn progress_style_completed() -> ProgressStyle {
     ProgressStyle::with_template("{prefix:.bold.green} [{elapsed_precise}] ✓ {msg}").unwrap()
 }
 
-/// 进度条样式 - 失败状态
+/// Progress bar style - failed state
 fn progress_style_failed() -> ProgressStyle {
     ProgressStyle::with_template("{prefix:.bold.red} [{elapsed_precise}] ✗ {msg}").unwrap()
 }
 
-/// 进度条样式 - 任务阶段
+/// Progress bar style - task phase
 fn progress_style_task() -> ProgressStyle {
     ProgressStyle::with_template("{prefix:.bold.blue} [{elapsed_precise}] {spinner:.green} {msg}")
         .unwrap()
 }
 
-/// 生成任务前缀
+/// Generate task prefix
 fn format_task_prefix(current: usize, total: usize) -> String {
     format!("[{}/{}]", current, total)
 }
 
-/// 处理单个路径 - 两阶段翻译
+/// Process single path - two-stage translation
 pub async fn process_single_path(path: &Path) -> Result<()> {
     let file_name = path.file_name().unwrap_or_default().to_string_lossy();
 
-    println!("🚀 开始两阶段翻译: {}", file_name);
+    println!("🚀 Starting two-stage translation: {}", file_name);
 
     let pb = ProgressBar::new_spinner();
     pb.set_style(
@@ -62,19 +62,22 @@ pub async fn process_single_path(path: &Path) -> Result<()> {
 
     match two_stage_processor_with_callback(path, Some(callback)).await {
         Ok(_) => {
-            pb.finish_with_message(format!("✅ 两阶段翻译成功: {}", file_name));
-            println!("✅ 两阶段翻译成功: {}", file_name);
+            pb.finish_with_message(format!(
+                "✅ Two-stage translation successful: {}",
+                file_name
+            ));
+            println!("✅ Two-stage translation successful: {}", file_name);
             Ok(())
         }
         Err(err) => {
-            pb.finish_with_message(format!("✗ 翻译失败: {}", file_name));
-            error!("两阶段翻译失败: {} - {}", file_name, err);
+            pb.finish_with_message(format!("✗ Translation failed: {}", file_name));
+            error!("Two-stage translation failed: {} - {}", file_name, err);
             Err(err)
         }
     }
 }
 
-/// 扫描指定目录，收集包含 .c/.h 文件的子目录
+/// Scan specified directory, collect subdirectories containing .c/.h files
 async fn scan_directory_for_projects(dir_path: &Path) -> Result<(Vec<PathBuf>, usize, usize)> {
     use tokio::fs;
 
@@ -95,7 +98,7 @@ async fn scan_directory_for_projects(dir_path: &Path) -> Result<(Vec<PathBuf>, u
 
         scanned_dirs += 1;
 
-        // 只挑选包含 .c/.h 文件的目录
+        // Only select directories containing .c/.h files
         let mut has_ch = false;
 
         let mut sub = fs::read_dir(&p).await?;
@@ -120,12 +123,12 @@ async fn scan_directory_for_projects(dir_path: &Path) -> Result<(Vec<PathBuf>, u
     Ok((projects, scanned_dirs, valid_dirs))
 }
 
-/// 遍历 src_cache 目录，收集可处理的目标目录
+/// Traverse src_cache directory, collect processable target directories
 pub async fn discover_src_cache_projects(root: &Path) -> Result<Vec<PathBuf>> {
-    println!("🔍 扫描 src_cache 目录: {}", root.display());
+    println!("🔍 Scanning src_cache directory: {}", root.display());
 
     if !root.exists() {
-        return Err(anyhow!("路径不存在: {}", root.display()));
+        return Err(anyhow!("Path does not exist: {}", root.display()));
     }
 
     let individual = root.join("individual_files");
@@ -133,7 +136,7 @@ pub async fn discover_src_cache_projects(root: &Path) -> Result<Vec<PathBuf>> {
 
     if !individual.exists() && !paired.exists() {
         return Err(anyhow!(
-            "src_cache 目录缺少 individual_files 和 paired_files: {}",
+            "src_cache directory missing individual_files and paired_files: {}",
             root.display()
         ));
     }
@@ -141,29 +144,32 @@ pub async fn discover_src_cache_projects(root: &Path) -> Result<Vec<PathBuf>> {
     let mut out = Vec::new();
     let mut total_valid_dirs = 0;
 
-    // 扫描 individual_files
+    // Scan individual_files
     if individual.exists() {
         let (mut individual_projects, _, valid) = scan_directory_for_projects(&individual).await?;
         out.append(&mut individual_projects);
         total_valid_dirs += valid;
-        println!("  📂 individual_files: {} 个有效目录", valid);
+        println!("  📂 individual_files: {} valid directories", valid);
     }
 
-    // 扫描 paired_files
+    // Scan paired_files
     if paired.exists() {
         let (mut paired_projects, _, valid) = scan_directory_for_projects(&paired).await?;
         out.append(&mut paired_projects);
         total_valid_dirs += valid;
-        println!("  📂 paired_files: {} 个有效目录", valid);
+        println!("  📂 paired_files: {} valid directories", valid);
     }
 
     out.sort();
-    println!("✅ 扫描完成: 总共 {} 个有效目录\n", total_valid_dirs);
+    println!(
+        "✅ Scanning completed: {} valid directories total\n",
+        total_valid_dirs
+    );
 
     Ok(out)
 }
 
-/// 批量并发处理：使用两阶段翻译（C2Rust + AI优化 + 编译验证）
+/// Batch concurrent processing: using two-stage translation (C2Rust + AI optimization + compilation verification)
 pub async fn process_batch_paths(cfg: MainProcessorConfig, paths: Vec<PathBuf>) -> Result<()> {
     let concurrent = if cfg.concurrent_limit == 0 {
         1
@@ -172,16 +178,16 @@ pub async fn process_batch_paths(cfg: MainProcessorConfig, paths: Vec<PathBuf>) 
     };
     let total_tasks = paths.len();
 
-    println!("🚀 开始批量两阶段翻译");
-    println!("   任务总数: {}", total_tasks);
-    println!("   并发度: {}", concurrent);
-    println!("   流程: C2Rust 自动翻译 → AI 代码优化 → 编译验证\n");
+    println!("🚀 Starting batch two-stage translation");
+    println!("   Total tasks: {}", total_tasks);
+    println!("   Concurrency: {}", concurrent);
+    println!("   Process: C2Rust automatic translation → AI code optimization → compilation verification\n");
 
     let m = MultiProgress::new();
     let overall = m.add(ProgressBar::new(total_tasks as u64));
     overall.set_style(progress_style_overall());
-    overall.set_prefix("总进度");
-    overall.set_message("处理中...");
+    overall.set_prefix("Total Progress");
+    overall.set_message("Processing...");
 
     let sem = Arc::new(Semaphore::new(concurrent));
     let mut handles = Vec::with_capacity(total_tasks);
@@ -197,7 +203,7 @@ pub async fn process_batch_paths(cfg: MainProcessorConfig, paths: Vec<PathBuf>) 
             .unwrap_or_default()
             .to_string_lossy()
             .to_string();
-        pb.set_message(format!("{} - 等待开始", file_name));
+        pb.set_message(format!("{} - Waiting to start", file_name));
 
         let permit = sem.clone();
         let pb_clone = pb.clone();
@@ -210,7 +216,7 @@ pub async fn process_batch_paths(cfg: MainProcessorConfig, paths: Vec<PathBuf>) 
                 let _permit = permit
                     .acquire_owned()
                     .await
-                    .map_err(|e| anyhow!("获取信号量失败: {}", e))?;
+                    .map_err(|e| anyhow!("Failed to acquire semaphore: {}", e))?;
 
                 let mut attempt = 0;
                 loop {
@@ -221,7 +227,7 @@ pub async fn process_batch_paths(cfg: MainProcessorConfig, paths: Vec<PathBuf>) 
                     let file_name_clone = file_name.clone();
                     let callback: StageCallback = Arc::new(move |stage_msg: &str| {
                         let message = format!(
-                            "{} - {} (尝试 {}/{})",
+                            "{} - {} (attempt {}/{})",
                             file_name_clone, stage_msg, attempt, max_retries
                         );
                         pb_callback.set_message(message.clone());
@@ -229,7 +235,7 @@ pub async fn process_batch_paths(cfg: MainProcessorConfig, paths: Vec<PathBuf>) 
                     });
 
                     pb_clone.set_message(format!(
-                        "{} - 开始处理 (尝试 {}/{})",
+                        "{} - Starting processing (attempt {}/{})",
                         file_name, attempt, max_retries
                     ));
                     pb_clone.enable_steady_tick(Duration::from_millis(100));
@@ -245,13 +251,13 @@ pub async fn process_batch_paths(cfg: MainProcessorConfig, paths: Vec<PathBuf>) 
                         Err(e) => {
                             if attempt < max_retries {
                                 pb_clone.set_message(format!(
-                                    "{} - 重试中 ({}/{})",
+                                    "{} - Retrying ({}/{})",
                                     file_name, attempt, max_retries
                                 ));
                                 tokio::time::sleep(Duration::from_secs(1)).await;
                                 continue;
                             } else {
-                                error!("任务失败: {} - {}", file_name, e);
+                                error!("Task failed: {} - {}", file_name, e);
                                 pb_clone.set_style(progress_style_failed());
                                 pb_clone.finish_with_message(format!("❌ {}", file_name));
                                 overall_clone.inc(1);
@@ -265,7 +271,7 @@ pub async fn process_batch_paths(cfg: MainProcessorConfig, paths: Vec<PathBuf>) 
         handles.push(handle);
     }
 
-    // 等待所有任务完成
+    // Wait for all tasks to complete
     let mut successes = 0;
     let mut failures = 0;
 
@@ -277,71 +283,74 @@ pub async fn process_batch_paths(cfg: MainProcessorConfig, paths: Vec<PathBuf>) 
         }
     }
 
-    // 完成总体进度
+    // Complete overall progress
     if failures == 0 {
         overall.set_style(progress_style_completed());
-        overall.finish_with_message(format!("🎉 全部完成! 成功 {} 个", successes));
+        overall.finish_with_message(format!("🎉 All completed! {} successful", successes));
         println!(
-            "\n✅ 批量处理完成: 成功 {} 个，失败 {} 个",
+            "\n✅ Batch processing completed: {} successful, {} failed",
             successes, failures
         );
         Ok(())
     } else {
         overall.set_style(progress_style_failed());
         overall.finish_with_message(format!(
-            "⚠️ 完成: 成功 {} 个，失败 {} 个",
+            "⚠️ Completed: {} successful, {} failed",
             successes, failures
         ));
         println!(
-            "\n⚠️ 批量处理完成: 成功 {} 个，失败 {} 个",
+            "\n⚠️ Batch processing completed: {} successful, {} failed",
             successes, failures
         );
-        Err(anyhow!("批量处理完成，但有 {} 个任务失败", failures))
+        Err(anyhow!(
+            "Batch processing completed, but {} tasks failed",
+            failures
+        ))
     }
 }
 
-/// 读取给定根目录中的 relation_graph.json（或用户指定的绝对路径），
-/// 将文件级依赖提升为“目录级依赖”，并按“叶到根”的顺序调度转换任务。
-/// 同时限制并发数，但允许小于上限以避免依赖缺失导致的无效编译。
+/// Read relation_graph.json from given root directory (or user-specified absolute path),
+/// elevate file-level dependencies to "directory-level dependencies", and schedule conversion tasks in "leaf-to-root" order.
+/// Also limit concurrency, but allow below the upper limit to avoid invalid compilation due to missing dependencies.
 pub async fn process_with_dependency_graph(
     cfg: MainProcessorConfig,
     relation_graph_path: &Path,
     cache_root_hint: Option<&Path>,
 ) -> Result<()> {
-    // 1) 读取关系图
+    // 1) Read relation graph
     let text = tokio::fs::read_to_string(relation_graph_path)
         .await
         .with_context(|| {
             format!(
-                "读取 relation_graph.json 失败: {}",
+                "Failed to read relation_graph.json: {}",
                 relation_graph_path.display()
             )
         })?;
     let rel: relation_analy::RelationFile =
-        serde_json::from_str(&text).with_context(|| "解析 relation_graph.json 失败")?;
+        serde_json::from_str(&text).with_context(|| "Failed to parse relation_graph.json")?;
 
-    // workspace 根（relation_graph.json 内记录的 workspace）
+    // workspace root (workspace recorded in relation_graph.json)
     let workspace = rel.workspace.clone();
     let cache_root = cache_root_hint
         .map(|p| p.to_path_buf())
         .unwrap_or_else(|| workspace.clone());
 
-    // 我们仅对 src_cache/individual_files 和 paired_files 下的每个子目录作为一个“项目节点”
-    // 将文件依赖映射为目录依赖：如果 A.c 依赖 B.h/B.c，则 A 所在目录 依赖 B 所在目录。
-    let mut dir_of: HashMap<PathBuf, PathBuf> = HashMap::new(); // 文件(相对) -> 目录(绝对)
+    // We only treat each subdirectory under src_cache/individual_files and paired_files as a "project node"
+    // Map file dependencies to directory dependencies: if A.c depends on B.h/B.c, then A's directory depends on B's directory.
+    let mut dir_of: HashMap<PathBuf, PathBuf> = HashMap::new(); // file(relative) -> directory(absolute)
     let mut projects: HashSet<PathBuf> = HashSet::new();
-    // 两个根
+    // Two roots
     let indiv = cache_root.join("individual_files");
     let paired = cache_root.join("paired_files");
 
     for (_key, node) in &rel.files {
-        // 把 relation 中的相对路径映射到 cache_root 下的实际路径
+        // Map relative paths in relation to actual paths under cache_root
         let abs = if node.path.is_absolute() {
             node.path.clone()
         } else {
             cache_root.join(&node.path)
         };
-        // 我们只关心 individual_files/*/* 或 paired_files/*/* 的直接项目子目录
+        // We only care about direct project subdirectories of individual_files/*/* or paired_files/*/*
         // 即 project_dir = indiv/<name> 或 paired/<name>
         let mut project_dir_opt: Option<PathBuf> = None;
         if abs.starts_with(&indiv) {
@@ -363,16 +372,16 @@ pub async fn process_with_dependency_graph(
         }
     }
 
-    // 目录级依赖图：dir -> 其依赖的 dirs
+    // Directory-level dependency graph: dir -> its dependent dirs
     let mut deps: HashMap<PathBuf, HashSet<PathBuf>> = HashMap::new();
-    let mut rdeps: HashMap<PathBuf, HashSet<PathBuf>> = HashMap::new(); // 反向：被哪些目录依赖
+    let mut rdeps: HashMap<PathBuf, HashSet<PathBuf>> = HashMap::new(); // Reverse: which directories depend on it
     for (_key, node) in &rel.files {
-        // 目标目录（拥有该文件的目录）
+        // Target directory (directory that owns this file)
         let Some(dir_a) = dir_of.get(&node.path).cloned() else {
             continue;
         };
 
-        // 本地 include（只在本工程内）
+        // Local includes (only within this project)
         for inc in &node.local_includes {
             if let Some(dir_b) = dir_of.get(inc).cloned() {
                 if dir_a != dir_b {
@@ -388,20 +397,20 @@ pub async fn process_with_dependency_graph(
         }
     }
 
-    // 确保所有项目节点在图中存在条目
+    // Ensure all project nodes have entries in the graph
     for p in &projects {
         deps.entry(p.clone()).or_default();
         rdeps.entry(p.clone()).or_default();
     }
 
-    // 计算入度（依赖计数）：一个目录必须等其所有依赖目录完成后才能处理
+    // Calculate in-degree (dependency count): a directory must wait for all its dependent directories to complete before processing
     let mut indeg: HashMap<PathBuf, usize> = HashMap::new();
     for p in &projects {
         let d = deps.get(p).map(|s| s.len()).unwrap_or(0);
         indeg.insert(p.clone(), d);
     }
 
-    // 就绪队列：所有 indeg==0 的节点（叶子层），这就是“末梢”
+    // Ready queue: all nodes with indeg==0 (leaf layer), these are the "endpoints"
     let mut ready: VecDeque<PathBuf> = indeg
         .iter()
         .filter(|(_, &v)| v == 0)
@@ -409,9 +418,9 @@ pub async fn process_with_dependency_graph(
         .collect();
 
     let total_tasks = projects.len();
-    println!("🚀 依赖感知批量翻译");
-    println!("   发现项目数: {}", total_tasks);
-    println!("   调度策略: 叶到根、依赖就绪优先\n");
+    println!("🚀 Dependency-aware batch translation");
+    println!("   Projects discovered: {}", total_tasks);
+    println!("   Scheduling strategy: leaf-to-root, dependency-ready priority\n");
 
     let concurrent = if cfg.concurrent_limit == 0 {
         1
@@ -421,17 +430,17 @@ pub async fn process_with_dependency_graph(
     let m = MultiProgress::new();
     let overall = m.add(ProgressBar::new(total_tasks as u64));
     overall.set_style(progress_style_overall());
-    overall.set_prefix("总进度");
-    overall.set_message("等待就绪...");
+    overall.set_prefix("Total Progress");
+    overall.set_message("Waiting for ready...");
 
-    // 我们用一个信号量限制并发，但不会强行填满，如果没有就绪任务则等待
+    // We use a semaphore to limit concurrency, but won't force fill it, wait if no ready tasks
     let sem = Arc::new(Semaphore::new(concurrent));
     let mut join_set: tokio::task::JoinSet<(PathBuf, Result<()>)> = tokio::task::JoinSet::new();
     let mut running_dirs: HashSet<PathBuf> = HashSet::new();
     let mut completed_ok: HashSet<PathBuf> = HashSet::new();
     let mut completed_err: HashSet<PathBuf> = HashSet::new();
 
-    // 小工具：为目录创建一个任务（避免闭包捕获可变借用，改为函数传参）
+    // Utility: create a task for directory (avoid closure capturing mutable borrow, use function parameters)
     fn spawn_task_in(
         join_set: &mut tokio::task::JoinSet<(PathBuf, Result<()>)>,
         running_dirs: &mut HashSet<PathBuf>,
@@ -448,7 +457,7 @@ pub async fn process_with_dependency_graph(
             .unwrap_or("")
             .to_string();
         pb.set_prefix(format!("{}", name));
-        pb.set_message("排队中...");
+        pb.set_message("Queuing...");
 
         let dir_clone = dir.clone();
         let max_retries = cfg.max_retry_attempts.max(1);
@@ -461,7 +470,7 @@ pub async fn process_with_dependency_graph(
                 let name2 = name.clone();
                 let callback: StageCallback = Arc::new(move |stage| {
                     pb_clone.set_message(format!(
-                        "{} - {} (尝试 {}/{})",
+                        "{} - {} (attempt {}/{})",
                         name2, stage, attempt, max_retries
                     ));
                 });
@@ -487,24 +496,24 @@ pub async fn process_with_dependency_graph(
         running_dirs.insert(dir);
     }
 
-    // 主循环：有就绪则提交任务；否则等待任一任务完成并推进图
+    // Main loop: submit tasks if ready; otherwise wait for any task to complete and advance the graph
     while completed_ok.len() + completed_err.len() < total_tasks {
-        // 尽量提交就绪任务，直到并发上限或没有就绪
+        // Submit ready tasks as much as possible, until concurrency limit or no ready tasks
         while running_dirs.len() < concurrent && !ready.is_empty() {
             if let Some(dir) = ready.pop_front() {
-                // 已失败的依赖会阻塞中心节点，但我们仍允许其它分支继续；
-                // 这里继续提交叶节点。
+                // Failed dependencies will block central nodes, but we still allow other branches to continue;
+                // Here we continue submitting leaf nodes.
                 spawn_task_in(&mut join_set, &mut running_dirs, dir, &cfg, &m, sem.clone());
             }
         }
 
         if join_set.is_empty() {
-            // 没有就绪任务也没有运行中的任务，说明图中存在循环或所有剩余节点被失败的依赖阻塞。
-            // 为避免死等，直接中断。
+            // No ready tasks and no running tasks, indicating a cycle in the graph or all remaining nodes blocked by failed dependencies.
+            // To avoid deadlock, break directly.
             break;
         }
 
-        // 等待任一个任务完成
+        // Wait for any task to complete
         let Some(res_join) = join_set.join_next().await else {
             break;
         };
@@ -520,7 +529,7 @@ pub async fn process_with_dependency_graph(
         }
         overall.inc(1);
 
-        // 将其作为依赖的节点入度-1（只有成功完成才解锁依赖，失败则不解锁）
+        // Decrease in-degree of nodes that depend on it by 1 (only successful completion unlocks dependencies, failure does not)
         if completed_ok.contains(&dir_done) {
             if let Some(users) = rdeps.get(&dir_done) {
                 for u in users {
@@ -539,17 +548,20 @@ pub async fn process_with_dependency_graph(
 
     if completed_err.is_empty() {
         overall.set_style(progress_style_completed());
-        overall.finish_with_message(format!("🎉 全部完成! 成功 {} 个", completed_ok.len()));
+        overall.finish_with_message(format!(
+            "🎉 All completed! {} successful",
+            completed_ok.len()
+        ));
         Ok(())
     } else {
         overall.set_style(progress_style_failed());
         overall.finish_with_message(format!(
-            "⚠️ 完成: 成功 {} 个，失败 {} 个",
+            "⚠️ Completed: {} successful, {} failed",
             completed_ok.len(),
             completed_err.len()
         ));
         Err(anyhow!(
-            "依赖感知处理完成，但有 {} 个任务失败",
+            "Dependency-aware processing completed, but {} tasks failed",
             completed_err.len()
         ))
     }

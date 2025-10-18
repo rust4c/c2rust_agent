@@ -154,7 +154,11 @@ impl<'a> PromptBuilder<'a> {
             .prompt_loader
             .load_file_conversion_prompt()
             .await
-            .unwrap_or_else(|_| String::from("# 转换指导规则\n请按照标准C到Rust转换规则进行。"));
+            .unwrap_or_else(|_| {
+                String::from(
+                    "# Conversion Guide Rules\nPlease follow standard C to Rust conversion rules.",
+                )
+            });
 
         let display_name = file_path
             .file_name()
@@ -232,7 +236,11 @@ impl<'a> PromptBuilder<'a> {
             .prompt_loader
             .load_function_conversion_prompt()
             .await
-            .unwrap_or_else(|_| String::from("# 函数转换指导\n请按照标准转换规则进行。"));
+            .unwrap_or_else(|_| {
+                String::from(
+                    "# Function Conversion Guide\nPlease follow standard conversion rules.",
+                )
+            });
 
         let full_prompt =
             formatter::build_function_prompt(function_name, &sections, &conversion_guide);

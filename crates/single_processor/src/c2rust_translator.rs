@@ -4,24 +4,24 @@ use std::fs;
 use std::path::{Path, PathBuf};
 use std::process::Command;
 
-/// C2Rust 第一阶段翻译
+/// C2Rust first stage translation
 ///
-/// 使用 C2Rust 工具自动翻译 C 代码到 Rust
+/// Use C2Rust tool to automatically translate C code to Rust
 ///
-/// # 参数
-/// * `dir_path` - 包含 C 源文件的目录
-/// * `output_dir` - 输出目录，生成的 Rust 代码将放在这里
+/// # Arguments
+/// * `dir_path` - Directory containing C source files
+/// * `output_dir` - Output directory where generated Rust code will be placed
 ///
-/// # 返回
-/// 生成的 Rust 主文件路径
+/// # Returns
+/// Path to the generated main Rust file
 pub async fn c2rust_translate(dir_path: &Path, output_dir: &Path) -> Result<PathBuf> {
-    info!("开始 C2Rust 第一阶段翻译: {:?}", dir_path);
+    info!("Starting C2Rust first stage translation: {:?}", dir_path);
     debug!("dir_path: {:?}, output_dir: {:?}", dir_path, output_dir);
 
-    // 确保输出目录存在
+    // Ensure output directory exists
     fs::create_dir_all(output_dir)?;
 
-    // 收集目录下的 .c 与 .h 源文件（非递归）
+    // Collect .c and .h source files in directory (non-recursive)
     let mut sources: Vec<PathBuf> = Vec::new();
     for entry in fs::read_dir(dir_path)? {
         let entry = entry?;
@@ -38,15 +38,15 @@ pub async fn c2rust_translate(dir_path: &Path, output_dir: &Path) -> Result<Path
 
     if sources.is_empty() {
         return Err(anyhow::anyhow!(
-            "目录中未找到可转换的 .c/.h 源文件: {}",
+            "No convertible .c/.h source files found in directory: {}",
             dir_path.display()
         ));
     }
 
-    info!("将转换 {} 个源文件", sources.len());
+    info!("Will convert {} source files", sources.len());
 
-    // 运行 C2Rust 转换（简易模式：直接传入源文件列表）
-    info!("执行 C2Rust 转换命令(简易模式)...");
+    // Run C2Rust conversion (simple mode: directly pass source file list)
+    info!("Executing C2Rust conversion command (simple mode)...");
     let mut cmd = Command::new("c2rust");
     cmd.arg("transpile")
         .arg("*.c")
@@ -60,38 +60,40 @@ pub async fn c2rust_translate(dir_path: &Path, output_dir: &Path) -> Result<Path
     match output {
         Ok(result) => {
             if result.status.success() {
-                info!("C2Rust 转换成功");
+                info!("C2Rust conversion successful");
                 debug!("C2Rust stdout: {}", String::from_utf8_lossy(&result.stdout));
 
-                // 查找生成的 Rust 文件
+                // Find generated Rust files
                 let rust_main_path = output_dir.join("src").join("main.rs");
                 if rust_main_path.exists() {
                     Ok(rust_main_path)
                 } else {
-                    // 尝试查找其他可能的 Rust 文件
+                    // Try to find other possible Rust files
                     let src_dir = output_dir.join("src");
                     if src_dir.exists() {
                         for entry in fs::read_dir(&src_dir)? {
                             let entry = entry?;
                             let path = entry.path();
                             if path.extension().map_or(false, |ext| ext == "rs") {
-                                info!("找到生成的 Rust 文件: {:?}", path);
+                                info!("Found generated Rust file: {:?}", path);
                                 return Ok(path);
                             }
                         }
                     }
 
-                    Err(anyhow::anyhow!("C2Rust 转换完成，但未找到生成的 Rust 文件"))
+                    Err(anyhow::anyhow!(
+                        "C2Rust conversion completed, but no generated Rust files found"
+                    ))
                 }
             } else {
                 let stderr = String::from_utf8_lossy(&result.stderr);
-                error!("C2Rust 转换失败: {}", stderr);
-                Err(anyhow::anyhow!("C2Rust 转换失败: {}", stderr))
+                error!("C2Rust conversion failed: {}", stderr);
+                Err(anyhow::anyhow!("C2Rust conversion failed: {}", stderr))
             }
         }
         Err(e) => {
-            error!("执行 C2Rust 命令失败: {}", e);
-            Err(anyhow::anyhow!("执行 C2Rust 命令失败: {}", e))
+            error!("Failed to execute C2Rust command: {}", e);
+            Err(anyhow::anyhow!("Failed to execute C2Rust command: {}", e))
         }
     }
 }
@@ -102,7 +104,7 @@ mod tests {
 
     #[test]
     fn test_c2rust_translate_checks_sources() {
-        // 测试空目录情况
+        // Test empty directory case
         use tempfile::tempdir;
         let temp_dir = tempdir().unwrap();
         let output_dir = temp_dir.path().join("output");
@@ -111,6 +113,6 @@ mod tests {
         let result = rt.block_on(c2rust_translate(temp_dir.path(), &output_dir));
 
         assert!(result.is_err());
-        assert!(result.unwrap_err().to_string().contains("未找到可转换的"));
+        assert!(result.unwrap_err().to_string().contains("No convertible"));
     }
 }

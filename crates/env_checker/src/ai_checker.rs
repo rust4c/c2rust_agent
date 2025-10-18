@@ -4,18 +4,18 @@ use llm_requester::pkg_config::get_config;
 use llm_requester::{deepseek_provider, ollama_provider, openai_provider, xai_provider};
 use log::{info, warn};
 
-/// AI 服务连接状态枚举
+/// AI service connection status enum
 #[derive(Debug, Clone, PartialEq)]
 pub enum AIConnectionStatus {
-    /// 所有配置的 AI 服务都连接正常
+    /// All configured AI services are connected normally
     AllConnected,
-    /// 只有部分 AI 服务连接正常
+    /// Only some AI services are connected normally
     PartiallyConnected,
-    /// 所有 AI 服务都连接失败
+    /// All AI services failed to connect
     AllDisconnected,
-    /// 连接状态未知
+    /// Connection status unknown
     Unknown,
-    /// 特定服务的状态
+    /// Status of specific service
     ServiceStatus {
         deepseek: bool,
         ollama: bool,
@@ -24,66 +24,78 @@ pub enum AIConnectionStatus {
     },
 }
 
-/// 初始化 AI 服务并检查连接状态
+/// Initialize AI services and check connection status
 pub async fn ai_service_init() -> Result<AIConnectionStatus> {
-    info!("开始初始化 AI 服务连接...");
-    // 交互信息：在终端提示用户当前正在进行的操作
-    println!("正在检查 AI 服务连接...");
+    info!("Starting AI service connection initialization...");
+    // Interactive info: Prompt user in terminal about current operation
+    println!("Checking AI service connections...");
 
-    // 获取配置
+    // Get configuration
     let config = match get_config() {
         Ok(config) => config,
         Err(e) => {
-            warn!("获取 AI 配置失败: {}", e);
-            // 交互信息
-            println!("获取 AI 配置失败: {}", e);
+            warn!("Failed to get AI configuration: {}", e);
+            // Interactive info
+            println!("Failed to get AI configuration: {}", e);
             return Ok(AIConnectionStatus::Unknown);
         }
     };
 
-    // 检查当前配置的 provider 的连接状态
+    // Check connection status of currently configured provider
     let provider_status = match check_provider_connection(&config.provider).await {
         Ok(status) => status,
         Err(e) => {
-            warn!("检查 {} 连接失败: {}", config.provider, e);
-            // 交互信息
-            println!("检查 {} 连接失败: {}", config.provider, e);
+            warn!("Failed to check {} connection: {}", config.provider, e);
+            // Interactive info
+            println!("Failed to check {} connection: {}", config.provider, e);
             false
         }
     };
 
-    // 根据配置的 provider 状态确定整体状态
+    // Determine overall status based on configured provider status
     let connection_status = if provider_status {
         AIConnectionStatus::AllConnected
     } else {
         AIConnectionStatus::AllDisconnected
     };
 
-    // 记录连接状态
+    // Log connection status
     match connection_status {
         AIConnectionStatus::AllConnected => {
-            info!("AI 服务连接正常: {} 已连接", config.provider);
-            // 交互信息
-            println!("AI 服务连接正常: {} 已连接", config.provider);
+            info!(
+                "AI service connection normal: {} connected",
+                config.provider
+            );
+            // Interactive info
+            println!(
+                "AI service connection normal: {} connected",
+                config.provider
+            );
         }
         AIConnectionStatus::AllDisconnected => {
-            warn!("AI 服务连接失败: {} 未连接", config.provider);
-            // 交互信息
-            println!("AI 服务连接失败: {} 未连接", config.provider);
+            warn!(
+                "AI service connection failed: {} not connected",
+                config.provider
+            );
+            // Interactive info
+            println!(
+                "AI service connection failed: {} not connected",
+                config.provider
+            );
         }
         _ => {
-            info!("AI 服务连接状态: {:?}", connection_status);
+            info!("AI service connection status: {:?}", connection_status);
         }
     }
 
     Ok(connection_status)
 }
 
-/// 检查所有 AI 服务的连接状态
+/// Check connection status of all AI services
 pub async fn check_all_ai_services() -> Result<AIConnectionStatus> {
-    info!("检查所有 AI 服务的连接状态...");
+    info!("Checking connection status of all AI services...");
 
-    // 并行检查所有服务
+    // Check all services in parallel
     let (deepseek_result, ollama_result, openai_result, xai_result) = tokio::join!(
         check_deepseek_connection(),
         check_ollama_connection(),
@@ -96,9 +108,9 @@ pub async fn check_all_ai_services() -> Result<AIConnectionStatus> {
     let openai_connected = openai_result.is_ok();
     let xai_connected = xai_result.is_ok();
 
-    // 记录状态
+    // Log status
     info!(
-        "AI 服务连接状态: DeepSeek({}), Ollama({}), OpenAI({}), XAI({})",
+        "AI service connection status: DeepSeek({}), Ollama({}), OpenAI({}), XAI({})",
         deepseek_connected, ollama_connected, openai_connected, xai_connected
     );
 
@@ -110,9 +122,9 @@ pub async fn check_all_ai_services() -> Result<AIConnectionStatus> {
     })
 }
 
-/// 检查特定 provider 的连接状态
+/// Check connection status of specific provider
 async fn check_provider_connection(provider: &str) -> Result<bool> {
-    info!("检查 {} 服务的连接状态...", provider);
+    info!("Checking connection status of {} service...", provider);
 
     let test_messages = vec!["Hello".to_string()];
 
@@ -134,13 +146,13 @@ async fn check_provider_connection(provider: &str) -> Result<bool> {
             result.map(|_| true).map_err(|e| e.into())
         }
         _ => {
-            warn!("未知的 AI 服务提供商: {}", provider);
+            warn!("Unknown AI service provider: {}", provider);
             Ok(false)
         }
     }
 }
 
-/// 检查 DeepSeek 服务连接状态
+/// Check DeepSeek service connection status
 async fn check_deepseek_connection() -> Result<()> {
     let test_messages = vec!["Hello".to_string()];
     deepseek_provider::DeepSeekProvider::get_llm_request(test_messages)
@@ -148,7 +160,7 @@ async fn check_deepseek_connection() -> Result<()> {
         .map(|_| ())
 }
 
-/// 检查 Ollama 服务连接状态
+/// Check Ollama service connection status
 async fn check_ollama_connection() -> Result<()> {
     let test_messages = vec!["Hello".to_string()];
     ollama_provider::OllamaProvider::get_llm_request(test_messages)
@@ -156,7 +168,7 @@ async fn check_ollama_connection() -> Result<()> {
         .map(|_| ())
 }
 
-/// 检查 OpenAI 服务连接状态
+/// Check OpenAI service connection status
 async fn check_openai_connection() -> Result<()> {
     let test_messages = vec!["Hello".to_string()];
     openai_provider::OpenAIProvider::get_llm_request(test_messages)
@@ -164,7 +176,7 @@ async fn check_openai_connection() -> Result<()> {
         .map(|_| ())
 }
 
-/// 检查 XAI 服务连接状态
+/// Check XAI service connection status
 async fn check_xai_connection() -> Result<()> {
     let test_messages = vec!["Hello".to_string()];
     xai_provider::XAIProvider::get_llm_request(test_messages)
@@ -189,31 +201,31 @@ pub async fn get_detailed_ai_status() -> Result<String> {
     );
 
     let status_info = format!(
-        "当前配置的 AI 服务: {}\n\
-         DeepSeek 状态: {}\n\
-         Ollama 状态: {}\n\
-         OpenAI 状态: {}\n\
-         XAI 状态: {}",
+        "Currently configured AI service: {}\n\
+         DeepSeek status: {}\n\
+         Ollama status: {}\n\
+         OpenAI status: {}\n\
+         XAI status: {}",
         config.provider,
         if deepseek_result.is_ok() {
-            "连接正常"
+            "Connected"
         } else {
-            "连接失败"
+            "Connection failed"
         },
         if ollama_result.is_ok() {
-            "连接正常"
+            "Connected"
         } else {
-            "连接失败"
+            "Connection failed"
         },
         if openai_result.is_ok() {
-            "连接正常"
+            "Connected"
         } else {
-            "连接失败"
+            "Connection failed"
         },
         if xai_result.is_ok() {
-            "连接正常"
+            "Connected"
         } else {
-            "连接失败"
+            "Connection failed"
         }
     );
 

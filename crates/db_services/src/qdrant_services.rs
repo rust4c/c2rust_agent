@@ -15,9 +15,9 @@ use crate::pkg_config::QdrantConfig;
 
 const DEFAULT_BATCH_SIZE: usize = 100;
 const DEFAULT_TIMEOUT_SECS: u64 = 60;
-const DEFAULT_PORT: u16 = 6334; // 默认使用 6334 端口
+const DEFAULT_PORT: u16 = 6334; // Default use port 6334
 
-/// Qdrant 向量数据库服务器
+/// Qdrant vector database server
 pub struct QdrantServer {
     client: Qdrant,
     collection_name: String,
@@ -28,20 +28,20 @@ pub struct QdrantServer {
 
 #[allow(dead_code)]
 impl QdrantServer {
-    /// 创建新的 Qdrant 服务器实例
+    /// Create new Qdrant server instance
     pub async fn new(qdrant_config: QdrantConfig) -> Result<Self> {
-        // 确定端口（优先使用传入参数，否则使用默认）
+        // Determine port (prefer passed parameter, otherwise use default)
         let port = qdrant_config.port.unwrap_or(DEFAULT_PORT);
         let host = qdrant_config.host;
         let address = format!("http://{}:{}", host, port);
 
         let timeout = Duration::from_secs(DEFAULT_TIMEOUT_SECS);
 
-        // 使用新版 Qdrant 客户端
+        // Use new version Qdrant client
         let client = Qdrant::from_url(&address)
             .timeout(timeout)
             .build()
-            .context("创建 Qdrant 客户端失败")?;
+            .context("Failed to create Qdrant client")?;
 
         let mut instance = Self {
             client,
@@ -55,16 +55,16 @@ impl QdrantServer {
 
         instance.ensure_collection().await?;
         info!(
-            "Qdrant 客户端初始化成功: {} (端口: {}, 超时: {:?}, 向量维度: {})",
+            "Qdrant client initialization successful: {} (port: {}, timeout: {:?}, vector dimension: {})",
             host, port, timeout, vector_size
         );
 
         Ok(instance)
     }
 
-    /// 确保集合存在并正确配置
+    /// Ensure collection exists and is properly configured
     async fn ensure_collection(&mut self) -> Result<()> {
-        // 检查集合是否存在
+        // Check if collection exists
         let collections = self.client.list_collections().await?;
         let exists = collections
             .collections
@@ -72,7 +72,7 @@ impl QdrantServer {
             .any(|c| c.name == self.collection_name);
 
         if exists {
-            debug!("使用现有集合: {}", self.collection_name);
+            debug!("Using existing collection: {}", self.collection_name);
         } else {
             self.create_collection().await?;
         }
@@ -80,7 +80,7 @@ impl QdrantServer {
         Ok(())
     }
 
-    /// 创建新集合
+    /// Create new collection
     async fn create_collection(&self) -> Result<()> {
         let _response = self
             .client
@@ -89,28 +89,28 @@ impl QdrantServer {
                     .vectors_config(VectorParamsBuilder::new(self.vector_size, Distance::Cosine)),
             )
             .await
-            .context("创建集合失败")?;
+            .context("Failed to create collection")?;
 
         info!(
-            "创建 Qdrant 集合: {} (维度: {})",
+            "Created Qdrant collection: {} (dimension: {})",
             self.collection_name, self.vector_size
         );
         Ok(())
     }
 
-    /// 重新创建集合
+    /// Recreate collection
     async fn recreate_collection(&mut self) -> Result<()> {
         self.client
             .delete_collection(&self.collection_name)
             .await
-            .context("删除集合失败")?;
+            .context("Failed to delete collection")?;
 
         self.create_collection().await?;
-        info!("重新创建集合: {}", self.collection_name);
+        info!("Recreated collection: {}", self.collection_name);
         Ok(())
     }
 
-    /// 插入代码向量
+    /// Insert code vector
     pub async fn insert_code_vector(
         &self,
         code: &str,
@@ -154,13 +154,13 @@ impl QdrantServer {
             .client
             .upsert_points(UpsertPointsBuilder::new(&self.collection_name, vec![point]))
             .await
-            .context("插入点失败")?;
+            .context("Failed to insert point")?;
 
-        debug!("插入代码向量: {}, ID: {}", function_name, point_id);
+        debug!("Inserted code vector: {}, ID: {}", function_name, point_id);
         Ok(point_id)
     }
 
-    /// 搜索相似代码
+    /// Search similar code
     pub async fn search_similar_code(
         &self,
         query_vector: Vec<f32>,
@@ -192,7 +192,7 @@ impl QdrantServer {
             .client
             .search_points(search_builder)
             .await
-            .context("搜索点失败")?
+            .context("Failed to search points")?
             .result;
 
         let results: Vec<HashMap<String, JsonValue>> = search_result
@@ -217,11 +217,11 @@ impl QdrantServer {
             })
             .collect();
 
-        debug!("搜索到 {} 个相似代码", results.len());
+        debug!("Found {} similar code entries", results.len());
         Ok(results)
     }
 
-    /// 批量插入向量
+    /// Batch insert vectors
     pub async fn batch_insert_vectors(
         &self,
         vectors_data: Vec<HashMap<String, JsonValue>>,
@@ -232,7 +232,7 @@ impl QdrantServer {
         }
 
         info!(
-            "开始批量插入 {} 个向量，批次大小: {}",
+            "Starting batch insert of {} vectors, batch size: {}",
             total_vectors, self.batch_size
         );
 
@@ -249,24 +249,24 @@ impl QdrantServer {
                 Ok(ids) => {
                     all_point_ids.extend(ids);
                     processed = batch_end;
-                    info!("批次 {}/{} 插入成功", batch_num, total_batches);
+                    info!("Batch {}/{} insertion successful", batch_num, total_batches);
                 }
                 Err(e) => {
-                    error!("批次插入失败: {}", e);
+                    error!("Batch insertion failed: {}", e);
                     return Err(e);
                 }
             }
         }
 
         info!(
-            "批量插入完成，成功插入 {}/{} 个向量",
+            "Batch insertion completed, successfully inserted {}/{} vectors",
             all_point_ids.len(),
             total_vectors
         );
         Ok(all_point_ids)
     }
 
-    /// 插入单一批次（带重试机制）
+    /// Insert single batch (with retry mechanism)
     async fn insert_batch(
         &self,
         batch_data: Vec<HashMap<String, JsonValue>>,
@@ -283,7 +283,7 @@ impl QdrantServer {
                     let vector: Vec<f32> = data
                         .get("vector")
                         .and_then(|v| v.as_array())
-                        .context("缺少向量数据")?
+                        .context("Missing vector data")?
                         .iter()
                         .map(|v| v.as_f64().unwrap_or(0.0) as f32)
                         .collect();
@@ -323,14 +323,14 @@ impl QdrantServer {
                     self.client
                         .upsert_points(UpsertPointsBuilder::new(&self.collection_name, points))
                         .await
-                        .context("批量插入点失败")?;
+                        .context("Failed to batch insert points")?;
                     return Ok(ids);
                 }
                 Err(e) if retries < MAX_RETRIES => {
                     retries += 1;
                     let wait_secs = 2u64.pow(retries as u32);
                     warn!(
-                        "批次 {} 解析失败 (尝试 {}/{}): {}，等待 {} 秒后重试",
+                        "Batch {} parsing failed (attempt {}/{}): {}, waiting {} seconds before retry",
                         batch_num, retries, MAX_RETRIES, e, wait_secs
                     );
                     sleep(Duration::from_secs(wait_secs)).await;
@@ -340,29 +340,31 @@ impl QdrantServer {
         }
     }
 
-    /// 根据 ID 获取代码
+    /// Get code by ID
     pub async fn get_code_by_id(
         &self,
         _point_id: &str,
     ) -> Result<Option<HashMap<String, JsonValue>>> {
-        // 注意：这个方法需要根据实际的 Qdrant 客户端 API 来实现
-        // 当前版本可能不直接支持按 ID 获取点
-        warn!("get_code_by_id 方法需要根据实际 API 实现");
+        // Note: This method needs to be implemented based on actual Qdrant client API
+        // Current version may not directly support getting points by ID
+        warn!("get_code_by_id method needs implementation based on actual API");
         Ok(None)
     }
 
-    /// 清空集合
+    /// Clear collection
     pub async fn clear_collection(&self) -> Result<()> {
         self.client
             .delete_collection(&self.collection_name)
             .await
-            .context("删除集合失败")?;
-        self.create_collection().await.context("重新创建集合失败")?;
-        info!("集合已清空并重新创建: {}", self.collection_name);
+            .context("Failed to delete collection")?;
+        self.create_collection()
+            .await
+            .context("Failed to recreate collection")?;
+        info!("Collection cleared and recreated: {}", self.collection_name);
         Ok(())
     }
 
-    /// 健康检查
+    /// Health check
     pub async fn health_check(&self) -> bool {
         self.client
             .health_check()
@@ -371,10 +373,10 @@ impl QdrantServer {
             .unwrap_or(false)
     }
 
-    /// 设置批量大小
+    /// Set batch size
     pub fn set_batch_size(&mut self, size: usize) {
         self.batch_size = size;
-        info!("更新批量大小为: {}", size);
+        info!("Updated batch size to: {}", size);
     }
 }
 
@@ -396,7 +398,7 @@ mod tests {
 
         QdrantServer::new(qdrant_config)
             .await
-            .expect("创建测试客户端失败")
+            .expect("Failed to create test client")
     }
 
     #[tokio::test]
@@ -416,16 +418,16 @@ mod tests {
                 None,
             )
             .await
-            .expect("插入向量失败");
+            .expect("Failed to insert vector");
 
-        // 注意：get_code_by_id 方法目前未实现，所以跳过这个测试
-        // let result = client.get_code_by_id(&id).await.expect("获取点失败");
+        // Note: get_code_by_id method is currently not implemented, so skip this test
+        // let result = client.get_code_by_id(&id).await.expect("Failed to get point");
         // assert!(result.is_some());
 
         let search_results = client
             .search_similar_code(vector, 5, Some("rust"), None, 0.0)
             .await
-            .expect("搜索失败");
+            .expect("Search failed");
         assert_eq!(search_results.len(), 1);
     }
 
@@ -437,10 +439,10 @@ mod tests {
             collection_name: "test_collection".to_string(),
             vector_size: 384,
         };
-        // 测试显式端口配置
+        // Test explicit port configuration
         let client = QdrantServer::new(qdrant_config)
             .await
-            .expect("创建端口测试客户端失败");
+            .expect("Failed to create port test client");
 
         assert!(client.health_check().await);
     }

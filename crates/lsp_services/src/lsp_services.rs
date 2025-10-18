@@ -70,7 +70,7 @@ pub struct ClangdAnalyzer {
 impl ClangdAnalyzer {
     pub fn new(project_root: &str) -> Self {
         info!("Initializing ClangdAnalyzer");
-        // 处理家目录
+        // Handle home directory
         let project_root = if project_root.starts_with("~") {
             let home_dir = dirs::home_dir().unwrap();
             home_dir.join(&project_root[2..])
@@ -681,7 +681,11 @@ impl ClangdAnalyzer {
     }
 
     pub fn print_analysis_results(&self, detailed: bool) {
-        println!("\n{}\n代码分析结果\n{}", "=".repeat(80), "=".repeat(80));
+        println!(
+            "\n{}\nCode Analysis Results\n{}",
+            "=".repeat(80),
+            "=".repeat(80)
+        );
 
         if detailed {
             self.print_detailed_results();
@@ -694,19 +698,19 @@ impl ClangdAnalyzer {
 
     fn print_detailed_results(&self) {
         // Functions
-        println!("\n📋 函数列表 ({} 个):", self.functions.len());
+        println!("\n📋 Function List ({} items):", self.functions.len());
         println!("{}", "-".repeat(60));
 
         for func in &self.functions {
             let file_rel = self.relative_path(&func.file);
             println!("🔧 {}", func.name);
-            println!("   文件: {}:{}", file_rel, func.line);
-            println!("   返回类型: {}", func.return_type);
+            println!("   File: {}:{}", file_rel, func.line);
+            println!("   Return type: {}", func.return_type);
 
             if func.parameters.is_empty() {
-                println!("   参数: 无");
+                println!("   Parameters: None");
             } else {
-                println!("   参数:");
+                println!("   Parameters:");
                 for param in &func.parameters {
                     println!("     - {}: {}", param.name, param.r#type);
                 }
@@ -715,18 +719,18 @@ impl ClangdAnalyzer {
         }
 
         // Classes
-        println!("\n📊 结构体/类列表 ({} 个):", self.classes.len());
+        println!("\n📊 Struct/Class List ({} items):", self.classes.len());
         println!("{}", "-".repeat(60));
 
         for class in &self.classes {
             let file_rel = self.relative_path(&class.file);
             println!("🏗️  {}", class.name);
-            println!("   文件: {}:{}", file_rel, class.line);
+            println!("   File: {}:{}", file_rel, class.line);
 
             if class.members.is_empty() {
-                println!("   成员: 无");
+                println!("   Members: None");
             } else {
-                println!("   成员:");
+                println!("   Members:");
                 for member in &class.members {
                     println!("     - {}: {}", member.name, member.r#type);
                 }
@@ -735,14 +739,17 @@ impl ClangdAnalyzer {
         }
 
         // Variables
-        println!("\n🌐 全局变量列表 ({} 个):", self.variables.len());
+        println!(
+            "\n🌐 Global Variable List ({} items):",
+            self.variables.len()
+        );
         println!("{}", "-".repeat(60));
 
         for var in &self.variables {
             let file_rel = self.relative_path(&var.file);
             println!("📦 {}", var.name);
-            println!("   文件: {}:{}", file_rel, var.line);
-            println!("   类型: {}", var.r#type);
+            println!("   File: {}:{}", file_rel, var.line);
+            println!("   Type: {}", var.r#type);
             println!();
         }
     }
@@ -762,7 +769,7 @@ impl ClangdAnalyzer {
             .collect();
 
         let count = std::cmp::min(20, important_functions.len());
-        println!("\n📋 主要函数列表 (显示 {} 个):", count);
+        println!("\n📋 Main Function List (showing {} items):", count);
         println!("{}", "-".repeat(60));
 
         for func in important_functions.iter().take(count) {
@@ -780,19 +787,19 @@ impl ClangdAnalyzer {
                 params.join(", ")
             );
 
-            println!("   文件: {}:{}", file_rel, func.line);
+            println!("   File: {}:{}", file_rel, func.line);
             println!();
         }
 
         // Classes
         if !self.classes.is_empty() {
-            println!("\n📊 结构体/类列表 ({} 个):", self.classes.len());
+            println!("\n📊 Struct/Class List ({} items):", self.classes.len());
             println!("{}", "-".repeat(60));
 
             for class in &self.classes {
                 let file_rel = self.relative_path(&class.file);
-                println!("🏗️  {} ({} 成员)", class.name, class.members.len());
-                println!("   文件: {}:{}", file_rel, class.line);
+                println!("🏗️  {} ({} members)", class.name, class.members.len());
+                println!("   File: {}:{}", file_rel, class.line);
 
                 if !class.members.is_empty() {
                     for member in class.members.iter().take(3) {
@@ -800,7 +807,7 @@ impl ClangdAnalyzer {
                     }
 
                     if class.members.len() > 3 {
-                        println!("     ... 还有 {} 个成员", class.members.len() - 3);
+                        println!("     ... {} more members", class.members.len() - 3);
                     }
                 }
                 println!();
@@ -809,12 +816,12 @@ impl ClangdAnalyzer {
     }
 
     fn print_statistics(&self) {
-        println!("\n📈 统计信息:");
+        println!("\n📈 Statistics:");
         println!("{}", "-".repeat(30));
-        println!("函数总数: {}", self.functions.len());
-        println!("结构体/类总数: {}", self.classes.len());
-        println!("全局变量总数: {}", self.variables.len());
-        println!("宏定义总数: {}", self.macros.len());
+        println!("Total functions: {}", self.functions.len());
+        println!("Total structs/classes: {}", self.classes.len());
+        println!("Total global variables: {}", self.variables.len());
+        println!("Total macro definitions: {}", self.macros.len());
 
         // File statistics
         let mut file_stats: HashMap<PathBuf, (usize, usize, usize)> = HashMap::new();
@@ -834,11 +841,11 @@ impl ClangdAnalyzer {
             entry.2 += 1;
         }
 
-        println!("\n📁 按文件统计:");
+        println!("\n📁 Statistics by file:");
         for (file, (funcs, classes, vars)) in &file_stats {
             let rel_path = self.relative_path(file);
             println!(
-                "  {}: {}函数, {}结构体, {}变量",
+                "  {}: {} functions, {} structs, {} variables",
                 rel_path, funcs, classes, vars
             );
         }

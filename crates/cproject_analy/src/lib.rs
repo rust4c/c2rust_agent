@@ -25,7 +25,7 @@ pub struct PreProcessor {
 }
 
 impl PreProcessor {
-    /// 创建新的预处理器实例
+    /// Create new preprocessor instance
     pub fn new(config: PreprocessorConfig) -> Self {
         Self {
             config,
@@ -34,7 +34,7 @@ impl PreProcessor {
         }
     }
 
-    /// 使用默认配置创建预处理器
+    /// Create preprocessor with default configuration
     pub fn new_default() -> Self {
         let config = match get_config() {
             Ok(config) => config,
@@ -46,7 +46,7 @@ impl PreProcessor {
         Self::new(config)
     }
 
-    /// 初始化数据库连接
+    /// Initialize database connection
     pub async fn initialize_database(&mut self) -> Result<()> {
         let main_pb = self.multi_progress.add(ProgressBar::new_spinner());
         main_pb.set_style(
@@ -55,60 +55,60 @@ impl PreProcessor {
                 .unwrap(),
         );
         main_pb.enable_steady_tick(Duration::from_millis(100));
-        main_pb.set_message("🔌 正在连接数据库...");
+        main_pb.set_message("🔌 Connecting to database...");
 
-        // 初始化数据库管理器
+        // Initialize database manager
         self.db_manager = Some(
             create_database_manager(None, self.config.qdrant_url.as_deref(), None, Some(384))
                 .await
                 .context("Failed to initialize database manager")?,
         );
 
-        main_pb.finish_with_message("✅ 数据库连接成功!");
-        info!("数据库初始化完成");
+        main_pb.finish_with_message("✅ Database connection successful!");
+        info!("Database initialization completed");
         Ok(())
     }
 
-    /// 执行项目预处理
+    /// Execute project preprocessing
     pub async fn preprocess_project(
         &mut self,
         source_dir: &Path,
         cache_dir: &Path,
     ) -> Result<ProcessingStats> {
         info!(
-            "开始预处理项目: {} -> {}",
+            "Starting project preprocessing: {} -> {}",
             source_dir.display(),
             cache_dir.display()
         );
 
-        // 确保数据库已初始化
+        // Ensure database is initialized
         if self.db_manager.is_none() {
             self.initialize_database().await?;
         }
 
-        // 创建缓存目录
+        // Create cache directory
         if !cache_dir.exists() {
             fs::create_dir_all(cache_dir).context("Failed to create cache directory")?;
         }
 
-        // 步骤1：文件整理和映射生成
+        // Step 1: File organization and mapping generation
         let file_processing_stats = self.process_files(source_dir, cache_dir).await?;
         info!("file_remanager complete");
 
-        // 步骤2：并行执行 LSP 分析和数据库存储
+        // Step 2: Parallel LSP analysis and database storage
         let mapping_path = cache_dir.join("mapping.json");
         if mapping_path.exists() {
             self.parallel_analysis_and_storage(source_dir, cache_dir) //, &mapping_path)
                 .await?;
         } else {
-            warn!("映射文件不存在，跳过 LSP 分析");
+            warn!("Mapping file does not exist, skipping LSP analysis");
         }
         info!("analysis complete");
 
         Ok(file_processing_stats)
     }
 
-    /// 处理文件整理
+    /// Process file organization
     async fn process_files(
         &mut self,
         source_dir: &Path,
@@ -121,7 +121,7 @@ impl PreProcessor {
                 .unwrap(),
         );
         main_pb.enable_steady_tick(Duration::from_millis(100));
-        main_pb.set_message("📁 开始项目文件整理...");
+        main_pb.set_message("📁 Starting project file organization...");
 
         let mut preprocessor = CProjectPreprocessor::new(self.config.preprocess_config.clone());
         debug!(
@@ -133,11 +133,11 @@ impl PreProcessor {
             .preprocess_project(source_dir, cache_dir)
             .context("Failed to preprocess project files")?;
 
-        main_pb.finish_with_message("✅ 文件整理完成!");
+        main_pb.finish_with_message("✅ File organization completed!");
         Ok(stats)
     }
 
-    /// 并行执行 LSP 分析和数据库存储
+    /// Execute LSP analysis and database storage in parallel
     async fn parallel_analysis_and_storage(
         &mut self,
         source_dir: &Path,
@@ -151,11 +151,11 @@ impl PreProcessor {
                 .unwrap(),
         );
         main_pb.enable_steady_tick(Duration::from_millis(100));
-        main_pb.set_message("🔄 开始并行分析和存储...");
+        main_pb.set_message("🔄 Starting parallel analysis and storage...");
 
         let db_manager = Arc::new(self.db_manager.take().unwrap());
 
-        // 创建进度条
+        // Create progress bars
         let lsp_pb = self.multi_progress.add(ProgressBar::new_spinner());
         lsp_pb.set_style(
             ProgressStyle::default_spinner()
@@ -172,11 +172,11 @@ impl PreProcessor {
         );
         db_pb.enable_steady_tick(Duration::from_millis(100));
 
-        // 准备线程数据
+        // Prepare thread data
         let source_dir = source_dir.to_path_buf();
         let cache_dir = cache_dir.to_path_buf();
 
-        // 启动 LSP 分析线程
+        // Start LSP analysis thread
         let lsp_handle = {
             let lsp_pb = lsp_pb.clone();
             let source_dir = source_dir.clone();
@@ -184,12 +184,12 @@ impl PreProcessor {
 
             thread::spawn(move || -> Result<()> {
                 debug!("thread lsp analyze started");
-                lsp_pb.set_message("🔍 正在进行 LSP 分析...");
+                lsp_pb.set_message("🔍 Performing LSP analysis...");
 
                 let mut analyzer = ClangdAnalyzer::new(source_dir.to_str().unwrap());
                 analyzer.analyze_project().context("LSP analysis failed")?;
 
-                // 保存分析结果到缓存目录
+                // Save analysis results to cache directory
                 let analysis_path = cache_dir.join("lsp_analysis.json");
                 let analysis_result = serde_json::json!({
                     "functions": analyzer.functions,
@@ -205,23 +205,23 @@ impl PreProcessor {
                 )
                 .context("Failed to save LSP analysis results")?;
 
-                lsp_pb.finish_with_message("✅ LSP 分析完成!");
+                lsp_pb.finish_with_message("✅ LSP analysis completed!");
                 debug!("LSP analysis results saved to {}", analysis_path.display());
                 Ok(())
             })
         };
 
-        // 等待线程完成
+        // Wait for thread completion
         let lsp_result = lsp_handle
             .join()
             .map_err(|e| anyhow::anyhow!("LSP thread panicked: {:?}", e))?;
 
-        // 检查结果
+        // Check results
         if let Err(e) = lsp_result {
-            error!("LSP 分析失败: {}", e);
+            error!("LSP analysis failed: {}", e);
         }
 
-        // 基于 FastEmbed 生成向量并批量入库
+        // Generate vectors based on FastEmbed and batch insert to database
         let embed_pb = self.multi_progress.add(ProgressBar::new_spinner());
         embed_pb.set_style(
             ProgressStyle::default_spinner()
@@ -229,7 +229,7 @@ impl PreProcessor {
                 .unwrap(),
         );
         embed_pb.enable_steady_tick(Duration::from_millis(100));
-        embed_pb.set_message("🧠 正在生成向量并批量入库...");
+        embed_pb.set_message("🧠 Generating vectors and batch inserting to database...");
 
         let analysis_path = cache_dir.join("lsp_analysis.json");
         if analysis_path.exists() {
@@ -239,7 +239,7 @@ impl PreProcessor {
                 .context("Failed to parse LSP analysis JSON")?;
 
             if let Some(funcs) = analysis_json.get("functions").and_then(|v| v.as_array()) {
-                // 准备嵌入文档与批量入库数据
+                // Prepare embedding documents and batch insert data
                 let mut documents: Vec<String> = Vec::new();
                 let mut interfaces_data: Vec<HashMap<String, serde_json::Value>> = Vec::new();
 
@@ -252,7 +252,7 @@ impl PreProcessor {
                     let file_path = f.get("file").and_then(|v| v.as_str()).unwrap_or("");
                     let line = f.get("line").and_then(|v| v.as_u64()).unwrap_or(0);
 
-                    // 参数
+                    // Parameters
                     let mut params_vec: Vec<String> = Vec::new();
                     let mut inputs_meta: Vec<HashMap<String, serde_json::Value>> = Vec::new();
                     if let Some(params) = f.get("parameters").and_then(|v| v.as_array()) {
@@ -280,7 +280,7 @@ impl PreProcessor {
                     data.insert("code".to_string(), json!(signature));
                     data.insert("language".to_string(), json!("c"));
                     data.insert("name".to_string(), json!(name));
-                    // 工程名：优先目录名，否则用完整路径
+                    // Project name: prefer directory name, otherwise use full path
                     let project_name = source_dir
                         .file_name()
                         .map(|s| s.to_string_lossy().to_string())
@@ -295,61 +295,68 @@ impl PreProcessor {
                 }
 
                 if !documents.is_empty() {
-                    // 初始化 FastEmbed，AllMiniLML6V2 -> 1024 维度，符合默认 Qdrant 配置
+                    // Initialize FastEmbed, BGELargeENV15 -> 1024 dimensions, compatible with default Qdrant configuration
                     let mut model =
                         TextEmbedding::try_new(InitOptions::new(EmbeddingModel::BGELargeENV15))
                             .map_err(|e| {
                                 anyhow::anyhow!(format!("Failed to initialize FastEmbed: {}", e))
                             })?;
 
-                    // 执行嵌入
+                    // Execute embedding
                     let embeddings = model.embed(documents.clone(), None).map_err(|e| {
                         anyhow::anyhow!(format!("FastEmbed embedding failed: {}", e))
                     })?;
 
-                    // 附加向量
+                    // Attach vectors
                     for (i, emb) in embeddings.into_iter().enumerate() {
                         if let Some(item) = interfaces_data.get_mut(i) {
                             item.insert("vector".to_string(), json!(emb));
                         }
                     }
 
-                    // 批量入库
+                    // Batch insert to database
                     let _saved = db_manager
                         .batch_store_interfaces(interfaces_data)
                         .await
                         .context("Failed to batch store interfaces with vectors")?;
 
-                    embed_pb.finish_with_message("✅ 向量生成与批量入库完成!");
+                    embed_pb
+                        .finish_with_message("✅ Vector generation and batch insertion completed!");
                 } else {
-                    embed_pb.finish_with_message("ℹ️ 无函数需要嵌入，跳过向量入库");
+                    embed_pb.finish_with_message(
+                        "ℹ️ No functions need embedding, skipping vector insertion",
+                    );
                 }
             } else {
-                embed_pb.finish_with_message("ℹ️ LSP 分析结果未包含函数，跳过向量入库");
+                embed_pb.finish_with_message(
+                    "ℹ️ LSP analysis results contain no functions, skipping vector insertion",
+                );
             }
         } else {
-            embed_pb.finish_with_message("⚠️ 未找到 LSP 分析结果，跳过向量入库");
+            embed_pb.finish_with_message(
+                "⚠️ LSP analysis results not found, skipping vector insertion",
+            );
         }
 
-        // 恢复数据库管理器
+        // Restore database manager
         self.db_manager =
             Some(Arc::try_unwrap(db_manager).map_err(|_| anyhow::anyhow!("Failed to unwrap Arc"))?);
 
-        main_pb.finish_with_message("✅ 分析和存储完成!");
+        main_pb.finish_with_message("✅ Analysis and storage completed!");
         Ok(())
     }
 
-    /// 获取数据库管理器引用
+    /// Get database manager reference
     pub fn get_database_manager(&self) -> Option<&DatabaseManager> {
         self.db_manager.as_ref()
     }
 
-    /// 获取多进度条管理器引用
+    /// Get multi-progress manager reference
     pub fn get_multi_progress(&self) -> &MultiProgress {
         &self.multi_progress
     }
 
-    /// 清理资源
+    /// Cleanup resources
     pub async fn cleanup(&mut self) -> Result<()> {
         if let Some(db_manager) = &mut self.db_manager {
             db_manager.close().await;
@@ -371,7 +378,7 @@ mod tests {
     #[tokio::test]
     async fn test_database_initialization() {
         let _processor = PreProcessor::new_default();
-        // 注意：这个测试需要实际的数据库服务运行
+        // Note: This test requires actual database service running
         // processor.initialize_database().await.unwrap();
         // assert!(processor.db_manager.is_some());
     }

@@ -6,28 +6,28 @@ use std::fs;
 use std::path::{Path, PathBuf};
 use walkdir::WalkDir;
 
-/// 依赖图节点：一个 C/C++ 源文件或头文件
+/// Dependency graph node: a C/C++ source file or header file
 #[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq)]
 pub struct FileNode {
     pub path: PathBuf,
-    /// 直接依赖的本地文件（通过引号 include 解析到的实际路径）
+    /// Directly dependent local files (actual paths resolved through quoted includes)
     pub local_includes: BTreeSet<PathBuf>,
-    /// 直接依赖的系统/第三方头（通过尖括号 include 或无法解析的引号 include）
+    /// Directly dependent system/third-party headers (through angle bracket includes or unresolvable quoted includes)
     pub system_includes: BTreeSet<String>,
 }
 
-/// 工程级别的依赖信息（来自 compile_commands.json）
+/// Project-level dependency information (from compile_commands.json)
 #[derive(Debug, Clone, Serialize, Deserialize, Default, PartialEq, Eq)]
 pub struct BuildDeps {
-    /// -I 包含目录
+    /// -I include directories
     pub include_dirs: BTreeSet<PathBuf>,
-    /// -l 链接库（如 m, pthread）
+    /// -l link libraries (e.g. m, pthread)
     pub link_libs: BTreeSet<String>,
-    /// -L 链接目录
+    /// -L link directories
     pub link_dirs: BTreeSet<PathBuf>,
 }
 
-/// 完整关系文件格式
+/// Complete relationship file format
 #[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq)]
 pub struct RelationFile {
     pub workspace: PathBuf,
@@ -36,15 +36,15 @@ pub struct RelationFile {
     pub generated_at: String,
 }
 
-/// 合同说明
-/// 输入: workspace 根路径
-/// 输出: 在 workspace 根目录写入 relation_graph.json，返回 RelationFile 内存对象
+/// Contract description
+/// Input: workspace root path
+/// Output: write relation_graph.json in workspace root directory, return RelationFile memory object
 pub fn generate_c_dependency_graph(workspace_root: &Path) -> Result<RelationFile> {
     let workspace_root = workspace_root
         .canonicalize()
-        .with_context(|| format!("工作区路径无效: {}", workspace_root.display()))?;
+        .with_context(|| format!("Invalid workspace path: {}", workspace_root.display()))?;
 
-    // 1) 枚举工程内的 C/C 相关文件
+    // 1) Enumerate C/C++ related files in the project
     let mut all_files: Vec<PathBuf> = Vec::new();
     let exts = ["c", "cc", "cpp", "cxx", "h", "hpp", "hxx"];
     for entry in WalkDir::new(&workspace_root)
@@ -60,15 +60,15 @@ pub fn generate_c_dependency_graph(workspace_root: &Path) -> Result<RelationFile
         }
     }
 
-    // 2) include 解析：正则扫描每个文件的 #include 行
+    // 2) Include parsing: regex scan #include lines in each file
     let re = Regex::new(r#"(?m)^\s*#\s*include\s*([<"])([^>"]+)[>"]"#).unwrap();
     let mut nodes: BTreeMap<PathBuf, FileNode> = BTreeMap::new();
 
-    // 候选本地搜索路径：workspace 根 + 子目录（后面会并入 compile_commands 的 -I）
+    // Candidate local search paths: workspace root + subdirectories (will be merged with -I from compile_commands later)
     let mut local_search_roots: Vec<PathBuf> = vec![workspace_root.clone()];
 
     for file in &all_files {
-        // 记录上层目录，便于相对 include 先就近解析
+        // Record parent directories for nearby resolution of relative includes
         if let Some(parent) = file.parent() {
             if !local_search_roots.contains(&parent.to_path_buf()) {
                 local_search_roots.push(parent.to_path_buf());
@@ -80,7 +80,7 @@ pub fn generate_c_dependency_graph(workspace_root: &Path) -> Result<RelationFile
 
     for file in &all_files {
         let content = fs::read_to_string(file)
-            .with_context(|| format!("读取文件失败: {}", file.display()))?;
+            .with_context(|| format!("Failed to read file: {}", file.display()))?;
         let mut local_includes: BTreeSet<PathBuf> = BTreeSet::new();
         let mut system_includes: BTreeSet<String> = BTreeSet::new();
 
@@ -90,12 +90,12 @@ pub fn generate_c_dependency_graph(workspace_root: &Path) -> Result<RelationFile
 
             match delimiter {
                 "\"" => {
-                    // 先按相对路径就近解析
+                    // First resolve as relative path nearby
                     let resolved = resolve_local_include(file, target, &local_search_roots);
                     if let Some(p) = resolved {
                         local_includes.insert(p);
                     } else {
-                        // 无法在工程内解析，视为第三方/系统头
+                        // Cannot resolve within project, treat as third-party/system header
                         system_includes.insert(target.to_string());
                     }
                 }
@@ -122,7 +122,7 @@ pub fn generate_c_dependency_graph(workspace_root: &Path) -> Result<RelationFile
         );
     }
 
-    // 3) 解析 compile_commands.json（若存在），汇总 -I、-l、-L，并扩展本地搜索路径
+    // 3) Parse compile_commands.json (if exists), aggregate -I, -l, -L, and extend local search paths
     let mut build = BuildDeps::default();
     let cc = workspace_root.join("compile_commands.json");
     if cc.exists() {
@@ -160,10 +160,10 @@ pub fn generate_c_dependency_graph(workspace_root: &Path) -> Result<RelationFile
         }
     }
 
-    // 扩展搜索路径后，再尝试补全此前未解析的本地 include（可选，保持简单不做二次扫描）
-    // 为保持复杂度可控，这里不做二次解析，避免循环和多次 IO。
+    // After extending search paths, try to complete previously unresolved local includes (optional, keep simple without second scan)
+    // To keep complexity manageable, no second parsing is done here to avoid loops and multiple IO operations.
 
-    // 4) 写 JSON 文件
+    // 4) Write JSON file
     let relation = RelationFile {
         workspace: workspace_root.clone(),
         files: nodes,
@@ -183,14 +183,14 @@ fn resolve_local_include(
     target: &str,
     search_roots: &[PathBuf],
 ) -> Option<PathBuf> {
-    // 相对当前文件
+    // Relative to current file
     if let Some(parent) = current_file.parent() {
         let p = parent.join(target);
         if p.exists() {
             return Some(p);
         }
     }
-    // 其它搜索根
+    // Other search roots
     for root in search_roots {
         let p = root.join(target);
         if p.exists() {
@@ -201,8 +201,8 @@ fn resolve_local_include(
 }
 
 fn parse_build_flags(cmd: &str, build: &mut BuildDeps, workspace: &Path) {
-    // 粗暴但足够清晰的解析：按空白分割，处理 -I -L -l 三类
-    // 这不是 shell 级解析，已足够覆盖常见 compile_commands
+    // Crude but clear enough parsing: split by whitespace, handle -I -L -l three categories
+    // This is not shell-level parsing, but sufficient to cover common compile_commands
     let parts = shell_like_split(cmd);
     let mut iter = parts.iter();
     while let Some(tok) = iter.next() {
@@ -248,7 +248,7 @@ fn parse_build_flags(cmd: &str, build: &mut BuildDeps, workspace: &Path) {
 }
 
 fn shell_like_split(s: &str) -> Vec<String> {
-    // 简化的 shell 分词：处理引号包裹和转义空格
+    // Simplified shell tokenization: handle quoted wrapping and escaped spaces
     let mut out = Vec::new();
     let mut cur = String::new();
     let mut in_s = false;
@@ -309,7 +309,7 @@ mod tests {
         let td = TempDir::new().unwrap();
         let root = td.path();
 
-        // 构造简单工程
+        // Construct simple project
         let a_h = root.join("include/a.h");
         let b_h = root.join("src/b.h");
         let c_c = root.join("src/c.c");
@@ -320,7 +320,7 @@ mod tests {
             "#include \"b.h\"\n#include <stdio.h>\n#include \"a.h\"\nint main(){return 0;}\n",
         );
 
-        // compile_commands.json，提供 -I include
+        // compile_commands.json, provide -I include
         let cc = serde_json::json!([{
             "directory": root.to_string_lossy(),
             "file": c_c.to_string_lossy(),
@@ -332,10 +332,10 @@ mod tests {
         );
 
         let rel = generate_c_dependency_graph(root).unwrap();
-        // 写出的文件存在
+        // Written file exists
         assert!(root.join("relation_graph.json").exists());
 
-        // 校验构建信息
+        // Verify build information
         assert!(
             rel.build
                 .include_dirs
@@ -344,13 +344,13 @@ mod tests {
         );
         assert!(rel.build.link_libs.contains("m"));
 
-        // 校验文件节点
+        // Verify file nodes
         let key = c_c.canonicalize().unwrap();
         let node = rel
             .files
             .get(&key)
             .or_else(|| {
-                // 有些平台 strip_prefix 后作为 key 存相对路径；尝试相对键
+                // Some platforms store relative paths as keys after strip_prefix; try relative key
                 let rel_key = key.strip_prefix(&rel.workspace).unwrap().to_path_buf();
                 rel.files.get(&rel_key)
             })

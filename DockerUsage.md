@@ -1,67 +1,67 @@
-## 使用说明（fish shell）
+## Usage Instructions (fish shell)
 
-1) 重新构建并启动
+1) Rebuild and start
 
 ```fish
-# 在仓库根目录
+# In the repository root directory
 docker compose up -d
 ```
 
-2) 确认容器运行
+2) Confirm container is running
 
 ```fish
 docker compose ps
 ```
 
-3) 通过 SSH 登录容器
+3) Login to container via SSH
 
-- 用户名：`agent`
-- 初始密码：`agent`
-- 端口映射：宿主机 `2222` -> 容器 `22`
+- Username: `agent`
+- Initial password: `agent`
+- Port mapping: Host `2222` -> Container `22`
 
 ```fish
 ssh agent@localhost -p 2222
-# 首次连接可能提示主机指纹，输入 yes
-# 输入密码：agent
+# First connection may prompt for host fingerprint, enter yes
+# Enter password: agent
 ```
 
-4) 安全建议：登录后立刻修改密码
+4) Security recommendation: Change password immediately after login
 
 ```fish
-# 在容器内
+# Inside the container
 passwd agent
 ```
 
-5) 可选：使用公钥方式免密登录
+5) Optional: Use public key for passwordless login
 
-- 在宿主机上复制你的公钥到容器用户
+- Copy your public key from host machine to container user
 
 ```fish
-# 将本机公钥追加到容器 agent 用户
-# 如果没有公钥，先在宿主机生成：ssh-keygen -t ed25519 -C "you@example.com"
+# Append local machine's public key to container agent user
+# If no public key exists, generate one on host first: ssh-keygen -t ed25519 -C "you@example.com"
 set -l pubkey (cat ~/.ssh/id_ed25519.pub)
 ssh -p 2222 agent@localhost "mkdir -p ~/.ssh && chmod 700 ~/.ssh && printf '%s\n' '$pubkey' >> ~/.ssh/authorized_keys && chmod 600 ~/.ssh/authorized_keys"
 ```
 
-- 完成后可禁用密码登录（更安全）。编辑容器 sshd_config，把 `PasswordAuthentication no`，然后重启 sshd：
+- After completion, you can disable password login (more secure). Edit container sshd_config, set `PasswordAuthentication no`, then restart sshd:
 
 ```fish
-# 容器内
+# Inside container
 sudo sed -i 's/^PasswordAuthentication .*/PasswordAuthentication no/' /etc/ssh/sshd_config
 sudo kill -HUP (pidof sshd)
 ```
 
-如容器没有 `sudo`，用 root 权限操作或在 compose 中临时执行。
+If container doesn't have `sudo`, operate with root privileges or execute temporarily in compose.
 
-6) 停止与清理
+6) Stop and cleanup
 
 ```fish
-docker compose down       # 保留数据卷
-# 或
-docker compose down -v    # 连同 qdrant/sqlite 数据卷一起删除
+docker compose down       # Keep data volumes
+# or
+docker compose down -v    # Delete qdrant/sqlite data volumes together
 ```
 
-## 注意事项
+## Notes
 
-- 你当前的 docker-compose.yml 将配置文件挂载到 config.toml，SQLite 数据目录到 `/opt/c2rust_agent/data`，与附带的 Rust 配置读取路径相匹配即可。如果应用在容器中需要读取 config.toml 或 `/workspace/data`，可按需调整挂载路径和 config.toml 内的 `sqlite.path`。
-- 如需只使用已经发布的 `c2rust_agent:latest` 镜像，且不从本地 Dockerfile 构建，可注释掉 `build:` 段落。
+- Your current docker-compose.yml mounts the config file to config.toml, SQLite data directory to `/opt/c2rust_agent/data`, which should match the accompanying Rust configuration read paths. If the application needs to read config.toml or `/workspace/data` in the container, adjust the mount paths and `sqlite.path` in config.toml as needed.
+- If you only want to use the already published `c2rust_agent:latest` image without building from local Dockerfile, you can comment out the `build:` section.

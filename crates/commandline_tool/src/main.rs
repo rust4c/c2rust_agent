@@ -21,8 +21,8 @@
 //
 //      ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
 //
-//             赛博佛祖光耀照，程序运行永无忧。
-//             字字珠玑无遗漏, 翻译结果皆通畅。
+//             Cyber Buddha's light shines, programs run without worry.
+//             Every word is perfect, translation results are smooth.
 //
 
 use commandline_tool::Commands;
@@ -50,15 +50,15 @@ use tracing_subscriber::filter::LevelFilter as SubLevel;
 use tracing_subscriber::fmt;
 use tracing_subscriber::prelude::*;
 
-// // 翻译模块
+// // Translation module
 // use main_processor::{MainProcessor, ProjectType};
 
-/// 发现C项目 - 简化版本
+/// Discover C projects - simplified version
 async fn discover_c_projects(dir: &PathBuf) -> Result<Vec<PathBuf>> {
     let mut projects = Vec::new();
     let mut processed_dirs = HashSet::new();
 
-    // 如果是文件，直接处理其父目录
+    // If it's a file, process its parent directory directly
     if dir.is_file() {
         if let Some(ext) = dir.extension() {
             if (ext == "c" || ext == "h") && dir.parent().is_some() {
@@ -72,11 +72,11 @@ async fn discover_c_projects(dir: &PathBuf) -> Result<Vec<PathBuf>> {
         return Ok(projects);
     }
 
-    // 使用walkdir来避免递归问题
+    // Use walkdir to avoid recursion issues
     use walkdir::WalkDir;
 
     for entry in WalkDir::new(dir)
-        .max_depth(10) // 限制深度避免无限遍历
+        .max_depth(10) // Limit depth to avoid infinite traversal
         .into_iter()
         .filter_map(|e| e.ok())
     {
@@ -112,30 +112,30 @@ async fn main() -> Result<()> {
        `Y8bood8P'  8888888888 o888o  o888o  `V88V"V8P' 8""888P'   "888"
     "#
     );
-    // 先解析 CLI，读取 --debug 开关
+    // First parse CLI, read --debug switch
     let cli = parse_args();
 
-    // 初始化日志系统，使用 tracing 统一处理 log 宏与 tracing 事件
+    // Initialize logging system, use tracing to handle both log macros and tracing events uniformly
     let _ = LogTracer::init();
 
-    // 确保 log 目录存在
+    // Ensure log directory exists
     let log_dir = Path::new("log");
     if let Err(e) = fs::create_dir_all(log_dir) {
-        eprintln!("创建 log 目录失败: {}", e);
+        eprintln!("Failed to create log directory: {}", e);
     }
 
-    // 控制台输出层（仅用于日志显示，不包含交互提示）
+    // Console output layer (for log display only, no interactive prompts)
     let stdout_layer = fmt::layer()
         .with_target(false)
         .with_level(true)
         .with_timer(fmt::time::uptime());
 
-    // 将上一次运行的 latest.log 归档为日期命名的文件，当前运行始终写入 latest.log
+    // Archive the previous run's latest.log as a date-named file, current run always writes to latest.log
     let latest_path = log_dir.join("latest.log");
     if latest_path.exists() {
         if let Ok(metadata) = fs::metadata(&latest_path) {
             if let Ok(modified) = metadata.modified() {
-                // 生成 10 位数字：yyMMddHH + 随机两位数字
+                // Generate 10-digit number: yyMMddHH + random two digits
                 let datetime: chrono::DateTime<Local> = modified.into();
                 let mut rng = StdRng::from_entropy();
                 let rnd: u8 = rng.gen_range(0..100);
@@ -148,7 +148,7 @@ async fn main() -> Result<()> {
                     rnd
                 );
                 let archive_path = log_dir.join(format!("{}.log", code));
-                // 若目标已存在则在名称后追加递增编号
+                // If target already exists, append incremental number to the name
                 let mut final_path = archive_path.clone();
                 let mut idx = 1;
                 while final_path.exists() {
@@ -160,10 +160,10 @@ async fn main() -> Result<()> {
         }
     }
 
-    // 使用"never"滚动，固定写入 latest.log
+    // Use "never" rolling, fixed write to latest.log
     let file_appender = rolling::never(log_dir, "latest.log");
     let (non_blocking, guard) = tracing_appender::non_blocking(file_appender);
-    // 将 guard 泄漏到静态生命周期，确保程序结束前不被释放导致日志丢失
+    // Leak guard to static lifetime to ensure it's not released before program ends, preventing log loss
     let _guard: &'static _ = Box::leak(Box::new(guard));
 
     let file_layer = fmt::layer()
@@ -172,8 +172,8 @@ async fn main() -> Result<()> {
         .with_ansi(false)
         .with_writer(non_blocking);
 
-    // 日志级别：终端在非 debug 仅显示 WARN/ERROR；debug 时显示所有
-    // 文件日志：非 debug 记录到 INFO；debug 记录到 DEBUG
+    // Log levels: terminal shows only WARN/ERROR in non-debug; shows all in debug
+    // File log: records to INFO in non-debug; records to DEBUG in debug
     let stdout_filter = if cli.debug {
         SubLevel::DEBUG
     } else {
@@ -205,14 +205,14 @@ async fn main() -> Result<()> {
     let summary = check_all().await;
 
     if let Some(err) = &summary.config.error {
-        error!("加载配置文件失败: {}", err);
-        println!("加载配置文件失败: {}", err);
+        error!("Failed to load config file: {}", err);
+        println!("Failed to load config file: {}", err);
         return Err(anyhow!(err.clone()));
     }
 
     if let Some(report) = &summary.config.report {
         if !report.issues.is_empty() {
-            println!("配置检查结果 ({}):", report.path.display());
+            println!("Configuration check results ({}):", report.path.display());
         }
 
         let mut has_error = false;
@@ -220,43 +220,43 @@ async fn main() -> Result<()> {
             match issue.level {
                 IssueLevel::Error => {
                     has_error = true;
-                    error!("配置错误 [{}]: {}", issue.field, issue.message);
+                    error!("Configuration error [{}]: {}", issue.field, issue.message);
                     println!("  ❌ {} -> {}", issue.field, issue.message);
                 }
                 IssueLevel::Warning => {
-                    warn!("配置警告 [{}]: {}", issue.field, issue.message);
+                    warn!("Configuration warning [{}]: {}", issue.field, issue.message);
                     println!("  ⚠️ {} -> {}", issue.field, issue.message);
                 }
             }
         }
 
         if has_error {
-            println!("配置存在致命错误，请修复后重试。");
+            println!("Configuration contains fatal errors, please fix and retry.");
             return Err(anyhow!("configuration validation failed"));
         }
     }
 
     if let Some(err) = &summary.database.error {
-        error!("查询数据库状态失败: {}", err);
-        println!("查询数据库状态失败: {}", err);
-        return Err(anyhow!("数据库检查失败: {}", err));
+        error!("Failed to query database status: {}", err);
+        println!("Failed to query database status: {}", err);
+        return Err(anyhow!("Database check failed: {}", err));
     }
 
     if let Some(status) = &summary.database.status {
-        info!("数据库状态: {:?}", status);
+        info!("Database status: {:?}", status);
     }
 
     match (&summary.ai.status, &summary.ai.error) {
         (Some(status), _) => {
-            info!("AI 服务状态: {:?}", status);
+            info!("AI service status: {:?}", status);
             match status {
-                AIConnectionStatus::AllConnected => info!("AI 服务已连接"),
-                AIConnectionStatus::AllDisconnected => error!("所有 AI 服务均未连接"),
-                _ => warn!("部分 AI 服务连接状态不明"),
+                AIConnectionStatus::AllConnected => info!("AI services connected"),
+                AIConnectionStatus::AllDisconnected => error!("All AI services disconnected"),
+                _ => warn!("Some AI services connection status unknown"),
             }
         }
         (None, Some(err)) => {
-            error!("查询 AI 服务状态失败: {}", err);
+            error!("Failed to query AI service status: {}", err);
         }
         _ => {}
     }
@@ -265,19 +265,25 @@ async fn main() -> Result<()> {
 
     match &cli.command {
         Commands::Analyze { input_dir } => {
-            debug!("已选择分析命令");
-            println!("开始分析项目\n输入目录: {}", input_dir.display());
-            let input_dir = input_dir.to_str().unwrap_or("未指定");
+            debug!("Analyze command selected");
+            println!(
+                "Starting project analysis\nInput directory: {}",
+                input_dir.display()
+            );
+            let input_dir = input_dir.to_str().unwrap_or("Not specified");
             if cli.force {
-                println!("--force 已启用：将强制重新执行分析步骤");
+                println!("--force enabled: will force re-execution of analysis steps");
                 info!("--force enabled: rerun analyze");
             }
 
-            // 使用带数据库支持的分析功能
+            // Use database-supported analysis functionality
             match analyze_project_with_default_database(input_dir, false).await {
-                Ok(_) => println!("✅ 分析完成，结果已保存到数据库"),
+                Ok(_) => println!("✅ Analysis completed, results saved to database"),
                 Err(e) => {
-                    error!("⚠️ 数据库分析失败，尝试基础分析: {}", e);
+                    error!(
+                        "⚠️ Database analysis failed, attempting basic analysis: {}",
+                        e
+                    );
                     let _ = check_function_and_class_name(input_dir, false);
                 }
             }
@@ -288,13 +294,16 @@ async fn main() -> Result<()> {
             input_dir,
             output_dir,
         } => {
-            debug!("已选择预处理命令");
-            println!("开始预处理\n输入目录: {}", input_dir.display());
+            debug!("Preprocess command selected");
+            println!(
+                "Starting preprocessing\nInput directory: {}",
+                input_dir.display()
+            );
 
-            // 确定输出目录
+            // Determine output directory
             let output_dir = output_dir.clone().unwrap_or_else(|| {
                 let parent = input_dir.parent().unwrap_or_else(|| Path::new("."));
-                // 获取输入目录名并添加"cache"后缀
+                // Get input directory name and add "cache" suffix
                 let dir_name = input_dir
                     .file_name()
                     .map(|name| name.to_string_lossy().into_owned())
@@ -303,19 +312,21 @@ async fn main() -> Result<()> {
                 let cache_dir_name = format!("{}_cache", dir_name);
                 parent.join(cache_dir_name)
             });
-            println!("输出目录: {}", output_dir.display());
+            println!("Output directory: {}", output_dir.display());
 
-            // 确保输出目录存在
+            // Ensure output directory exists
             if let Err(e) = fs::create_dir_all(&output_dir) {
-                error!("创建输出目录失败: {}", e);
+                error!("Failed to create output directory: {}", e);
                 return Ok(());
             }
 
             if cli.force {
-                println!("--force 已启用：将强制重新预处理，即使输出目录存在");
+                println!(
+                    "--force enabled: will force re-preprocessing even if output directory exists"
+                );
                 info!("--force enabled: force preprocess in Preprocess command");
             } else {
-                println!("正在预处理项目...");
+                println!("Preprocessing project...");
             }
 
             let mut preprocessor = PreProcessor::new_default();
@@ -324,42 +335,57 @@ async fn main() -> Result<()> {
                 .preprocess_project(input_dir, &output_dir)
                 .await
             {
-                error!("预处理失败: {}", e);
+                error!("Preprocessing failed: {}", e);
                 return Ok(());
             }
 
-            // 使用预处理后的目录进行分析
-            println!("预处理完成，缓存目录: {}", output_dir.display());
-            println!("开始分析项目...");
+            // Use preprocessed directory for analysis
+            println!(
+                "Preprocessing completed, cache directory: {}",
+                output_dir.display()
+            );
+            println!("Starting project analysis...");
 
-            // 使用带数据库支持的分析功能
+            // Use database-supported analysis functionality
             match analyze_project_with_default_database(output_dir.to_str().unwrap(), false).await {
-                Ok(_) => println!("✅ 项目分析完成，结果已保存到数据库"),
+                Ok(_) => println!("✅ Project analysis completed, results saved to database"),
                 Err(e) => {
-                    error!("⚠️ 数据库分析失败，尝试基础分析: {}", e);
+                    error!(
+                        "⚠️ Database analysis failed, attempting basic analysis: {}",
+                        e
+                    );
                     let _ = check_function_and_class_name(output_dir.to_str().unwrap(), false);
                 }
             }
             Ok(())
         }
 
-        // main.rs 中 Translate 命令的修改部分
+        // Translate command modification in main.rs
         Commands::Translate {
             input_dir,
-            output_dir, // 若提供则作为预处理缓存目录，工作区将生成在同级目录下 *_workspace
+            output_dir, // If provided, used as preprocessing cache directory, workspace will be generated in sibling directory *_workspace
         } => {
-            println!("已选择转换命令\n输入目录: {}", input_dir.display());
+            println!(
+                "Translate command selected\nInput directory: {}",
+                input_dir.display()
+            );
 
             let processor = MainProcessor::new(main_processor::pkg_config::get_config()?);
 
             if !input_dir.exists() {
-                error!("错误: 输入目录不存在: {}", input_dir.display());
-                println!("错误: 输入目录不存在: {}", input_dir.display());
+                error!(
+                    "Error: Input directory does not exist: {}",
+                    input_dir.display()
+                );
+                println!(
+                    "Error: Input directory does not exist: {}",
+                    input_dir.display()
+                );
                 return Ok(());
             }
 
-            // 第一步：预处理 -> 生成缓存目录（若提供 --output-dir 则使用该目录作为缓存目录）
-            println!("开始预处理 (preprocess)...");
+            // Step 1: Preprocess -> Generate cache directory (if --output-dir is provided, use it as cache directory)
+            println!("Starting preprocessing (preprocess)...");
             let cache_dir: PathBuf = if let Some(p) = output_dir.as_ref() {
                 p.clone()
             } else {
@@ -371,7 +397,7 @@ async fn main() -> Result<()> {
                 parent.join(format!("{}_cache", dir_name))
             };
 
-            // 如果 cache 目录不存在或其中没有任何 .c/.h 文件，则运行预处理
+            // If cache directory doesn't exist or contains no .c/.h files, run preprocessing
             fn cache_has_c_or_h(dir: &Path) -> bool {
                 if !dir.exists() {
                     return false;
@@ -396,68 +422,80 @@ async fn main() -> Result<()> {
 
             if cli.force || !cache_has_c_or_h(&cache_dir) {
                 if cli.force {
-                    println!("--force 已启用：即使存在缓存也将重新预处理");
+                    println!("--force enabled: will re-preprocess even if cache exists");
                     info!("--force enabled: re-run preprocess even if cache exists");
                 }
 
                 let mut preprocessor = PreProcessor::new_default();
                 if let Err(e) = preprocessor.preprocess_project(input_dir, &cache_dir).await {
-                    error!("预处理失败: {}", e);
-                    println!("预处理失败: {}", e);
+                    error!("Preprocessing failed: {}", e);
+                    println!("Preprocessing failed: {}", e);
                     return Ok(());
                 }
 
-                println!("预处理完成，缓存目录: {}", cache_dir.display());
+                println!(
+                    "Preprocessing completed, cache directory: {}",
+                    cache_dir.display()
+                );
             } else {
-                println!("检测到已有缓存目录: {}，跳过预处理", cache_dir.display());
+                println!(
+                    "Detected existing cache directory: {}, skipping preprocessing",
+                    cache_dir.display()
+                );
             }
 
-            // 第二步：发现 C 项目（基于 cache 目录）
-            println!("正在发现C项目...");
+            // Step 2: Discover C projects (based on cache directory)
+            println!("Discovering C projects...");
             let projects = match discover_c_projects(&cache_dir).await {
                 Ok(projects) => projects,
                 Err(e) => {
-                    error!("发现C项目失败: {}", e);
-                    println!("发现C项目失败: {}", e);
+                    error!("Failed to discover C projects: {}", e);
+                    println!("Failed to discover C projects: {}", e);
                     return Ok(());
                 }
             };
 
             if projects.is_empty() {
-                warn!("在目录 {} 中没有找到C项目", cache_dir.display());
-                println!("在目录 {} 中没有找到C项目", cache_dir.display());
+                warn!("No C projects found in directory {}", cache_dir.display());
+                println!("No C projects found in directory {}", cache_dir.display());
                 return Ok(());
             }
 
-            println!("发现 {} 个C项目:", projects.len());
+            println!("Found {} C projects:", projects.len());
             for (i, project) in projects.iter().enumerate() {
                 println!("  {}. {}", i + 1, project.display());
-                info!("发现待处理项目: {}", project.display());
+                info!("Found project to process: {}", project.display());
             }
 
-            // 第三步：如果存在依赖关系图，使用依赖感知调度；否则按原有批量
-            println!("开始批量转换...");
-            // 优先使用用户要求的固定路径
+            // Step 3: If dependency graph exists, use dependency-aware scheduling; otherwise use regular batch processing
+            println!("Starting batch conversion...");
+            // Prioritize user-specified fixed path
             let user_graph =
                 PathBuf::from("/Users/peng/Documents/Tmp/chibicc_cache/relation_graph.json");
             let graph_in_cache = cache_dir.join("relation_graph.json");
             if user_graph.exists() {
-                info!("使用依赖感知调度 (用户路径): {}", user_graph.display());
+                info!(
+                    "Using dependency-aware scheduling (user path): {}",
+                    user_graph.display()
+                );
                 match processor
                     .process_with_graph(&user_graph, Some(&cache_dir))
                     .await
                 {
                     Ok(()) => {
-                        info!("✅ 依赖感知处理完成");
+                        info!("✅ Dependency-aware processing completed");
                     }
                     Err(e) => {
-                        error!("依赖感知处理失败: {}，回退到普通批处理", e);
+                        error!(
+                            "Dependency-aware processing failed: {}, falling back to regular batch processing",
+                            e
+                        );
                         let _ = processor.process_batch(projects.clone()).await;
                     }
                 }
             } else if graph_in_cache.exists() {
                 info!(
-                    "使用依赖感知调度 (cache中的relation_graph.json): {}",
+                    "Using dependency-aware scheduling (relation_graph.json in cache): {}",
                     graph_in_cache.display()
                 );
                 match processor
@@ -465,29 +503,32 @@ async fn main() -> Result<()> {
                     .await
                 {
                     Ok(()) => {
-                        info!("✅ 依赖感知处理完成");
+                        info!("✅ Dependency-aware processing completed");
                     }
                     Err(e) => {
-                        error!("依赖感知处理失败: {}，回退到普通批处理", e);
+                        error!(
+                            "Dependency-aware processing failed: {}, falling back to regular batch processing",
+                            e
+                        );
                         let _ = processor.process_batch(projects.clone()).await;
                     }
                 }
             } else {
                 info!(
-                    "未发现 relation_graph.json，调用 MainProcessor::process_batch 处理 {} 个项目",
+                    "No relation_graph.json found, calling MainProcessor::process_batch to process {} projects",
                     projects.len()
                 );
                 match processor.process_batch(projects).await {
                     Ok(()) => {
-                        info!("✅ 所有C到Rust转换完成!");
-                        println!("🎉 转换成功完成!");
+                        info!("✅ All C to Rust conversions completed!");
+                        println!("🎉 Conversion completed successfully!");
                         println!(
-                            "📁 转换结果保存在各项目目录下的 'rust-project' 或 'rust_project' 文件夹中"
+                            "📁 Conversion results saved in 'rust-project' or 'rust_project' folders under each project directory"
                         );
 
-                        // 第四步：重组为一个 Rust 工作区
-                        // 若提供了 --output-dir（缓存目录），则在其同级目录下创建 <缓存名>_workspace
-                        // 否则按输入目录规则创建 <输入名>_workspace
+                        // Step 4: Reorganize into a Rust workspace
+                        // If --output-dir (cache directory) was provided, create <cache_name>_workspace in its sibling directory
+                        // Otherwise create <input_name>_workspace according to input directory rules
                         let workspace_out: PathBuf = if let Some(p) = output_dir.as_ref() {
                             let parent = p.parent().unwrap_or_else(|| Path::new("."));
                             let dir_name = p
@@ -503,24 +544,27 @@ async fn main() -> Result<()> {
                                 .unwrap_or_else(|| "project".to_string());
                             parent.join(format!("{}_workspace", dir_name))
                         };
-                        println!("开始重组项目: {}", workspace_out.display());
+                        println!(
+                            "Starting project reorganization: {}",
+                            workspace_out.display()
+                        );
                         let reorganizer =
                             ProjectReorganizer::new(cache_dir.clone(), workspace_out.clone());
                         if let Err(e) = reorganizer.reorganize() {
-                            error!("重组项目失败: {}", e);
-                            println!("重组项目失败: {}", e);
+                            error!("Project reorganization failed: {}", e);
+                            println!("Project reorganization failed: {}", e);
                         } else {
-                            println!("📦 已生成工作区: {}", workspace_out.display());
+                            println!("📦 Workspace generated: {}", workspace_out.display());
                         }
                     }
                     Err(e) => {
-                        error!("❌ 转换过程中出现错误: {}", e);
-                        println!("⚠️  转换失败，错误详情: {}", e);
+                        error!("❌ Error occurred during conversion: {}", e);
+                        println!("⚠️  Conversion failed, error details: {}", e);
 
-                        // 提供更具体的错误信息
+                        // Provide more specific error information
                         if e.to_string().contains("max_retry_attempts") {
-                            println!("💡 提示: 请创建配置文件 config/config.toml");
-                            println!("     内容示例:");
+                            println!("💡 Tip: Please create config file config/config.toml");
+                            println!("     Example content:");
                             println!("     max_retry_attempts = 3");
                             println!("     concurrent_limit = 5");
                         }
@@ -532,15 +576,15 @@ async fn main() -> Result<()> {
 
         Commands::Test { input_dir } => {
             println!(
-                "已选择测试单文件处理命令\n文件路径: {}",
+                "Test single file processing command selected\nFile path: {}",
                 input_dir.display()
             );
             let cfg = main_processor::pkg_config::get_config()?;
             let processor = MainProcessor::new(cfg);
 
             if let Err(err) = processor.process_single(input_dir).await {
-                error!("❌ 单文件处理失败: {}", err);
-                println!("❌ 单文件处理失败，详情: {}", err);
+                error!("❌ Single file processing failed: {}", err);
+                println!("❌ Single file processing failed, details: {}", err);
             }
             Ok(())
         }

@@ -9,28 +9,28 @@ pub use processor::{
     process_with_dependency_graph,
 };
 
-/// 面向对象风格的入口封装，便于在上层调用时保有配置与上下文
+/// Object-oriented entry point wrapper for maintaining configuration and context during upper-level calls
 pub struct MainProcessor {
     cfg: MainProcessorConfig,
 }
 
 impl MainProcessor {
-    /// 创建处理器，传入配置（若不需要自定义，可从 pkg_config::get_config 读取）
+    /// Create processor with configuration (if no customization needed, can read from pkg_config::get_config)
     pub fn new(cfg: MainProcessorConfig) -> Self {
         Self { cfg }
     }
 
-    /// 处理单个路径（目录或文件）。内部直接复用异步函数。
+    /// Process single path (directory or file). Internally reuses async function directly.
     pub async fn process_single<P: AsRef<std::path::Path>>(&self, path: P) -> anyhow::Result<()> {
         processor::process_single_path(path.as_ref()).await
     }
 
-    /// 并发批处理一批路径，沿用进度条与重试机制
+    /// Concurrent batch processing of multiple paths, using progress bars and retry mechanisms
     pub async fn process_batch(&self, paths: Vec<PathBuf>) -> anyhow::Result<()> {
         processor::process_batch_paths(self.cfg.clone(), paths).await
     }
 
-    /// 使用 relation_graph.json 进行依赖感知的批量处理
+    /// Use relation_graph.json for dependency-aware batch processing
     pub async fn process_with_graph<P: AsRef<std::path::Path>>(
         &self,
         relation_graph_path: P,
@@ -44,7 +44,7 @@ impl MainProcessor {
         .await
     }
 
-    /// 按 src_cache 目录结构自动发现 individual_files 下的可处理子目录
+    /// Automatically discover processable subdirectories under individual_files based on src_cache directory structure
     pub async fn discover_src_cache_projects<P: AsRef<std::path::Path>>(
         &self,
         src_cache_root: P,

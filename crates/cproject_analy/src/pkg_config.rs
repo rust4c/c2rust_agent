@@ -34,27 +34,27 @@ impl From<&UvMirrorConfig> for MirrorSource {
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct PreprocessConfig {
-    /// 并行工作者数量 (0=自动检测)
+    /// Number of parallel workers (0=auto detect)
     pub worker_count: usize,
-    /// 文件配对规则 (源文件模式, 头文件模式)
+    /// File pairing rules (source file pattern, header file pattern)
     pub pairing_rules: Vec<(String, String)>,
-    /// 排除文件模式
+    /// Exclude file patterns
     pub exclude_patterns: Vec<String>,
-    /// 头文件扩展名
+    /// Header file extensions
     pub header_extensions: Vec<String>,
-    /// 源文件扩展名
+    /// Source file extensions
     pub source_extensions: Vec<String>,
-    /// 大文件阈值 (字节)
+    /// Large file threshold (bytes)
     pub large_file_threshold: u64,
-    /// 块大小 (字节)
+    /// Chunk size (bytes)
     pub chunk_size: usize,
-    /// uv 可执行文件路径
+    /// uv executable path
     #[serde(default = "default_uv_command")]
     pub uv_command: String,
-    /// uv 虚拟环境路径 (相对路径基于输出目录)
+    /// uv virtual environment path (relative path based on output directory)
     #[serde(default)]
     pub uv_venv_path: Option<String>,
-    /// uv 安装源配置
+    /// uv installation source configuration
     #[serde(default = "default_uv_mirrors_config")]
     pub uv_mirrors: Vec<UvMirrorConfig>,
 }
@@ -128,16 +128,16 @@ fn default_uv_mirrors_config() -> Vec<UvMirrorConfig> {
         .collect()
 }
 
-/// 预处理器顶层配置（集中定义）
+/// Preprocessor top-level configuration (centralized definition)
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct PreprocessorConfig {
-    /// 数据库配置（保留占位）
+    /// Database configuration (reserved placeholder)
     pub database_url: Option<String>,
-    /// Qdrant 配置（保留占位）
+    /// Qdrant configuration (reserved placeholder)
     pub qdrant_url: Option<String>,
-    /// 工作线程数
+    /// Number of worker threads
     pub worker_count: usize,
-    /// 项目预处理配置
+    /// Project preprocessing configuration
     pub preprocess_config: Option<PreprocessConfig>,
 }
 
@@ -152,16 +152,16 @@ impl Default for PreprocessorConfig {
     }
 }
 
-/// NOTE: 本模块集中定义 PreprocessConfig/PreprocessorConfig，
-/// 并将配置文件中的 [cproject.preprocess] 映射为本模块的 PreprocessConfig。
+/// NOTE: This module centrally defines PreprocessConfig/PreprocessorConfig,
+/// and maps [cproject.preprocess] in the configuration file to this module's PreprocessConfig.
 ///
-/// 配置文件示例（请将此片段同步到 config/config.default.toml）:
+/// Configuration file example (please sync this snippet to config/config.default.toml):
 ///
 /// [cproject.preprocess]
-/// # 0 表示自动选择（保留为 0 给运行时处理）
+/// # 0 means auto-select (keep as 0 for runtime processing)
 /// worker_count = 0
 ///
-/// # 文件配对规则（多段）
+/// # File pairing rules (multiple sections)
 /// [[cproject.preprocess.pairing_rules]]
 /// source = "(.+)\\.c"
 /// header = "\\1.h"
@@ -174,20 +174,20 @@ impl Default for PreprocessorConfig {
 /// source = "src/(.+)\\.c"
 /// header = "include/\\1.h"
 ///
-/// # 排除模式
+/// # Exclude patterns
 /// cproject.preprocess.exclude_patterns = [ "*.bak", "*.tmp", ".git/*", ".svn/*", "*.o", "*.obj", "*.exe", "*.dll", "*.so" ]
 ///
-/// # 扩展名
+/// # Extensions
 /// cproject.preprocess.header_extensions = [ ".h", ".hpp", ".hh", ".hxx" ]
 /// cproject.preprocess.source_extensions = [ ".c", ".cc", ".cpp", ".cxx", ".c++" ]
 ///
-/// # 大文件阈值/块大小
+/// # Large file threshold/chunk size
 /// cproject.preprocess.large_file_threshold = 52428800     # 50MB
 /// cproject.preprocess.chunk_size = 8388608               # 8MB
 ///
-/// 说明：
-/// - 如果缺失 [cproject.preprocess]，将返回 PreprocessConfig::default()
-/// - 只对存在的字段执行覆盖，其他沿用默认值
+/// Description:
+/// - If [cproject.preprocess] is missing, PreprocessConfig::default() will be returned
+/// - Only existing fields are overridden, others use default values
 
 pub fn get_config() -> Result<PreprocessorConfig, config::ConfigError> {
     // Try multiple possible paths for the config file

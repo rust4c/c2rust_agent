@@ -3,66 +3,75 @@ use log::{error, info, warn};
 use rust_checker::RustCodeCheck;
 use std::path::Path;
 
-/// 编译验证和修复
+/// Compilation verification and fixing
 ///
-/// 使用 rust_checker 编译项目，自动检测是否为 workspace 并选择合适的编译方式
-/// 成功返回 Ok(())，失败返回编译错误信息
+/// Use rust_checker to compile project, auto-detect if it's a workspace and choose appropriate compilation method
+/// Returns Ok(()) on success, returns compilation error info on failure
 pub fn verify_compilation(project_path: &Path) -> Result<()> {
-    info!("开始编译验证: {:?}", project_path);
+    info!("Starting compilation verification: {:?}", project_path);
 
     let checker = RustCodeCheck::new(project_path);
 
-    // 自动检测是否为 workspace
+    // Auto-detect if it's a workspace
     let result = if checker.is_workspace() {
-        info!("检测到 workspace 项目，使用 workspace 构建");
+        info!("Detected workspace project, using workspace build");
         checker.check_workspace()
     } else {
-        info!("检测到单项目，使用常规构建");
+        info!("Detected single project, using regular build");
         checker.check_rust_project()
     };
 
     match result {
         Ok(()) => {
-            info!("✅ 编译验证通过");
+            info!("✅ Compilation verification passed");
             Ok(())
         }
         Err(e) => {
-            let error_msg = format!("编译失败: {}", e);
-            warn!("❌ 编译验证失败");
-            error!("错误详情: {}", error_msg);
+            let error_msg = format!("Compilation failed: {}", e);
+            warn!("❌ Compilation verification failed");
+            error!("Error details: {}", error_msg);
             Err(anyhow::anyhow!(error_msg))
         }
     }
 }
 
-/// 带重试的编译验证和修复
+/// Compilation verification and fixing with retry
 ///
-/// 编译项目，如果失败则返回错误信息供 AI 修复，最多重试 max_retries 次
+/// Compile project, if failed return error info for AI fixing, retry at most max_retries times
 ///
-/// # 参数
-/// * `project_path` - Rust 项目路径
-/// * `max_retries` - 最大重试次数
+/// # Arguments
+/// * `project_path` - Rust project path
+/// * `max_retries` - Maximum retry attempts
 ///
-/// # 返回
-/// * `Ok(())` - 编译成功
-/// * `Err(error)` - 达到最大重试次数仍失败
+/// # Returns
+/// * `Ok(())` - Compilation successful
+/// * `Err(error)` - Still failed after reaching maximum retry attempts
 pub fn verify_and_fix(project_path: &Path, max_retries: u32) -> Result<()> {
     for attempt in 1..=max_retries {
-        info!("第 {}/{} 次编译尝试", attempt, max_retries);
+        info!("Compilation attempt {}/{}", attempt, max_retries);
 
         match verify_compilation(project_path) {
             Ok(_) => {
-                info!("🎉 编译成功（尝试 {}/{}）", attempt, max_retries);
+                info!(
+                    "🎉 Compilation successful (attempt {}/{})",
+                    attempt, max_retries
+                );
                 return Ok(());
             }
             Err(e) => {
                 if attempt < max_retries {
-                    warn!("编译失败（尝试 {}/{}），准备重试", attempt, max_retries);
-                    warn!("错误详情: {}", e);
+                    warn!(
+                        "Compilation failed (attempt {}/{}), preparing to retry",
+                        attempt, max_retries
+                    );
+                    warn!("Error details: {}", e);
                 } else {
-                    error!("编译失败，已达最大重试次数 {}", max_retries);
+                    error!(
+                        "Compilation failed, reached maximum retry attempts {}",
+                        max_retries
+                    );
                     return Err(anyhow::anyhow!(
-                        "编译验证失败（{} 次尝试）: {}",
+                        "Compilation verification failed ({} attempts): {}",
                         max_retries,
                         e
                     ));
@@ -71,12 +80,10 @@ pub fn verify_and_fix(project_path: &Path, max_retries: u32) -> Result<()> {
         }
     }
 
-    Err(anyhow::anyhow!("编译验证失败"))
+    Err(anyhow::anyhow!("Compilation verification failed"))
 }
 
-/// 提取编译错误的关键信息
-///
-/// 从编译输出中提取最重要的错误信息，过滤掉重复和无关信息
+/// Extract key information from compilation errors
 pub fn extract_key_errors(error_output: &str) -> String {
     let lines: Vec<&str> = error_output.lines().collect();
     let mut key_errors = Vec::new();

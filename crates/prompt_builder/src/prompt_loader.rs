@@ -114,7 +114,7 @@ mod tests {
         let content = result.unwrap();
         assert!(!content.is_empty());
         // Just check it's a markdown file with some content
-        assert!(content.contains("Rust") || content.contains("转换"));
+        assert!(content.contains("Rust") || content.contains("conversion"));
     }
 
     #[tokio::test]

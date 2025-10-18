@@ -3,37 +3,37 @@ use std::path::Path;
 
 #[tokio::main]
 async fn main() -> Result<(), Box<dyn std::error::Error>> {
-    // 初始化日志
+    // Initialize logging
     env_logger::init();
 
-    // 测试路径 - 修改为实际的测试项目路径
+    // Test path - modify to actual test project path
     let test_path = Path::new("./test-projects/translate_chibicc/src");
 
     if !test_path.exists() {
-        eprintln!("❌ 测试路径不存在: {}", test_path.display());
-        eprintln!("请修改 test_path 为实际的包含 C 文件的目录");
+        eprintln!("❌ Test path does not exist: {}", test_path.display());
+        eprintln!("Please modify test_path to actual directory containing C files");
         return Ok(());
     }
 
-    println!("🚀 开始测试两阶段翻译功能");
-    println!("📁 测试路径: {}", test_path.display());
-    println!("🔄 流程: C2Rust 自动翻译 → AI 代码优化");
-    println!("⏱️  这可能需要几分钟时间...");
+    println!("🚀 Starting two-stage translation functionality test");
+    println!("📁 Test path: {}", test_path.display());
+    println!("🔄 Process: C2Rust automatic translation → AI code optimization");
+    println!("⏱️  This may take a few minutes...");
 
     match process_single_path(test_path).await {
         Ok(()) => {
-            println!("✅ 两阶段翻译测试成功完成!");
-            println!("📄 请检查输出目录中的结果:");
-            println!("   - two-stage-translation/c2rust-output/     (C2Rust 原始输出)");
-            println!("   - two-stage-translation/final-output/      (AI 优化后的结果)");
-            println!("   - two-stage-translation/final-output/c2rust_original.rs (C2Rust 备份)");
+            println!("✅ Two-stage translation test completed successfully!");
+            println!("📄 Please check the results in the output directory:");
+            println!("   - two-stage-translation/c2rust-output/     (C2Rust original output)");
+            println!("   - two-stage-translation/final-output/      (AI optimized results)");
+            println!("   - two-stage-translation/final-output/c2rust_original.rs (C2Rust backup)");
         }
         Err(e) => {
-            eprintln!("❌ 两阶段翻译测试失败: {}", e);
-            eprintln!("请检查:");
-            eprintln!("  1. C2Rust 工具是否已安装 (cargo install c2rust)");
-            eprintln!("  2. 测试目录中是否包含 .c 或 .h 文件");
-            eprintln!("  3. LLM API 配置是否正确");
+            eprintln!("❌ Two-stage translation test failed: {}", e);
+            eprintln!("Please check:");
+            eprintln!("  1. Is C2Rust tool installed (cargo install c2rust)");
+            eprintln!("  2. Does test directory contain .c or .h files");
+            eprintln!("  3. Is LLM API configuration correct");
         }
     }
 

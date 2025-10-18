@@ -119,7 +119,7 @@ impl ProjectReorganizer {
                 continue;
             }
 
-            // 支持两种命名：rust_project 与 rust-project
+            // Support two naming conventions: rust_project and rust-project
             let rust_project_path_underscore = project_dir.join("rust_project");
             let rust_project_path_dash = project_dir.join("rust-project");
             let rust_project_path = if rust_project_path_underscore.exists() {
