@@ -65,7 +65,10 @@ RUN apt-get update && \
     wget \
     && rm -rf /var/lib/apt/lists/*
 
-# Configure Cloudflare DNS with DoH/DoT support
+ARG DEV_SIDECAR_DEB_URL="" \
+    DEV_SIDECAR_BIN="/usr/local/bin/dev-sidecar"
+
+# Configure Cloudflare DNS with DoH/DoT support (and optional dev-sidecar)
 RUN mkdir -p /etc/systemd/resolved.conf.d && \
     printf '%s\n' \
     '[Resolve]' \
@@ -99,12 +102,16 @@ RUN mkdir -p /etc/systemd/resolved.conf.d && \
     'fi' \
     > /usr/local/bin/start-resolved && \
     chmod +x /usr/local/bin/start-resolved && \
-    # Install cloudflared for DoH support
-    curl -L --output cloudflared.deb https://github.com/cloudflare/cloudflared/releases/latest/download/cloudflared-linux-amd64.deb && \
-    dpkg -i cloudflared.deb && \
-    rm cloudflared.deb && \
-    # Configure cloudflared as DNS proxy
-    mkdir -p /etc/cloudflared && \
+    # Optionally install dev-sidecar (if provided via build-arg). Otherwise skip installing cloudflared by default.
+    if [ -n "${DEV_SIDECAR_DEB_URL}" ]; then \
+    echo "Installing dev-sidecar from ${DEV_SIDECAR_DEB_URL}"; \
+    curl -fsSL -o /tmp/dev-sidecar.deb "${DEV_SIDECAR_DEB_URL}" && dpkg -i /tmp/dev-sidecar.deb || true; \
+    rm -f /tmp/dev-sidecar.deb; \
+    else \
+    echo "DEV_SIDECAR_DEB_URL not provided; skipping dev-sidecar install"; \
+    fi && \
+    # Configure an optional cloudflared-style config for DoH proxy fallback if cloudflared is present
+    mkdir -p /etc/cloudflared || true; \
     printf '%s\n' \
     'proxy-dns: true' \
     'proxy-dns-upstream:' \
@@ -112,7 +119,7 @@ RUN mkdir -p /etc/systemd/resolved.conf.d && \
     '  - https://1.0.0.1/dns-query' \
     'proxy-dns-address: 127.0.0.1' \
     'proxy-dns-port: 5053' \
-    > /etc/cloudflared/config.yml && \
+    > /etc/cloudflared/config.yml || true && \
     # Create DNS verification script
     printf '%s\n' \
     '#!/bin/bash' \
@@ -121,10 +128,13 @@ RUN mkdir -p /etc/systemd/resolved.conf.d && \
     'nslookup cloudflare.com 1.1.1.1 || echo "Standard DNS failed"' \
     'echo ""' \
     'echo "DoH via cloudflared:"' \
-    'if pgrep cloudflared > /dev/null; then' \
+    'if command -v dev-sidecar >/dev/null 2>&1 || [ -x "'""${DEV_SIDECAR_BIN}"'" ]; then' \
+    '    echo "dev-sidecar binary present, attempting DoH test against local proxy (127.0.0.1:5053)"' \
+    '    nslookup cloudflare.com 127.0.0.1 -port=5053 || echo "DoH DNS failed"' \
+    'elif pgrep cloudflared > /dev/null; then' \
     '    nslookup cloudflare.com 127.0.0.1 -port=5053 || echo "DoH DNS failed"' \
     'else' \
-    '    echo "cloudflared not running"' \
+    '    echo "dev-sidecar/cloudflared not running"' \
     'fi' \
     'echo ""' \
     'echo "Current DNS config (build-time fallback shown if set):"' \
@@ -235,10 +245,25 @@ RUN printf '%s\n' \
     '/usr/local/bin/start-resolved || true' \
     '# Start cloudflared DoH proxy in background' \
     'if [ "$ENABLE_DOH" = "yes" ]; then' \
-    '    cloudflared proxy-dns --config /etc/cloudflared/config.yml &' \
+    '    # Prefer starting dev-sidecar if available, otherwise try cloudflared' \
+    '    if command -v dev-sidecar >/dev/null 2>&1; then' \
+    '        echo "Starting dev-sidecar..."' \
+    '        dev-sidecar & disown || true' \
+    '    elif [ -x "/usr/local/bin/dev-sidecar" ]; then' \
+    '        /usr/local/bin/dev-sidecar & disown || true' \
+    '    elif command -v cloudflared >/dev/null 2>&1; then' \
+    '        cloudflared proxy-dns --config /etc/cloudflared/config.yml &' \
+    '    fi' \
     '    sleep 2' \
-    '    # Update resolv.conf to use DoH proxy' \
-    '    printf "%s\\n" "nameserver 127.0.0.1" "nameserver 1.1.1.1" > /etc/resolv.conf' \
+    '    # Update resolv.conf to use local DoH proxy if possible' \
+    '    if [ -w /etc/resolv.conf ]; then' \
+    '        printf "%s\\n" "nameserver 127.0.0.1" "nameserver 1.1.1.1" > /etc/resolv.conf' \
+    '    else' \
+    '        # If /etc/resolv.conf is not writable in container env, copy fallback into place when possible' \
+    '        if [ -f /usr/local/etc/resolv.conf ]; then' \
+    '            cp /usr/local/etc/resolv.conf /etc/resolv.conf 2>/dev/null || true' \
+    '        fi' \
+    '    fi' \
     'fi' \
     '# Start SSH daemon if requested' \
     'if [ "$START_SSH" = "yes" ]; then' \
