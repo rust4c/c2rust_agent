@@ -1,4 +1,3 @@
-#
 # Competition-ready Docker image for c2rust_agent
 # - Base: ubuntu:24.04 (matches competition host expectations)
 # - Installs Rust toolchain (rustup) and common native build deps
@@ -42,7 +41,6 @@ RUN apt-get update && \
     nano \
     ca-certificates \
     curl \
-    wget \
     git \
     build-essential \
     pkg-config \
@@ -61,9 +59,79 @@ RUN apt-get update && \
     tzdata \
     openssh-server \
     openssh-client \
-    unzip \
-    net-tools \
+    systemd-resolved \
+    dnsutils \
+    curl \
+    wget \
     && rm -rf /var/lib/apt/lists/*
+
+# Configure Cloudflare DNS with DoH/DoT support
+RUN mkdir -p /etc/systemd/resolved.conf.d && \
+    printf '%s\n' \
+    '[Resolve]' \
+    'DNS=1.1.1.1#cloudflare-dns.com 1.0.0.1#cloudflare-dns.com 2606:4700:4700::1111#cloudflare-dns.com 2606:4700:4700::1001#cloudflare-dns.com' \
+    'DNSOverTLS=yes' \
+    'DNSSEC=yes' \
+    'Cache=yes' \
+    'DNSStubListener=yes' \
+    > /etc/systemd/resolved.conf.d/cloudflare.conf && \
+    # Backup original resolv.conf and configure Cloudflare DNS as fallback
+    cp /etc/resolv.conf /etc/resolv.conf.bak && \
+    printf '%s\n' \
+    '# Cloudflare DNS servers' \
+    'nameserver 1.1.1.1' \
+    'nameserver 1.0.0.1' \
+    'nameserver 2606:4700:4700::1111' \
+    'nameserver 2606:4700:4700::1001' \
+    'options timeout:2' \
+    'options attempts:3' \
+    'options rotate' \
+    > /etc/resolv.conf && \
+    # Create a script to start systemd-resolved if needed
+    printf '%s\n' \
+    '#!/bin/bash' \
+    'if ! systemctl is-active --quiet systemd-resolved; then' \
+    '    systemctl start systemd-resolved' \
+    'fi' \
+    > /usr/local/bin/start-resolved && \
+    chmod +x /usr/local/bin/start-resolved && \
+    # Install cloudflared for DoH support
+    curl -L --output cloudflared.deb https://github.com/cloudflare/cloudflared/releases/latest/download/cloudflared-linux-amd64.deb && \
+    dpkg -i cloudflared.deb && \
+    rm cloudflared.deb && \
+    # Configure cloudflared as DNS proxy
+    mkdir -p /etc/cloudflared && \
+    printf '%s\n' \
+    'proxy-dns: true' \
+    'proxy-dns-upstream:' \
+    '  - https://1.1.1.1/dns-query' \
+    '  - https://1.0.0.1/dns-query' \
+    'proxy-dns-address: 127.0.0.1' \
+    'proxy-dns-port: 5053' \
+    > /etc/cloudflared/config.yml && \
+    # Create DNS verification script
+    printf '%s\n' \
+    '#!/bin/bash' \
+    'echo "Testing DNS resolution..."' \
+    'echo "Standard DNS (1.1.1.1):"' \
+    'nslookup cloudflare.com 1.1.1.1 || echo "Standard DNS failed"' \
+    'echo ""' \
+    'echo "DoH via cloudflared:"' \
+    'if pgrep cloudflared > /dev/null; then' \
+    '    nslookup cloudflare.com 127.0.0.1 -port=5053 || echo "DoH DNS failed"' \
+    'else' \
+    '    echo "cloudflared not running"' \
+    'fi' \
+    'echo ""' \
+    'echo "Current DNS config:"' \
+    'cat /etc/resolv.conf' \
+    > /usr/local/bin/test-dns && \
+    chmod +x /usr/local/bin/test-dns
+
+# Configure Git for better HTTPS handling and retry logic:cite[5]
+RUN git config --global http.postBuffer 524288000 && \
+    git config --global http.lowSpeedLimit 0 && \
+    git config --global http.lowSpeedTime 999999
 
 # Make LLVM/Clang discoverable by CMake (for c2rust-ast-exporter)
 ENV LLVM_VERSION=18 \
@@ -78,7 +146,7 @@ RUN test -f /usr/lib/llvm-18/lib/cmake/llvm/LLVMConfig.cmake
 RUN curl -fsSL https://sh.rustup.rs | sh -s -- -y --profile minimal --default-toolchain stable && \
     rustup component add rustfmt clippy
 
-# Configure Cargo to use TUNA mirror for crates.io
+# Configure Cargo to use TUNA mirror for crates.io:cite[10]
 RUN mkdir -p /root/.cargo && \
     printf '%s\n' \
     "[source.crates-io]" \
@@ -87,67 +155,35 @@ RUN mkdir -p /root/.cargo && \
     "[source.mirror]" \
     "registry = \"sparse+https://mirrors.tuna.tsinghua.edu.cn/crates.io-index/\"" \
     "" \
+    "[net]" \
+    "retry-delay = 30" \
+    "git-fetch-with-cli = true" \
+    "" \
     "[registries.mirror]" \
     "index = \"sparse+https://mirrors.tuna.tsinghua.edu.cn/crates.io-index/\"" \
     > /root/.cargo/config.toml
 
-# Install and configure FastGithub for GitHub acceleration
-RUN set -eux; \
-    mkdir -p /opt/fastgithub; \
-    cd /opt/fastgithub; \
-    # Try multiple download sources with retries
-    ( \
-    wget --timeout=30 --tries=3 -O fastgithub.tar.gz "https://github.com/creazyboyone/FastGithub/releases/download/v2.1.5/fastgithub-linux-x64-ok.tar.gz" || \
-    wget --timeout=30 --tries=3 -O fastgithub.tar.gz "https://github.com/creazyboyone/FastGithub/releases/download/v2.1.5/fastgithub-linux-x64.tar.gz" || \
-    wget --timeout=30 --tries=3 -O fastgithub.tar.gz "https://ghproxy.com/https://github.com/creazyboyone/FastGithub/releases/download/v2.1.5/fastgithub-linux-x64-ok.tar.gz" || \
-    wget --timeout=30 --tries=3 -O fastgithub.tar.gz "https://mirror.ghproxy.com/https://github.com/creazyboyone/FastGithub/releases/download/v2.1.5/fastgithub-linux-x64-ok.tar.gz" \
-    ) && \
-    # Extract the archive
-    ( \
-    tar -xzf fastgithub.tar.gz --strip-components=1 2>/dev/null || \
-    tar -xzf fastgithub.tar.gz \
-    ) && \
-    rm -f fastgithub.tar.gz && \
-    # Find and setup the FastGithub binary
-    ( \
-    chmod +x fastgithub 2>/dev/null || \
-    find . -name "fastgithub" -executable -exec chmod +x {} \; || \
-    find . -name "fastgithub" -exec chmod +x {} \; \
-    ) && \
-    # Move binary to current directory if needed
-    if [ ! -f "./fastgithub" ]; then \
-    find . -name "fastgithub" -executable -exec mv {} ./ \; 2>/dev/null || \
-    find . -name "fastgithub" -exec mv {} ./ \; ; \
-    fi && \
-    # Move cacert directory if it exists
-    find . -name "cacert" -type d -exec mv {} ./ \; 2>/dev/null || true && \
-    # Clean up extracted directories
-    find . -mindepth 1 -maxdepth 1 -type d -name "fastgithub*" -exec rm -rf {} \; 2>/dev/null || true && \
-    echo "FastGithub installation completed" || \
-    # Fallback: create dummy fastgithub if download failed
-    ( \
-    echo "Warning: FastGithub download failed, creating dummy binary"; \
-    echo '#!/bin/bash' > fastgithub; \
-    echo 'echo "FastGithub not available - using direct connection"' >> fastgithub; \
-    echo 'sleep 3600' >> fastgithub; \
-    chmod +x fastgithub \
-    ); \
-    # Create directories for FastGithub
-    mkdir -p /etc/fastgithub /var/log/fastgithub; \
-    # Configure Git to work with FastGithub proxy (will be activated when FastGithub starts)
-    git config --global http.sslverify false; \
-    git config --global https.sslverify false
-
 WORKDIR /opt/c2rust_agent
 
 # Copy manifest files first for better build caching
-RUN git clone https://github.com/rust4c/c2rust_agent.git .
-RUN mv test-projects/translate_chibicc translate_chibicc
-RUN mv test-projects/translate_littlefs_fuse translate_littlefs_fuse
+# Use shallow clone and retry logic for git operations:cite[5]
+RUN git clone https://github.com/rust4c/c2rust_agent.git . --depth 1 && \
+    mv test-projects/translate_chibicc translate_chibicc && \
+    mv test-projects/translate_littlefs_fuse translate_littlefs_fuse
 
-# Install c2rust using versioned llvm-config for reliable detection
-ENV LLVM_CONFIG_PATH=/usr/bin/llvm-config-18
-RUN cargo install --git https://github.com/immunant/c2rust.git c2rust
+# Enhanced cargo install with retry mechanism for c2rust
+RUN set -eux; \
+    MAX_RETRIES=5; \
+    COUNT=0; \
+    until cargo install --git https://github.com/immunant/c2rust.git c2rust; do \
+    COUNT=$$((COUNT+1)); \
+    if [ $$COUNT -eq $$MAX_RETRIES ]; then \
+    echo "Failed to install c2rust after $$MAX_RETRIES attempts"; \
+    exit 1; \
+    fi; \
+    echo "Attempt $$COUNT failed. Retrying in 30 seconds..."; \
+    sleep 30; \
+    done
 
 # Build only the command-line tool as intended (avoids GUI deps)
 RUN cargo build --release --locked -p commandline_tool
@@ -180,71 +216,31 @@ RUN set -eux; \
     sed -i 's/^#\?PubkeyAuthentication .*/PubkeyAuthentication yes/' /etc/ssh/sshd_config; \
     printf '\nAllowUsers agent\nUseDNS no\nClientAliveInterval 60\nClientAliveCountMax 3\n' >> /etc/ssh/sshd_config
 
-# Expose SSH port and FastGithub proxy port
-EXPOSE 22 38457
+# Expose SSH port
+EXPOSE 22
 
-# Create startup script that runs FastGithub in background
+# Create startup script that initializes DNS and starts bash
 RUN printf '%s\n' \
-    '#!/bin/sh' \
+    '#!/bin/bash' \
     'set -e' \
-    '' \
-    '# Check if we should skip FastGithub' \
-    'if [ "$SKIP_FASTGITHUB" = "1" ] || [ "$SKIP_FASTGITHUB" = "true" ]; then' \
-    '    echo "Skipping FastGithub startup (SKIP_FASTGITHUB is set)"' \
-    '    exec "$@"' \
-    '    exit 0' \
-    'fi' \
-    '' \
-    '# Check if FastGithub is available' \
-    'if [ ! -x "/opt/fastgithub/fastgithub" ]; then' \
-    '    echo "FastGithub not available, using direct connection"' \
-    '    exec "$@"' \
-    '    exit 0' \
-    'fi' \
-    '' \
-    '# Check if port is already in use' \
-    'if netstat -tuln 2>/dev/null | grep -q ":38457 "; then' \
-    '    echo "Port 38457 already in use, skipping FastGithub startup"' \
-    '    exec "$@"' \
-    '    exit 0' \
-    'fi' \
-    '' \
-    'echo "Starting FastGithub..."' \
-    'cd /opt/fastgithub' \
-    '' \
-    '# Start FastGithub in background' \
-    'nohup ./fastgithub > /var/log/fastgithub/fastgithub.log 2>&1 &' \
-    'FASTGITHUB_PID=$!' \
-    'echo "FastGithub started with PID: $FASTGITHUB_PID"' \
-    '' \
-    '# Wait for FastGithub to start (simple loop)' \
-    'i=1' \
-    'while [ $i -le 15 ]; do' \
-    '    if curl -s --connect-timeout 3 --max-time 5 http://127.0.0.1:38457 >/dev/null 2>&1; then' \
-    '        echo "FastGithub proxy is running on port 38457"' \
-    '        # Configure git to use proxy' \
-    '        git config --global http.proxy http://127.0.0.1:38457' \
-    '        git config --global https.proxy http://127.0.0.1:38457' \
-    '        export HTTP_PROXY=http://127.0.0.1:38457' \
-    '        export HTTPS_PROXY=http://127.0.0.1:38457' \
-    '        export http_proxy=http://127.0.0.1:38457' \
-    '        export https_proxy=http://127.0.0.1:38457' \
-    '        break' \
-    '    fi' \
-    '    echo "Waiting for FastGithub to start... ($i/15)"' \
+    '# Initialize DNS services' \
+    '/usr/local/bin/start-resolved || true' \
+    '# Start cloudflared DoH proxy in background' \
+    'if [ "$ENABLE_DOH" = "yes" ]; then' \
+    '    cloudflared proxy-dns --config /etc/cloudflared/config.yml &' \
     '    sleep 2' \
-    '    i=$((i+1))' \
-    'done' \
-    '' \
-    'if [ $i -gt 15 ]; then' \
-    '    echo "Warning: FastGithub may not be running properly"' \
+    '    # Update resolv.conf to use DoH proxy' \
+    '    printf "%s\\n" "nameserver 127.0.0.1" "nameserver 1.1.1.1" > /etc/resolv.conf' \
     'fi' \
-    '' \
-    '# Execute the original command' \
+    '# Start SSH daemon if requested' \
+    'if [ "$START_SSH" = "yes" ]; then' \
+    '    service ssh start' \
+    'fi' \
+    '# Execute the original command or start bash' \
     'exec "$@"' \
-    > /usr/local/bin/start-with-fastgithub.sh && \
-    chmod +x /usr/local/bin/start-with-fastgithub.sh
+    > /usr/local/bin/docker-entrypoint.sh && \
+    chmod +x /usr/local/bin/docker-entrypoint.sh
 
-# Use the startup script as entrypoint, but keep bash as default command
-ENTRYPOINT ["/usr/local/bin/start-with-fastgithub.sh"]
+# Default shell with DNS initialization
+ENTRYPOINT ["/usr/local/bin/docker-entrypoint.sh"]
 CMD ["bash"]
