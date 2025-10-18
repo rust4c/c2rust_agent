@@ -1,7 +1,7 @@
 use anyhow::{anyhow, Context, Result};
 use indicatif::{MultiProgress, ProgressBar, ProgressStyle};
 use log::{error, info};
-use single_processor::{two_stage_processor_with_callback, StageCallback};
+use single_processor::{singlefile_processor, StageCallback};
 use std::collections::{HashMap, HashSet, VecDeque};
 use std::path::{Path, PathBuf};
 use std::sync::Arc;
@@ -39,7 +39,7 @@ fn format_task_prefix(current: usize, total: usize) -> String {
     format!("[{}/{}]", current, total)
 }
 
-/// 处理单个路径 - 两阶段翻译
+/// 处理单个路径 - 纯AI模式
 pub async fn process_single_path(path: &Path) -> Result<()> {
     let file_name = path.file_name().unwrap_or_default().to_string_lossy();
 
@@ -60,7 +60,7 @@ pub async fn process_single_path(path: &Path) -> Result<()> {
         info!("{} - {}", file_name_for_log, msg);
     });
 
-    match two_stage_processor_with_callback(path, Some(callback)).await {
+    match singlefile_processor(path, Some(callback)).await {
         Ok(_) => {
             pb.finish_with_message(format!("✅ 两阶段翻译成功: {}", file_name));
             println!("✅ 两阶段翻译成功: {}", file_name);
@@ -163,7 +163,7 @@ pub async fn discover_src_cache_projects(root: &Path) -> Result<Vec<PathBuf>> {
     Ok(out)
 }
 
-/// 批量并发处理：使用两阶段翻译（C2Rust + AI优化 + 编译验证）
+/// 批量并发处理：使用单文件翻译（AI优化 + 编译验证）
 pub async fn process_batch_paths(cfg: MainProcessorConfig, paths: Vec<PathBuf>) -> Result<()> {
     let concurrent = if cfg.concurrent_limit == 0 {
         1
@@ -172,10 +172,10 @@ pub async fn process_batch_paths(cfg: MainProcessorConfig, paths: Vec<PathBuf>) 
     };
     let total_tasks = paths.len();
 
-    println!("🚀 开始批量两阶段翻译");
+    println!("🚀 开始单文件翻译");
     println!("   任务总数: {}", total_tasks);
     println!("   并发度: {}", concurrent);
-    println!("   流程: C2Rust 自动翻译 → AI 代码优化 → 编译验证\n");
+    println!("   流程: AI 代码优化 → 编译验证\n");
 
     let m = MultiProgress::new();
     let overall = m.add(ProgressBar::new(total_tasks as u64));
@@ -235,7 +235,7 @@ pub async fn process_batch_paths(cfg: MainProcessorConfig, paths: Vec<PathBuf>) 
                     pb_clone.enable_steady_tick(Duration::from_millis(100));
 
                     // 使用带回调的两阶段处理器
-                    match two_stage_processor_with_callback(&p, Some(callback)).await {
+                    match singlefile_processor(&p, Some(callback)).await {
                         Ok(()) => {
                             pb_clone.set_style(progress_style_completed());
                             pb_clone.finish_with_message(format!("✅ {}", file_name));
@@ -465,7 +465,7 @@ pub async fn process_with_dependency_graph(
                         name2, stage, attempt, max_retries
                     ));
                 });
-                match two_stage_processor_with_callback(&dir_clone, Some(callback)).await {
+                match singlefile_processor(&dir_clone, Some(callback)).await {
                     Ok(()) => {
                         pb.set_style(progress_style_completed());
                         pb.finish_with_message(format!("✅ {}", name));
