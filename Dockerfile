@@ -75,8 +75,12 @@ RUN mkdir -p /etc/systemd/resolved.conf.d && \
     'Cache=yes' \
     'DNSStubListener=yes' \
     > /etc/systemd/resolved.conf.d/cloudflare.conf && \
-    # Backup original resolv.conf and configure Cloudflare DNS as fallback
-    cp /etc/resolv.conf /etc/resolv.conf.bak && \
+    # Backup original resolv.conf if accessible and configure Cloudflare DNS as fallback
+    if [ -w /etc/resolv.conf ]; then \
+    cp /etc/resolv.conf /etc/resolv.conf.bak || true; \
+    fi && \
+    # Write fallback resolv to /usr/local/etc/resolv.conf (read-only /etc/ during buildkit)
+    mkdir -p /usr/local/etc && \
     printf '%s\n' \
     '# Cloudflare DNS servers' \
     'nameserver 1.1.1.1' \
@@ -86,7 +90,7 @@ RUN mkdir -p /etc/systemd/resolved.conf.d && \
     'options timeout:2' \
     'options attempts:3' \
     'options rotate' \
-    > /etc/resolv.conf && \
+    > /usr/local/etc/resolv.conf && \
     # Create a script to start systemd-resolved if needed
     printf '%s\n' \
     '#!/bin/bash' \
@@ -123,8 +127,12 @@ RUN mkdir -p /etc/systemd/resolved.conf.d && \
     '    echo "cloudflared not running"' \
     'fi' \
     'echo ""' \
-    'echo "Current DNS config:"' \
-    'cat /etc/resolv.conf' \
+    'echo "Current DNS config (build-time fallback shown if set):"' \
+    'if [ -f /usr/local/etc/resolv.conf ]; then' \
+    '    cat /usr/local/etc/resolv.conf' \
+    'else' \
+    '    cat /etc/resolv.conf || true' \
+    'fi' \
     > /usr/local/bin/test-dns && \
     chmod +x /usr/local/bin/test-dns
 
