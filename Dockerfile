@@ -47,10 +47,10 @@ RUN apt-get update && \
     cmake \
     python3 \
     python3-pip \
-    llvm-18 \
-    llvm-18-dev \
-    clang-18 \
-    libclang-18-dev \
+    llvm \
+    llvm-dev \
+    clang \
+    libclang-dev \
     libssl-dev \
     zlib1g-dev \
     libsqlite3-dev \
@@ -59,99 +59,7 @@ RUN apt-get update && \
     tzdata \
     openssh-server \
     openssh-client \
-    systemd-resolved \
-    dnsutils \
-    curl \
-    wget \
     && rm -rf /var/lib/apt/lists/*
-
-ARG DEV_SIDECAR_DEB_URL="" \
-    DEV_SIDECAR_BIN="/usr/local/bin/dev-sidecar"
-
-# Configure Cloudflare DNS with DoH/DoT support (and optional dev-sidecar)
-RUN mkdir -p /etc/systemd/resolved.conf.d && \
-    printf '%s\n' \
-    '[Resolve]' \
-    'DNS=1.1.1.1#cloudflare-dns.com 1.0.0.1#cloudflare-dns.com 2606:4700:4700::1111#cloudflare-dns.com 2606:4700:4700::1001#cloudflare-dns.com' \
-    'DNSOverTLS=yes' \
-    'DNSSEC=yes' \
-    'Cache=yes' \
-    'DNSStubListener=yes' \
-    > /etc/systemd/resolved.conf.d/cloudflare.conf && \
-    # Backup original resolv.conf if accessible and configure Cloudflare DNS as fallback
-    if [ -w /etc/resolv.conf ]; then \
-    cp /etc/resolv.conf /etc/resolv.conf.bak || true; \
-    fi && \
-    # Write fallback resolv to /usr/local/etc/resolv.conf (read-only /etc/ during buildkit)
-    mkdir -p /usr/local/etc && \
-    printf '%s\n' \
-    '# Cloudflare DNS servers' \
-    'nameserver 1.1.1.1' \
-    'nameserver 1.0.0.1' \
-    'nameserver 2606:4700:4700::1111' \
-    'nameserver 2606:4700:4700::1001' \
-    'options timeout:2' \
-    'options attempts:3' \
-    'options rotate' \
-    > /usr/local/etc/resolv.conf && \
-    # Create a script to start systemd-resolved if needed
-    printf '%s\n' \
-    '#!/bin/bash' \
-    'if ! systemctl is-active --quiet systemd-resolved; then' \
-    '    systemctl start systemd-resolved' \
-    'fi' \
-    > /usr/local/bin/start-resolved && \
-    chmod +x /usr/local/bin/start-resolved && \
-    # Optionally install dev-sidecar (if provided via build-arg). Otherwise skip installing cloudflared by default.
-    if [ -n "${DEV_SIDECAR_DEB_URL}" ]; then \
-    echo "Installing dev-sidecar from ${DEV_SIDECAR_DEB_URL}"; \
-    curl -fsSL -o /tmp/dev-sidecar.deb "${DEV_SIDECAR_DEB_URL}" && dpkg -i /tmp/dev-sidecar.deb || true; \
-    rm -f /tmp/dev-sidecar.deb; \
-    else \
-    echo "DEV_SIDECAR_DEB_URL not provided; skipping dev-sidecar install"; \
-    fi && \
-    # Configure an optional cloudflared-style config for DoH proxy fallback if cloudflared is present
-    mkdir -p /etc/cloudflared || true; \
-    printf '%s\n' \
-    'proxy-dns: true' \
-    'proxy-dns-upstream:' \
-    '  - https://1.1.1.1/dns-query' \
-    '  - https://1.0.0.1/dns-query' \
-    'proxy-dns-address: 127.0.0.1' \
-    'proxy-dns-port: 5053' \
-    > /etc/cloudflared/config.yml || true
-
-RUN cat > /usr/local/bin/test-dns <<'EOF'
-#!/bin/bash
-echo "Testing DNS resolution..."
-echo "Standard DNS (1.1.1.1):"
-nslookup cloudflare.com 1.1.1.1 || echo "Standard DNS failed"
-
-echo ""
-echo "DoH via cloudflared/dev-sidecar:"
-if command -v dev-sidecar >/dev/null 2>&1 || [ -x "${DEV_SIDECAR_BIN}" ]; then
-    echo "dev-sidecar binary present, attempting DoH test against local proxy (127.0.0.1:5053)"
-    nslookup cloudflare.com 127.0.0.1 -port=5053 || echo "DoH DNS failed"
-elif pgrep cloudflared > /dev/null; then
-    nslookup cloudflare.com 127.0.0.1 -port=5053 || echo "DoH DNS failed"
-else
-    echo "dev-sidecar/cloudflared not running"
-fi
-
-echo ""
-echo "Current DNS config (build-time fallback shown if set):"
-if [ -f /usr/local/etc/resolv.conf ]; then
-    cat /usr/local/etc/resolv.conf
-else
-    cat /etc/resolv.conf || true
-fi
-EOF
-RUN chmod +x /usr/local/bin/test-dns
-
-# Configure Git for better HTTPS handling and retry logic:cite[5]
-RUN git config --global http.postBuffer 524288000 && \
-    git config --global http.lowSpeedLimit 0 && \
-    git config --global http.lowSpeedTime 999999
 
 # Make LLVM/Clang discoverable by CMake (for c2rust-ast-exporter)
 ENV LLVM_VERSION=18 \
@@ -166,44 +74,15 @@ RUN test -f /usr/lib/llvm-18/lib/cmake/llvm/LLVMConfig.cmake
 RUN curl -fsSL https://sh.rustup.rs | sh -s -- -y --profile minimal --default-toolchain stable && \
     rustup component add rustfmt clippy
 
-# Configure Cargo to use TUNA mirror for crates.io:cite[10]
-RUN mkdir -p /root/.cargo && \
-    printf '%s\n' \
-    "[source.crates-io]" \
-    "replace-with = 'mirror'" \
-    "" \
-    "[source.mirror]" \
-    "registry = \"sparse+https://mirrors.tuna.tsinghua.edu.cn/crates.io-index/\"" \
-    "" \
-    "[net]" \
-    "retry-delay = 30" \
-    "git-fetch-with-cli = true" \
-    "" \
-    "[registries.mirror]" \
-    "index = \"sparse+https://mirrors.tuna.tsinghua.edu.cn/crates.io-index/\"" \
-    > /root/.cargo/config.toml
-
 WORKDIR /opt/c2rust_agent
 
 # Copy manifest files first for better build caching
-# Use shallow clone and retry logic for git operations:cite[5]
 RUN git clone https://github.com/rust4c/c2rust_agent.git . --depth 1 && \
     mv test-projects/translate_chibicc translate_chibicc && \
     mv test-projects/translate_littlefs_fuse translate_littlefs_fuse
 
-# Enhanced cargo install with retry mechanism for c2rust
-RUN set -eux; \
-    MAX_RETRIES=5; \
-    COUNT=0; \
-    until cargo install --git https://github.com/immunant/c2rust.git c2rust; do \
-    COUNT=$$((COUNT+1)); \
-    if [ $$COUNT -eq $$MAX_RETRIES ]; then \
-    echo "Failed to install c2rust after $$MAX_RETRIES attempts"; \
-    exit 1; \
-    fi; \
-    echo "Attempt $$COUNT failed. Retrying in 30 seconds..."; \
-    sleep 30; \
-    done
+# Install c2rust
+RUN LLVM_CONFIG_PATH=/usr/bin/llvm-config cargo install --git https://github.com/immunant/c2rust.git c2rust
 
 # Build only the command-line tool as intended (avoids GUI deps)
 RUN cargo build --release --locked -p commandline_tool
@@ -239,34 +118,10 @@ RUN set -eux; \
 # Expose SSH port
 EXPOSE 22
 
-# Create startup script that initializes DNS and starts bash
+# Create startup script that starts SSH if requested
 RUN printf '%s\n' \
     '#!/bin/bash' \
     'set -e' \
-    '# Initialize DNS services' \
-    '/usr/local/bin/start-resolved || true' \
-    '# Start cloudflared DoH proxy in background' \
-    'if [ "$ENABLE_DOH" = "yes" ]; then' \
-    '    # Prefer starting dev-sidecar if available, otherwise try cloudflared' \
-    '    if command -v dev-sidecar >/dev/null 2>&1; then' \
-    '        echo "Starting dev-sidecar..."' \
-    '        dev-sidecar & disown || true' \
-    '    elif [ -x "/usr/local/bin/dev-sidecar" ]; then' \
-    '        /usr/local/bin/dev-sidecar & disown || true' \
-    '    elif command -v cloudflared >/dev/null 2>&1; then' \
-    '        cloudflared proxy-dns --config /etc/cloudflared/config.yml &' \
-    '    fi' \
-    '    sleep 2' \
-    '    # Update resolv.conf to use local DoH proxy if possible' \
-    '    if [ -w /etc/resolv.conf ]; then' \
-    '        printf "%s\\n" "nameserver 127.0.0.1" "nameserver 1.1.1.1" > /etc/resolv.conf' \
-    '    else' \
-    '        # If /etc/resolv.conf is not writable in container env, copy fallback into place when possible' \
-    '        if [ -f /usr/local/etc/resolv.conf ]; then' \
-    '            cp /usr/local/etc/resolv.conf /etc/resolv.conf 2>/dev/null || true' \
-    '        fi' \
-    '    fi' \
-    'fi' \
     '# Start SSH daemon if requested' \
     'if [ "$START_SSH" = "yes" ]; then' \
     '    service ssh start' \
@@ -276,6 +131,6 @@ RUN printf '%s\n' \
     > /usr/local/bin/docker-entrypoint.sh && \
     chmod +x /usr/local/bin/docker-entrypoint.sh
 
-# Default shell with DNS initialization
+# Default shell
 ENTRYPOINT ["/usr/local/bin/docker-entrypoint.sh"]
 CMD ["bash"]
